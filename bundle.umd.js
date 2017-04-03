@@ -142,42 +142,53 @@ var Packet = function () {
     return Packet;
 }();
 
-var ACTION = 'action';
-var MIRROR = 'mirror';
-var STATE = 'state';
-var COMPUTED = 'computed';
-var NONE = 'none';
-var VALID_TYPES = [ACTION, MIRROR, STATE, COMPUTED, NONE];
-var VALID_CHECK = new Map();
+var DATA_TYPES = {
 
-var _iteratorNormalCompletion = true;
-var _didIteratorError = false;
-var _iteratorError = undefined;
+    ACTION: 'action',
+    MIRROR: 'mirror',
+    STATE: 'state',
+    COMPUTED: 'computed',
+    NONE: 'none',
+    ANY: 'any'
 
-try {
-    for (var _iterator = VALID_TYPES[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-        var type = _step.value;
+};
 
-        VALID_CHECK.set(type, true);
-    }
-} catch (err) {
-    _didIteratorError = true;
-    _iteratorError = err;
-} finally {
-    try {
-        if (!_iteratorNormalCompletion && _iterator.return) {
-            _iterator.return();
-        }
-    } finally {
-        if (_didIteratorError) {
-            throw _iteratorError;
-        }
-    }
+var reverseLookup = {};
+
+for (var p in DATA_TYPES) {
+    var v = DATA_TYPES[p];
+    reverseLookup[v] = p;
 }
 
 function isValid(type) {
-    return VALID_CHECK.has(type);
+    return reverseLookup.hasOwnProperty(type);
 }
+
+
+
+//
+//
+// const ACTION   = 'action';
+// const MIRROR   = 'mirror';
+// const STATE    = 'state';
+// const COMPUTED = 'computed';
+// const NONE     = 'none';
+// const ANY      = 'any';
+//
+//
+// const VALID_TYPES = [ACTION, MIRROR, STATE, COMPUTED, NONE];
+// const VALID_CHECK    = new Map();
+//
+// for(const type of VALID_TYPES){
+//     VALID_CHECK.set(type, true);
+// }
+//
+// function isValid(type){
+//     return VALID_CHECK.has(type);
+// }
+//
+// export {isValid, ANY, NONE, MIRROR, STATE, ACTION, COMPUTED, VALID_TYPES};
+//
 
 var SubscriberList = function () {
     function SubscriberList(topic, data) {
@@ -202,7 +213,7 @@ var SubscriberList = function () {
             var source = this.name;
             var currentPacket = new Packet(msg, topic, source);
 
-            if (this.data.type !== ACTION) // actions do not store data (ephemeral and immediate)
+            if (this.data.type !== DATA_TYPES.ACTION) // actions do not store data (ephemeral and immediate)
                 this._lastPacket = currentPacket;
 
             var subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
@@ -273,13 +284,13 @@ var Data = function () {
         classCallCheck(this, Data);
 
 
-        type = type || NONE;
+        type = type || DATA_TYPES.NONE;
 
         if (!isValid(type)) throw new Error('Invalid Data of type: ' + type);
 
         this._scope = scope;
         this._name = name;
-        this._type = type || NONE;
+        this._type = type;
         this._dead = false;
 
         this._noTopicSubscriberList = new SubscriberList(null, this);
@@ -424,7 +435,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
-            if (this.type === MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
+            if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
             if (topic) {
                 var list = this._demandSubscriberList(topic);
@@ -592,7 +603,7 @@ var Scope$1 = function () {
         value: function _createMirror(data) {
 
             var mirror = Object.create(data);
-            mirror._type = MIRROR;
+            mirror._type = DATA_TYPES.MIRROR;
             this._mirrors.set(data.name, mirror);
             return mirror;
         }
@@ -608,7 +619,7 @@ var Scope$1 = function () {
         key: 'data',
         value: function data(name) {
 
-            return this.grab(name) || this._createData(name, NONE);
+            return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
         }
     }, {
         key: 'action',
@@ -616,9 +627,9 @@ var Scope$1 = function () {
 
             var d = this.grab(name);
 
-            if (d) return d.verify(ACTION);
+            if (d) return d.verify(DATA_TYPES.ACTION);
 
-            return this._createData(name, ACTION);
+            return this._createData(name, DATA_TYPES.ACTION);
         }
     }, {
         key: 'state',
@@ -626,9 +637,9 @@ var Scope$1 = function () {
 
             var d = this.grab(name);
 
-            if (d) return d.verify(STATE);
+            if (d) return d.verify(DATA_TYPES.STATE);
 
-            var state = this._createData(name, STATE);
+            var state = this._createData(name, DATA_TYPES.STATE);
             this._createMirror(state);
             return state;
         }

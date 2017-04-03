@@ -1,6 +1,6 @@
 
 import Packet from './packet.js';
-import { ACTION } from './types';
+import { DATA_TYPES } from './dataTypes';
 
 class SubscriberList {
 
@@ -30,7 +30,7 @@ class SubscriberList {
         let source = this.name;
         let currentPacket = new Packet(msg, topic, source);
 
-        if(this.data.type !== ACTION) // actions do not store data (ephemeral and immediate)
+        if(this.data.type !== DATA_TYPES.ACTION) // actions do not store data (ephemeral and immediate)
             this._lastPacket = currentPacket;
 
         let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop

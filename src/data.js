@@ -1,20 +1,20 @@
 
 import SubscriberList from './subscriberList.js';
-import {isValid, NONE, MIRROR} from './types.js';
+import {isValid, DATA_TYPES} from './dataTypes.js';
 
 
 class Data {
 
     constructor(scope, name, type) {
 
-        type = type || NONE;
+        type = type || DATA_TYPES.NONE;
 
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
         this._scope      = scope;
         this._name       = name;
-        this._type       = type || NONE;
+        this._type       = type;
         this._dead       = false;
 
         this._noTopicSubscriberList = new SubscriberList(null, this);
@@ -22,8 +22,6 @@ class Data {
         this._subscriberListsByTopic = new Map();
 
     };
-
-
 
     get scope() { return this._scope; };
     get name() { return this._name; };
@@ -162,7 +160,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
-        if(this.type === MIRROR)
+        if(this.type === DATA_TYPES.MIRROR)
             throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
         if(topic) {

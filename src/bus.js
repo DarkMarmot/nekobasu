@@ -4,210 +4,202 @@ class Bus {
 
     constructor() {
 
-        this._frames = [];
+        const f = new Frame(this);
+        this._currentFrame = f;
+        this._frames = [f];
         this._dead = false;
-    }
-
-}
-
-
-var Bus = function(sourceStreams) {
-
-    this.frames = [];
-    this.scope = null; // placeholder for instance variables or context usage
-    var f = this._currentFrame = new Frame(this, sourceStreams);
-    this.frames.push(f);
-    this.dead = false;
-
-};
-
-Bus.prototype.holding = function(){
-    return this._currentFrame._holding;
-};
-
-Bus.prototype.addFrame = function(){
-
-    var lastFrame = this._currentFrame;
-    var nextFrame = this._currentFrame = new Frame(this);
-    this.frames.push(nextFrame);
-
-    this._wireFrames(lastFrame, nextFrame);
-
-    return nextFrame;
-};
-
-// create a new frame with one stream fed by all streams of the current frame
-
-Bus.prototype.mergeFrame = function(){
-
-    var mergedStream = new Stream();
-
-    var lastFrame = this._currentFrame;
-    var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-    this.frames.push(nextFrame);
-
-    var streams = lastFrame.streams;
-    var len = streams.length;
-
-    for(var i = 0; i < len; i++){
-
-        var s = streams[i];
-        s.flowsTo(mergedStream);
+        this._scope = null;
 
     }
 
-    return this;
+    get dead() {
+        return this._dead;
+    };
 
-};
-
-
-Bus.prototype.fork = function(){
-
-    var fork = new Bus();
-    this._wireFrames(this._currentFrame, fork._currentFrame);
-
-    return fork;
-};
+    get holding() {
+        return this._currentFrame._holding;
+    };
 
 
+    addFrame() {
 
-// send messages from streams in one frame to new empty streams in another frame
-// injects new streams to frame 2
-Bus.prototype._wireFrames = function(frame1, frame2){
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new Frame(this);
+        this._frames.push(nextFrame);
 
-    var streams1 = frame1.streams;
-    var len = streams1.length;
-    var streams2 = frame2.streams;
+        this._wireFrames(lastFrame, nextFrame);
 
-    for(var i = 0; i < len; i++){
-
-        var s1 = streams1[i];
-        var s2 = new Stream(frame2);
-        streams2.push(s2);
-        s1.flowsTo(s2);
-
-    }
-
-};
-
-Bus.prototype.add = function(bus){
-
-    var frame = this.addFrame(); // wire from current bus
-    bus._wireFrames(bus._currentFrame, frame); // wire from outside bus
-    return this;
-
-};
+        return nextFrame;
+    };
 
 
-Bus.prototype.defer = function(){
+    // create a new frame with one stream fed by all streams of the current frame
 
-    this.holding() ? this._currentFrame.delay(0) : this.addFrame().delay(0);
-    return this;
-};
+    mergeFrame() {
 
-Bus.prototype.batch = function(){
+        const mergedStream = new Stream();
 
-    this.holding() ? this._currentFrame.batch() : this.addFrame().batch();
-    return this;
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
+        this._frames.push(nextFrame);
 
-};
+        const streams = lastFrame.streams;
 
-Bus.prototype.group = function(){
+        for (const s of streams) {
+            s.flowsTo(mergedStream);
+        }
 
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().group();
-    return this;
+        return this;
 
-};
-
-Bus.prototype.hold = function(){
-
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().hold();
-    return this;
-
-};
-
-Bus.prototype.delay = function(num){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().delay(num);
-    return this;
-};
+    };
 
 
-Bus.prototype.all = function(){
-    this.holding() ?  this._currentFrame.all() : this.addFrame().all();
-    return this;
-};
+    fork() {
 
-Bus.prototype.first = function(n){
+        const fork = new Bus();
+        this._wireFrames(this._currentFrame, fork._currentFrame);
 
-    this.holding() ? this._currentFrame.first(n) : this.addFrame().first(n);
-    return this;
-};
+        return fork;
+    };
 
-Bus.prototype.last = function(n){
 
-    this.holding() ?  this._currentFrame.last(n) : this.addFrame().last(n);
-    return this;
-};
+    // send messages from streams in one frame to new empty streams in another frame
+    // injects new streams to frame 2
 
-Bus.prototype.run = function(func){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().run(func);
-    return this;
-};
+    _wireFrames(frame1, frame2) {
 
-Bus.prototype.merge = function(){
-    ASSERT_NOT_HOLDING(this);
-    this.mergeFrame();
-    return this;
-};
+        const streams1 = frame1.streams;
+        const streams2 = frame2.streams;
 
-Bus.prototype.transform = function(func){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().transform(func);
-    return this;
-};
+        for (const s1 of streams1) {
 
-Bus.prototype.name = function(func){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().name(func);
-    return this;
-};
+            const s2 = new Stream(frame2);
+            streams2.push(s2);
+            s1.flowsTo(s2);
 
-Bus.prototype.filter = function(func){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().filter(func);
-    return this;
-};
+        }
 
-Bus.prototype.skipDupes = function(){
-    ASSERT_NOT_HOLDING(this);
-    this.addFrame().filter(SKIP_DUPES_FILTER);
-    return this;
-};
+    };
+
+    add(bus) {
+
+        const frame = this.addFrame(); // wire from current bus
+        bus._wireFrames(bus._currentFrame, frame); // wire from outside bus
+        return this;
+
+    };
+
+
+    defer() {
+
+        this.holding ? this._currentFrame.delay(0) : this.addFrame().delay(0);
+        return this;
+    };
+
+    batch() {
+
+        this.holding ? this._currentFrame.batch() : this.addFrame().batch();
+        return this;
+
+    };
+
+    group() {
+
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().group();
+        return this;
+
+    };
+
+    hold() {
+
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().hold();
+        return this;
+
+    };
+
+    delay(num) {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().delay(num);
+        return this;
+    };
+
+
+    all() {
+        this.holding ? this._currentFrame.all() : this.addFrame().all();
+        return this;
+    };
+
+    first(n) {
+
+        this.holding ? this._currentFrame.first(n) : this.addFrame().first(n);
+        return this;
+    };
+
+    last(n) {
+
+        this.holding ? this._currentFrame.last(n) : this.addFrame().last(n);
+        return this;
+    };
+
+    run(func) {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().run(func);
+        return this;
+    };
+
+    merge() {
+        ASSERT_NOT_HOLDING(this);
+        this.mergeFrame();
+        return this;
+    };
+
+    transform(func) {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().transform(func);
+        return this;
+    };
+
+    name(func) {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().name(func);
+        return this;
+    };
+
+    filter(func) {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().filter(func);
+        return this;
+    };
+
+    skipDupes() {
+        ASSERT_NOT_HOLDING(this);
+        this.addFrame().filter(SKIP_DUPES_FILTER);
+        return this;
+    };
 
 
 //Bus.fromEvent();
 //Bus.fromTimer();
 // stagger, debounce, throttle,
 
-Bus.prototype.destroy = function(){
+    destroy() {
 
-    if(this.dead)
+        if (this.dead)
+            return this;
+
+        this._dead = true;
+
+        const frames = this._frames;
+
+        for (const f of frames) {
+            f.destroy();
+        }
+
         return this;
 
-    this.dead = true;
+    };
 
-    var frames = this.frames;
-    var len = frames.length;
 
-    for(var i = 0; i < len; i++){
-        var f = frames[i];
-        f.destroy();
-    }
-
-    return this;
-
-};
+}

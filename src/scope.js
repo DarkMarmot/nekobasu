@@ -1,6 +1,6 @@
 
 import Data from './data.js';
-import { NONE, ACTION, MIRROR, STATE, COMPUTED, ANY, isValid } from './types.js';
+import { DATA_TYPES, isValid } from './dataTypes.js';
 
 let idCounter = 0;
 
@@ -112,7 +112,7 @@ class Scope{
     _createMirror(data){
 
         const mirror = Object.create(data);
-        mirror._type = MIRROR;
+        mirror._type = DATA_TYPES.MIRROR;
         this._mirrors.set(data.name, mirror);
         return mirror;
 
@@ -129,7 +129,7 @@ class Scope{
 
     data(name){
 
-        return this.grab(name) || this._createData(name, NONE);
+        return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
 
     };
 
@@ -139,9 +139,9 @@ class Scope{
         const d = this.grab(name);
 
         if(d)
-            return d.verify(ACTION);
+            return d.verify(DATA_TYPES.ACTION);
 
-        return this._createData(name, ACTION);
+        return this._createData(name, DATA_TYPES.ACTION);
 
     };
 
@@ -151,9 +151,9 @@ class Scope{
         const d = this.grab(name);
 
         if(d)
-            return d.verify(STATE);
+            return d.verify(DATA_TYPES.STATE);
 
-        const state = this._createData(name, STATE);
+        const state = this._createData(name, DATA_TYPES.STATE);
         this._createMirror(state);
         return state;
 
