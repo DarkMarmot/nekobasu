@@ -164,32 +164,6 @@ function isValid(type) {
     return reverseLookup.hasOwnProperty(type);
 }
 
-
-
-//
-//
-// const ACTION   = 'action';
-// const MIRROR   = 'mirror';
-// const STATE    = 'state';
-// const COMPUTED = 'computed';
-// const NONE     = 'none';
-// const ANY      = 'any';
-//
-//
-// const VALID_TYPES = [ACTION, MIRROR, STATE, COMPUTED, NONE];
-// const VALID_CHECK    = new Map();
-//
-// for(const type of VALID_TYPES){
-//     VALID_CHECK.set(type, true);
-// }
-//
-// function isValid(type){
-//     return VALID_CHECK.has(type);
-// }
-//
-// export {isValid, ANY, NONE, MIRROR, STATE, ACTION, COMPUTED, VALID_TYPES};
-//
-
 var SubscriberList = function () {
     function SubscriberList(topic, data) {
         classCallCheck(this, SubscriberList);
@@ -498,7 +472,7 @@ var Data = function () {
 
 var idCounter = 0;
 
-var Scope$1 = function () {
+var Scope = function () {
     function Scope(name) {
         classCallCheck(this, Scope);
 
@@ -1130,12 +1104,788 @@ var Scope$1 = function () {
     return Scope;
 }();
 
+var Func = {
+
+    FUNCTOR: function FUNCTOR(val) {
+        return typeof val === 'function' ? val : function () {
+            return val;
+        };
+    },
+
+    NOOP: function NOOP() {},
+
+    ALWAYS_TRUE: function ALWAYS_TRUE() {
+        return true;
+    },
+
+    ALWAYS_FALSE: function ALWAYS_FALSE() {
+        return false;
+    },
+
+    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
+        if (args.length < 1) throw new Error('Method requires at least one argument.');
+    },
+
+    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
+        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
+    },
+
+    SKIP_DUPES_FILTER: function SKIP_DUPES_FILTER(msg, source, last) {
+        return msg !== (last && last.msg);
+    },
+
+    TO_SOURCE_FUNC: function TO_SOURCE_FUNC(msg, source) {
+        return source;
+    },
+
+    BATCH_TIMER: function BATCH_TIMER() {
+        Catbus$1.enqueue(this);
+    },
+
+    DEFER_TIMER: function DEFER_TIMER() {
+        setTimeout(this.fireContent, 0);
+    },
+
+    KEEP_LAST: function KEEP_LAST(buffer, msg, n) {
+
+        if (n === 0) {
+            if (buffer.length === 0) buffer.push(msg);else buffer[0] = msg;
+            return buffer;
+        }
+
+        buffer.push(msg);
+
+        if (buffer.length > n) buffer.shift();
+
+        return buffer;
+    },
+
+    KEEP_FIRST: function KEEP_FIRST(buffer, msg, n) {
+
+        if (buffer.length < n || buffer.length === 0) buffer.push(msg);
+
+        return buffer;
+    },
+
+    KEEP_ALL: function KEEP_ALL(buffer, msg) {
+
+        buffer.push(msg);
+        return buffer;
+    },
+
+    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
+        if (bus.holding) throw new Error('Method cannot be invoked while holding messages.');
+    }
+
+};
+
+var Stream = function () {
+    function Stream() {
+        classCallCheck(this, Stream);
+
+
+        this.debugFrame = null;
+        this.dead = false;
+        this.children = [];
+        this.lastPacket = null;
+        this.name = null;
+        this.messages = []; // [] with hold
+        this.messagesByKey = {}; // {} with group
+        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
+        this.processName = 'doPass'; // default to pass things along last thing unchanged
+        this.keepMethod = Func.KEEP_LAST; // default if holding or grouping
+        this.keepCount = 0; // non-zero creates an array
+        this.timerMethod = null; // throttle, debounce, defer, batch
+        this.groupMethod = null;
+        this.actionMethod = null; // run, transform, filter, name, delay
+        this.readyMethod = Func.ALWAYS_TRUE;
+        this.clearMethod = Func.ALWAYS_TRUE;
+        this.latched = false; // from this.clearMethod()
+        this.primed = false;
+    }
+
+    createClass(Stream, [{
+        key: 'tell',
+        value: function tell(msg, source) {
+
+            if (this.dead) // true if canceled or disposed midstream
+                return this;
+
+            var last = this.lastPacket;
+            source = this.name || source; // named streams always pass their own name forward
+
+            // tell method = doDelay, doGroup, doHold, , doFilter
+            var processMethod = this[this.processName];
+            processMethod.call(this, msg, source, last);
+
+            return this;
+        }
+    }, {
+        key: 'fireContent',
+        value: function fireContent() {
+
+            var msg = this.groupMethod ? this.resolveKeepByGroup() : this.resolveKeep(this.messages);
+
+            this.latched = this.clearMethod();
+            this.primed = false;
+
+            this.flowForward(msg);
+        }
+    }, {
+        key: 'resolveKeep',
+        value: function resolveKeep(messages) {
+
+            return this.keepCount === 0 ? messages[0] : messages;
+        }
+    }, {
+        key: 'resolveKeepByGroup',
+        value: function resolveKeepByGroup() {
+
+            var messagesByKey = this.messagesByKey;
+            for (var k in messagesByKey) {
+                messagesByKey[k] = this.resolveKeep(messagesByKey[k]);
+            }
+            return messagesByKey;
+        }
+    }, {
+        key: 'drop',
+        value: function drop(stream) {
+
+            var children = this.children;
+            var i = children.indexOf(stream);
+
+            if (i !== -1) children.splice(i, 1);
+        }
+    }, {
+        key: 'flowsTo',
+        value: function flowsTo(stream) {
+            this.children.push(stream);
+        }
+    }, {
+        key: 'flowForward',
+        value: function flowForward(msg, source, thisStream) {
+
+            thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
+            thisStream.lastPacket = new Packet(msg, null, source);
+
+            var children = thisStream.children;
+            var len = children.length;
+
+            for (var i = 0; i < len; i++) {
+                var c = children[i];
+                c.tell(msg, source);
+            }
+        }
+    }, {
+        key: 'doPass',
+        value: function doPass(msg, source) {
+
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doFilter',
+        value: function doFilter(msg, source) {
+
+            if (!this.actionMethod(msg, source, this.lastPacket)) return;
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doKeep',
+        value: function doKeep(msg, source) {
+
+            this.keepMethod(this.messages, msg, this.keepCount);
+            msg = this.resolveKeep(this.messages);
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doTransform',
+        value: function doTransform(msg, source, last) {
+
+            msg = this.actionMethod(msg, source, last);
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doDelay',
+        value: function doDelay(msg, source) {
+
+            // passes 'this' to avoid bind slowdown
+            setTimeout(this.flowForward, this.actionMethod() || 0, msg, source, this);
+        }
+    }, {
+        key: 'doName',
+        value: function doName(msg, source, last) {
+
+            source = this.actionMethod(msg, source, last);
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doRun',
+        value: function doRun(msg, source, last) {
+
+            this.actionMethod(msg, source, last);
+            this.flowForward(msg, source);
+        }
+    }, {
+        key: 'doGroup',
+        value: function doGroup(msg, source, last) {
+
+            var groupName = this.groupMethod(msg, source, last);
+            var messages = this.messagesByKey[groupName] || [];
+            this.messagesByKey[groupName] = this.keepMethod(messages, msg, this.keepCount);
+
+            if (!this.primed && (this.latched || this.readyMethod(this.messagesByKey, last))) {
+                if (this.timerMethod) {
+                    this.primed = true;
+                    this.timerMethod(); // should call back this.fireContent
+                } else {
+                    this.fireContent();
+                }
+            }
+        }
+    }, {
+        key: 'doHold',
+        value: function doHold(msg, source, last) {
+
+            this.keepMethod(this.messages, msg, this.keepCount);
+
+            if (!this.primed && (this.latched || this.readyMethod(this.messages, last))) {
+                if (this.timerMethod) {
+                    this.primed = true;
+                    this.timerMethod(); // should call back this.fireContent
+                } else {
+                    this.fireContent();
+                }
+            }
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            if (this.dead) return;
+
+            this.cleanupMethod(); // should remove an eventListener if present
+        }
+    }]);
+    return Stream;
+}();
+
+Stream.fromEvent = function (target, eventName, useCapture) {
+
+    useCapture = !!useCapture;
+
+    var stream = new Stream();
+    stream.name = eventName;
+
+    var on = target.addEventListener || target.addListener || target.on;
+    var off = target.removeEventListener || target.removeListener || target.off;
+
+    var streamForward = function streamForward(msg) {
+        stream.tell(msg, eventName);
+    };
+
+    stream.cleanupMethod = function () {
+        off.call(target, eventName, streamForward, useCapture);
+    };
+
+    on.call(target, eventName, streamForward, useCapture);
+
+    return stream;
+};
+
+var Frame = function () {
+    function Frame(bus, streams) {
+        classCallCheck(this, Frame);
+
+
+        this._bus = bus;
+        this._index = bus._frames.length;
+        this._holding = false; //begins group, keep, schedule frames
+        this._streams = streams || [];
+        this._eachStream('debugFrame', this);
+    }
+
+    createClass(Frame, [{
+        key: '_eachStream',
+        value: function _eachStream(prop, val) {
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+
+                var stream = streams[i];
+                stream[prop] = val;
+            }
+
+            return this;
+        }
+    }, {
+        key: 'run',
+        value: function run(func) {
+
+            Func.ASSERT_IS_FUNCTION(func);
+
+            this._eachStream('actionMethod', func);
+            this._eachStream('processName', 'doRun');
+
+            return this;
+        }
+    }, {
+        key: 'hold',
+        value: function hold() {
+
+            this._holding = true;
+            this._eachStream('processName', 'doHold');
+
+            return this;
+        }
+    }, {
+        key: 'transform',
+        value: function transform(method) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+
+            method = Func.FUNCTOR(method);
+
+            this._eachStream('processName', 'doTransform');
+            this._eachStream('actionMethod', method);
+
+            return this;
+        }
+    }, {
+        key: 'name',
+        value: function name(method) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+
+            method = Func.FUNCTOR(method);
+
+            this._eachStream('processName', 'doName');
+            this._eachStream('actionMethod', method);
+
+            return this;
+        }
+    }, {
+        key: 'delay',
+        value: function delay(funcOrNum) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+
+            var func = Func.FUNCTOR(funcOrNum);
+
+            this._eachStream('actionMethod', func);
+            this._eachStream('processName', 'doDelay');
+
+            return this;
+        }
+    }, {
+        key: 'filter',
+        value: function filter(func) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_IS_FUNCTION(func);
+
+            this._eachStream('actionMethod', func);
+            this._eachStream('processName', 'doFilter');
+
+            return this;
+        }
+    }, {
+        key: 'skipDupes',
+        value: function skipDupes() {
+
+            return this.filter(Func.SKIP_DUPES_FILTER);
+        }
+    }, {
+        key: 'group',
+        value: function group(func) {
+
+            this._holding = true;
+
+            func = arguments.length === 1 ? Func.FUNCTOR(func) : Func.TO_SOURCE_FUNC;
+
+            this._eachStream('processName', 'doGroup');
+            this._eachStream('groupMethod', func);
+
+            return this;
+        }
+    }, {
+        key: 'last',
+        value: function last(n) {
+
+            n = Number(n) || 0;
+
+            this._eachStream('keepMethod', Func.KEEP_LAST);
+            this._eachStream('keepCount', n);
+
+            if (!this._holding) this._eachStream('processName', 'doKeep');
+
+            return this;
+        }
+    }, {
+        key: 'first',
+        value: function first(n) {
+
+            n = Number(n) || 0;
+            this._eachStream('keepMethod', Func.KEEP_FIRST);
+            this._eachStream('keepCount', n);
+
+            if (!this._holding) this._eachStream('processName', 'doKeep');
+
+            return this;
+        }
+    }, {
+        key: 'all',
+        value: function all() {
+
+            this._eachStream('keepMethod', Func.KEEP_ALL);
+            this._eachStream('keepCount', -1);
+
+            if (!this._holding) this._eachStream('processName', 'doKeep');
+
+            return this;
+        }
+    }, {
+        key: 'batch',
+        value: function batch() {
+
+            this._holding = false; // holds end with timer
+            this._eachStream('timerMethod', Func.BATCH_TIMER);
+
+            return this;
+        }
+    }, {
+        key: 'ready',
+        value: function ready(func) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_IS_FUNCTION(func);
+
+            this._eachStream('readyMethod', func);
+            return this;
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            var streams = this._streams;
+            var len = streams.length;
+            for (var i = 0; i < len; i++) {
+                streams[i].cleanupMethod();
+            }
+            this._streams = null;
+        }
+    }, {
+        key: 'bus',
+        get: function get$$1() {
+            return this._bus;
+        }
+    }, {
+        key: 'index',
+        get: function get$$1() {
+            return this._index;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return this._holding;
+        }
+    }, {
+        key: 'streams',
+        get: function get$$1() {
+            return [].concat(this._streams);
+        }
+    }]);
+    return Frame;
+}();
+
+var Bus = function () {
+    function Bus(streams) {
+        classCallCheck(this, Bus);
+
+
+        this._frames = [];
+        this._dead = false;
+        this._scope = null;
+        var f = new Frame(this, streams);
+        this._frames.push(f);
+        this._currentFrame = f;
+    }
+
+    createClass(Bus, [{
+        key: 'addFrame',
+        value: function addFrame() {
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new Frame(this);
+            this._frames.push(nextFrame);
+
+            _wireFrames(lastFrame, nextFrame);
+
+            return nextFrame;
+        }
+    }, {
+        key: 'mergeFrame',
+
+
+        // create a new frame with one stream fed by all streams of the current frame
+
+        value: function mergeFrame() {
+
+            var mergedStream = new Stream();
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
+            this._frames.push(nextFrame);
+
+            var streams = lastFrame._streams;
+            var len = streams.length;
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.flowsTo(mergedStream);
+            }
+
+            return this;
+        }
+    }, {
+        key: 'fork',
+        value: function fork() {
+
+            var fork = new Bus();
+            _wireFrames(this._currentFrame, fork._currentFrame);
+
+            return fork;
+        }
+    }, {
+        key: 'add',
+        value: function add(bus) {
+
+            var frame = this.addFrame(); // wire from current bus
+            _wireFrames(bus._currentFrame, frame); // wire from outside bus
+            return this;
+        }
+    }, {
+        key: 'defer',
+        value: function defer() {
+
+            // todo change this from delay to timer throttle like thing?
+            this.holding ? this._currentFrame.delay(0) : this.addFrame().delay(0);
+            return this;
+        }
+    }, {
+        key: 'batch',
+        value: function batch() {
+
+            this.holding ? this._currentFrame.batch() : this.addFrame().batch();
+            return this;
+        }
+    }, {
+        key: 'group',
+        value: function group() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().group();
+            return this;
+        }
+    }, {
+        key: 'hold',
+        value: function hold() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().hold();
+            return this;
+        }
+    }, {
+        key: 'delay',
+        value: function delay(num) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().delay(num);
+            return this;
+        }
+    }, {
+        key: 'all',
+        value: function all() {
+            this.holding ? this._currentFrame.all() : this.addFrame().all();
+            return this;
+        }
+    }, {
+        key: 'first',
+        value: function first(n) {
+
+            this.holding ? this._currentFrame.first(n) : this.addFrame().first(n);
+            return this;
+        }
+    }, {
+        key: 'last',
+        value: function last(n) {
+
+            this.holding ? this._currentFrame.last(n) : this.addFrame().last(n);
+            return this;
+        }
+    }, {
+        key: 'run',
+        value: function run(func) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().run(func);
+            return this;
+        }
+    }, {
+        key: 'merge',
+        value: function merge() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.mergeFrame();
+            return this;
+        }
+    }, {
+        key: 'transform',
+        value: function transform(func) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().transform(func);
+            return this;
+        }
+    }, {
+        key: 'name',
+        value: function name(func) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().name(func);
+            return this;
+        }
+    }, {
+        key: 'filter',
+        value: function filter(func) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().filter(func);
+            return this;
+        }
+    }, {
+        key: 'skipDupes',
+        value: function skipDupes() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().filter(Func.SKIP_DUPES_FILTER);
+            return this;
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            if (this.dead) return this;
+
+            this._dead = true;
+
+            var frames = this._frames;
+
+            var _iteratorNormalCompletion = true;
+            var _didIteratorError = false;
+            var _iteratorError = undefined;
+
+            try {
+                for (var _iterator = frames[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                    var f = _step.value;
+
+                    f.destroy();
+                }
+            } catch (err) {
+                _didIteratorError = true;
+                _iteratorError = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion && _iterator.return) {
+                        _iterator.return();
+                    }
+                } finally {
+                    if (_didIteratorError) {
+                        throw _iteratorError;
+                    }
+                }
+            }
+
+            return this;
+        }
+    }, {
+        key: 'dead',
+        get: function get$$1() {
+            return this._dead;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return this._currentFrame._holding;
+        }
+    }]);
+    return Bus;
+}();
+
+// send messages from streams in one frame to new empty streams in another frame
+// injects new streams to frame 2
+
+function _wireFrames(frame1, frame2) {
+
+    var streams1 = frame1._streams;
+    var streams2 = frame2._streams;
+
+    var len = streams1.length;
+
+    for (var i = 0; i < len; i++) {
+
+        var s1 = streams1[i];
+        var s2 = new Stream(frame2);
+        streams2.push(s2);
+        s1.flowsTo(s2);
+    }
+}
+
+var Catbus$1 = {};
+var _batchQueue = [];
+
+Catbus$1.fromEvent = function (target, eventName, useCapture) {
+
+    var stream = Stream.fromEvent(target, eventName, useCapture);
+    return new Bus([stream]);
+};
+
+Catbus$1.enqueue = function (stream) {
+    _batchQueue.push(stream);
+};
+
+Catbus$1.scope = function (name) {
+    console.log('root is ', name);
+    return new Scope(name);
+};
+
+Catbus$1.flush = function () {
+
+    var cycles = 0;
+    var q = _batchQueue;
+    _batchQueue = [];
+
+    while (q.length) {
+
+        while (q.length) {
+            var stream = q.shift();
+            stream.fireContent();
+        }
+
+        q = _batchQueue;
+        _batchQueue = [];
+
+        cycles++;
+        if (cycles > 10) throw new Error('Flush batch cycling loop > 10.', q);
+    }
+};
+
 // export default () => {
 //     let s = new Scope('cow');
 //     return s;
 // }
 
-return Scope$1;
+return Catbus$1;
 
 })));
 //# sourceMappingURL=bundle.umd.js.map

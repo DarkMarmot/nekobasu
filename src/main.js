@@ -1,7 +1,7 @@
 
-import Scope from './scope.js';
+import Catbus from './catbus.js';
 
-export default Scope;
+export default Catbus;
 
 // export default () => {
 //     let s = new Scope('cow');

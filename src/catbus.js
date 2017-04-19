@@ -1,25 +1,33 @@
 
 import Scope from './scope.js';
+import Stream from './stream.js';
+import Bus from './bus.js';
 
-class Catbus {
-
-    constructor(name){
-
-        this._name = name;
-        this._batchQueue = [];
-        this._scope = new Scope(name);
-
-    }
-
-    get name() { return this._name; };
-    get scope() { return this._scope; };
+const Catbus = {};
+let _batchQueue = [];
 
 
-    flush(){
+Catbus.fromEvent = function(target, eventName, useCapture){
+
+    const stream = Stream.fromEvent(target, eventName, useCapture);
+    return new Bus([stream]);
+
+};
+
+Catbus.enqueue = function(stream){
+    _batchQueue.push(stream);
+};
+
+Catbus.scope = function(name){
+    console.log('root is ', name);
+    return new Scope(name);
+};
+
+Catbus.flush = function(){
 
         let cycles = 0;
-        let q = this._batchQueue;
-        this._batchQueue = [];
+        let q = _batchQueue;
+        _batchQueue = [];
 
         while(q.length) {
 
@@ -28,8 +36,8 @@ class Catbus {
                 stream.fireContent();
             }
 
-            q = this._batchQueue;
-            this._batchQueue = [];
+            q = _batchQueue;
+            _batchQueue = [];
 
             cycles++;
             if(cycles > 10)
@@ -37,8 +45,8 @@ class Catbus {
 
         }
 
-    };
+};
 
-}
+
 
 export default Catbus;
