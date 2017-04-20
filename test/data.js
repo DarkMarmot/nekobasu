@@ -121,6 +121,20 @@ describe('RootScope', function(){
 
     });
 
+    it('can follow existing data via watchers', function(){
+
+        const d = world.data('pond');
+        d.write('kitten');
+        d.write('bunny');
+        d.follow(new Watcher('cow'));
+        d.write('turtle');
+
+        assert.equal(msgLog[1], 'turtle');
+        assert.equal(contextLog[0].name, 'cow');
+
+
+    });
+
     it('can unsubscribe to data', function(){
 
         console.log('dropped', msgLog);

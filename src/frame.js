@@ -31,14 +31,29 @@ class Frame {
 
     _eachStream(prop, val){
 
+        const streams = this._streams;
+        const len = streams.length;
+
+        for(let i = 0; i < len; i++){
+
+            const stream = streams[i];
+            stream[prop] = val;
+
+        }
+
+        return this;
+
+    };
+
+    _eachStreamCall(method, val){
 
         const streams = this._streams;
         const len = streams.length;
 
         for(let i = 0; i < len; i++){
 
-            let stream = streams[i];
-            stream[prop] = val;
+            const stream = streams[i];
+            stream[method].call(stream, val);
 
         }
 
@@ -48,10 +63,8 @@ class Frame {
     
     run(func){
 
-        F.ASSERT_IS_FUNCTION(func);
-
         this._eachStream('actionMethod', func);
-        this._eachStream('processName', 'doRun');
+        this._eachStreamCall('process', 'doRun');
 
         return this;
 
@@ -60,47 +73,43 @@ class Frame {
     hold(){
 
         this._holding = true;
-        this._eachStream('processName', 'doHold');
+        this._eachStreamCall('process', 'doHold');
 
         return this;
 
     };
 
-    transform(method){
+    transform(fAny){
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        fAny = F.FUNCTOR(fAny);
 
-        method = F.FUNCTOR(method);
-
-        this._eachStream('processName', 'doTransform');
-        this._eachStream('actionMethod', method);
+        this._eachStreamCall('process', 'doTransform');
+        this._eachStream('actionMethod', fAny);
 
         return this;
 
     };
 
-    name(method){
+    name(fStr){
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        fStr = F.FUNCTOR(fStr);
 
-        method = F.FUNCTOR(method);
-
-        this._eachStream('processName', 'doName');
-        this._eachStream('actionMethod', method);
+        this._eachStreamCall('process', 'doName');
+        this._eachStream('actionMethod', fStr);
 
         return this;
 
     };
 
 
-    delay(funcOrNum){
+    delay(fNum){
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
 
-        const func = F.FUNCTOR(funcOrNum);
+        fNum = F.FUNCTOR(fNum);
 
-        this._eachStream('actionMethod', func);
-        this._eachStream('processName', 'doDelay');
+        this._eachStream('actionMethod', fNum);
+        this._eachStreamCall('process', 'doDelay');
 
         return this;
 
@@ -109,11 +118,9 @@ class Frame {
 
     filter(func){
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_IS_FUNCTION(func);
 
         this._eachStream('actionMethod', func);
-        this._eachStream('processName', 'doFilter');
+        this._eachStreamCall('process', 'doFilter');
 
         return this;
     };
@@ -130,7 +137,7 @@ class Frame {
 
         func = arguments.length === 1 ? F.FUNCTOR(func) : F.TO_SOURCE_FUNC;
 
-        this._eachStream('processName', 'doGroup');
+        this._eachStreamCall('process', 'doGroup');
         this._eachStream('groupMethod', func);
 
         return this;
@@ -146,7 +153,7 @@ class Frame {
         this._eachStream('keepCount', n);
 
         if(!this._holding)
-            this._eachStream('processName', 'doKeep');
+            this._eachStreamCall('process', 'doKeep');
 
         return this;
 
@@ -159,7 +166,7 @@ class Frame {
         this._eachStream('keepCount', n);
 
         if(!this._holding)
-            this._eachStream('processName', 'doKeep');
+            this._eachStreamCall('process', 'doKeep');
 
         return this;
 
@@ -172,7 +179,7 @@ class Frame {
         this._eachStream('keepCount', -1);
 
         if(!this._holding)
-            this._eachStream('processName', 'doKeep');
+            this._eachStreamCall('process', 'doKeep');
 
         return this;
 

@@ -75,10 +75,32 @@ const Func = {
 
     },
 
+    UNTIL_FULL: function(messages, n){
+
+        return messages.length >= n;
+
+    },
+
+    UNTIL_KEYS: function(messagesByKey, keys){
+
+        const len = keys.length;
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            if(!messagesByKey.hasOwnProperty(k))
+                return false;
+        }
+        return true;
+
+    },
 
     ASSERT_NOT_HOLDING: function(bus){
         if(bus.holding)
-            throw new Error('Method cannot be invoked while holding messages.');
+            throw new Error('Method cannot be invoked while holding messages in the frame.');
+    },
+
+    ASSERT_IS_HOLDING: function(bus){
+        if(!bus.holding)
+            throw new Error('Method cannot be invoked unless holding messages in the frame.');
     }
 
 };

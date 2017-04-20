@@ -15,16 +15,22 @@ class Stream {
         this.messagesByKey = {}; // {} with group
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
         this.processName = 'doPass'; // default to pass things along last thing unchanged
+        this.processMethod = this.doPass;
         this.keepMethod = F.KEEP_LAST; // default if holding or grouping
         this.keepCount = 0; // non-zero creates an array
         this.timerMethod = null; // throttle, debounce, defer, batch
         this.groupMethod = null;
         this.actionMethod = null; // run, transform, filter, name, delay
+        this.neededKeys = []; // todo generate this in readymethod closure
         this.readyMethod = F.ALWAYS_TRUE;
-        this.clearMethod = F.ALWAYS_TRUE;
+        this.clearMethod = F.ALWAYS_FALSE;
         this.latched = false; // from this.clearMethod()
         this.primed = false;
 
+    };
+
+    process(name) {
+        this.processMethod = this[name];
     };
 
     tell(msg, source) {
@@ -36,8 +42,7 @@ class Stream {
         source = this.name || source; // named streams always pass their own name forward
 
         // tell method = doDelay, doGroup, doHold, , doFilter
-        const processMethod = this[this.processName];
-        processMethod.call(this, msg, source, last);
+        this.processMethod.call(this, msg, source, last);
 
         return this;
 
@@ -47,7 +52,12 @@ class Stream {
 
         const msg = this.groupMethod ? this.resolveKeepByGroup() : this.resolveKeep(this.messages);
 
-        this.latched = this.clearMethod();
+        if(this.clearMethod()){
+            this.latched = false;
+            this.messagesByKey = {};
+            this.messages = [];
+        }
+
         this.primed = false;
 
         this.flowForward(msg);
@@ -130,6 +140,7 @@ class Stream {
 
     doDelay(msg, source) {
 
+        // todo add destroy -> kills timeout
         // passes 'this' to avoid bind slowdown
         setTimeout(this.flowForward, this.actionMethod() || 0, msg, source, this);
 
@@ -157,7 +168,7 @@ class Stream {
         const messages = this.messagesByKey[groupName] || [];
         this.messagesByKey[groupName]  = this.keepMethod(messages, msg, this.keepCount);
 
-        if(!this.primed && (this.latched || this.readyMethod(this.messagesByKey, last))) {
+        if(!this.primed && (this.latched = this.latched || this.readyMethod(this.messagesByKey))) {
             if(this.timerMethod) {
                 this.primed = true;
                 this.timerMethod(); // should call back this.fireContent
@@ -174,7 +185,7 @@ class Stream {
 
         this.keepMethod(this.messages, msg, this.keepCount);
 
-        if(!this.primed && (this.latched || this.readyMethod(this.messages, last))) {
+        if(!this.primed && (this.latched = this.latched || this.readyMethod(this.messages))) {
             if(this.timerMethod) {
                 this.primed = true;
                 this.timerMethod(); // should call back this.fireContent
@@ -195,10 +206,28 @@ class Stream {
 
     };
 
-
-
-
 }
+
+
+
+Stream.fromData = function(data, topic, name){
+
+    const stream = new Stream();
+    const streamName = name || topic || data.name;
+
+    const toStream = function(msg){
+        stream.tell(msg, streamName);
+    };
+
+    stream.cleanupMethod = function(){
+        data.unsubscribe(toStream, topic);
+    };
+
+    data.follow(toStream, topic);
+
+    return stream;
+
+};
 
 
 Stream.fromEvent = function(target, eventName, useCapture){
@@ -206,20 +235,19 @@ Stream.fromEvent = function(target, eventName, useCapture){
     useCapture = !!useCapture;
 
     const stream = new Stream();
-    stream.name = eventName;
 
     const on = target.addEventListener || target.addListener || target.on;
     const off = target.removeEventListener || target.removeListener || target.off;
 
-    const streamForward = function(msg){
+    const toStream = function(msg){
         stream.tell(msg, eventName);
     };
 
     stream.cleanupMethod = function(){
-        off.call(target, eventName, streamForward, useCapture);
+        off.call(target, eventName, toStream, useCapture);
     };
 
-    on.call(target, eventName, streamForward, useCapture);
+    on.call(target, eventName, toStream, useCapture);
 
     return stream;
 

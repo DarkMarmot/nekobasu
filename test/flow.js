@@ -38,7 +38,7 @@ var reset = function(){
 var teardown = function(){
     //console.log('teardown!');
     clock.restore();
-}
+};
 
 
 reset();

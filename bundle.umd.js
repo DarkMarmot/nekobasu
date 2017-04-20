@@ -1173,8 +1173,27 @@ var Func = {
         return buffer;
     },
 
+    UNTIL_FULL: function UNTIL_FULL(messages, n) {
+
+        return messages.length >= n;
+    },
+
+    UNTIL_KEYS: function UNTIL_KEYS(messagesByKey, keys) {
+
+        var len = keys.length;
+        for (var i = 0; i < len; i++) {
+            var k = keys[i];
+            if (!messagesByKey.hasOwnProperty(k)) return false;
+        }
+        return true;
+    },
+
     ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
-        if (bus.holding) throw new Error('Method cannot be invoked while holding messages.');
+        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
+    },
+
+    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
+        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
     }
 
 };
@@ -1193,18 +1212,25 @@ var Stream = function () {
         this.messagesByKey = {}; // {} with group
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
         this.processName = 'doPass'; // default to pass things along last thing unchanged
+        this.processMethod = this.doPass;
         this.keepMethod = Func.KEEP_LAST; // default if holding or grouping
         this.keepCount = 0; // non-zero creates an array
         this.timerMethod = null; // throttle, debounce, defer, batch
         this.groupMethod = null;
         this.actionMethod = null; // run, transform, filter, name, delay
+        this.neededKeys = []; // todo generate this in readymethod closure
         this.readyMethod = Func.ALWAYS_TRUE;
-        this.clearMethod = Func.ALWAYS_TRUE;
+        this.clearMethod = Func.ALWAYS_FALSE;
         this.latched = false; // from this.clearMethod()
         this.primed = false;
     }
 
     createClass(Stream, [{
+        key: 'process',
+        value: function process(name) {
+            this.processMethod = this[name];
+        }
+    }, {
         key: 'tell',
         value: function tell(msg, source) {
 
@@ -1215,8 +1241,7 @@ var Stream = function () {
             source = this.name || source; // named streams always pass their own name forward
 
             // tell method = doDelay, doGroup, doHold, , doFilter
-            var processMethod = this[this.processName];
-            processMethod.call(this, msg, source, last);
+            this.processMethod.call(this, msg, source, last);
 
             return this;
         }
@@ -1226,7 +1251,12 @@ var Stream = function () {
 
             var msg = this.groupMethod ? this.resolveKeepByGroup() : this.resolveKeep(this.messages);
 
-            this.latched = this.clearMethod();
+            if (this.clearMethod()) {
+                this.latched = false;
+                this.messagesByKey = {};
+                this.messages = [];
+            }
+
             this.primed = false;
 
             this.flowForward(msg);
@@ -1308,6 +1338,7 @@ var Stream = function () {
         key: 'doDelay',
         value: function doDelay(msg, source) {
 
+            // todo add destroy -> kills timeout
             // passes 'this' to avoid bind slowdown
             setTimeout(this.flowForward, this.actionMethod() || 0, msg, source, this);
         }
@@ -1333,7 +1364,7 @@ var Stream = function () {
             var messages = this.messagesByKey[groupName] || [];
             this.messagesByKey[groupName] = this.keepMethod(messages, msg, this.keepCount);
 
-            if (!this.primed && (this.latched || this.readyMethod(this.messagesByKey, last))) {
+            if (!this.primed && (this.latched = this.latched || this.readyMethod(this.messagesByKey))) {
                 if (this.timerMethod) {
                     this.primed = true;
                     this.timerMethod(); // should call back this.fireContent
@@ -1348,7 +1379,7 @@ var Stream = function () {
 
             this.keepMethod(this.messages, msg, this.keepCount);
 
-            if (!this.primed && (this.latched || this.readyMethod(this.messages, last))) {
+            if (!this.primed && (this.latched = this.latched || this.readyMethod(this.messages))) {
                 if (this.timerMethod) {
                     this.primed = true;
                     this.timerMethod(); // should call back this.fireContent
@@ -1369,25 +1400,42 @@ var Stream = function () {
     return Stream;
 }();
 
+Stream.fromData = function (data, topic, name) {
+
+    var stream = new Stream();
+    var streamName = name || topic || data.name;
+
+    var toStream = function toStream(msg) {
+        stream.tell(msg, streamName);
+    };
+
+    stream.cleanupMethod = function () {
+        data.unsubscribe(toStream, topic);
+    };
+
+    data.follow(toStream, topic);
+
+    return stream;
+};
+
 Stream.fromEvent = function (target, eventName, useCapture) {
 
     useCapture = !!useCapture;
 
     var stream = new Stream();
-    stream.name = eventName;
 
     var on = target.addEventListener || target.addListener || target.on;
     var off = target.removeEventListener || target.removeListener || target.off;
 
-    var streamForward = function streamForward(msg) {
+    var toStream = function toStream(msg) {
         stream.tell(msg, eventName);
     };
 
     stream.cleanupMethod = function () {
-        off.call(target, eventName, streamForward, useCapture);
+        off.call(target, eventName, toStream, useCapture);
     };
 
-    on.call(target, eventName, streamForward, useCapture);
+    on.call(target, eventName, toStream, useCapture);
 
     return stream;
 };
@@ -1420,13 +1468,26 @@ var Frame = function () {
             return this;
         }
     }, {
+        key: '_eachStreamCall',
+        value: function _eachStreamCall(method, val) {
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+
+                var stream = streams[i];
+                stream[method].call(stream, val);
+            }
+
+            return this;
+        }
+    }, {
         key: 'run',
         value: function run(func) {
 
-            Func.ASSERT_IS_FUNCTION(func);
-
             this._eachStream('actionMethod', func);
-            this._eachStream('processName', 'doRun');
+            this._eachStreamCall('process', 'doRun');
 
             return this;
         }
@@ -1435,46 +1496,42 @@ var Frame = function () {
         value: function hold() {
 
             this._holding = true;
-            this._eachStream('processName', 'doHold');
+            this._eachStreamCall('process', 'doHold');
 
             return this;
         }
     }, {
         key: 'transform',
-        value: function transform(method) {
+        value: function transform(fAny) {
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            fAny = Func.FUNCTOR(fAny);
 
-            method = Func.FUNCTOR(method);
-
-            this._eachStream('processName', 'doTransform');
-            this._eachStream('actionMethod', method);
+            this._eachStreamCall('process', 'doTransform');
+            this._eachStream('actionMethod', fAny);
 
             return this;
         }
     }, {
         key: 'name',
-        value: function name(method) {
+        value: function name(fStr) {
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            fStr = Func.FUNCTOR(fStr);
 
-            method = Func.FUNCTOR(method);
-
-            this._eachStream('processName', 'doName');
-            this._eachStream('actionMethod', method);
+            this._eachStreamCall('process', 'doName');
+            this._eachStream('actionMethod', fStr);
 
             return this;
         }
     }, {
         key: 'delay',
-        value: function delay(funcOrNum) {
+        value: function delay(fNum) {
 
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
 
-            var func = Func.FUNCTOR(funcOrNum);
+            fNum = Func.FUNCTOR(fNum);
 
-            this._eachStream('actionMethod', func);
-            this._eachStream('processName', 'doDelay');
+            this._eachStream('actionMethod', fNum);
+            this._eachStreamCall('process', 'doDelay');
 
             return this;
         }
@@ -1482,11 +1539,8 @@ var Frame = function () {
         key: 'filter',
         value: function filter(func) {
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_IS_FUNCTION(func);
-
             this._eachStream('actionMethod', func);
-            this._eachStream('processName', 'doFilter');
+            this._eachStreamCall('process', 'doFilter');
 
             return this;
         }
@@ -1504,7 +1558,7 @@ var Frame = function () {
 
             func = arguments.length === 1 ? Func.FUNCTOR(func) : Func.TO_SOURCE_FUNC;
 
-            this._eachStream('processName', 'doGroup');
+            this._eachStreamCall('process', 'doGroup');
             this._eachStream('groupMethod', func);
 
             return this;
@@ -1518,7 +1572,7 @@ var Frame = function () {
             this._eachStream('keepMethod', Func.KEEP_LAST);
             this._eachStream('keepCount', n);
 
-            if (!this._holding) this._eachStream('processName', 'doKeep');
+            if (!this._holding) this._eachStreamCall('process', 'doKeep');
 
             return this;
         }
@@ -1530,7 +1584,7 @@ var Frame = function () {
             this._eachStream('keepMethod', Func.KEEP_FIRST);
             this._eachStream('keepCount', n);
 
-            if (!this._holding) this._eachStream('processName', 'doKeep');
+            if (!this._holding) this._eachStreamCall('process', 'doKeep');
 
             return this;
         }
@@ -1541,7 +1595,7 @@ var Frame = function () {
             this._eachStream('keepMethod', Func.KEEP_ALL);
             this._eachStream('keepCount', -1);
 
-            if (!this._holding) this._eachStream('processName', 'doKeep');
+            if (!this._holding) this._eachStreamCall('process', 'doKeep');
 
             return this;
         }
@@ -1668,8 +1722,7 @@ var Bus = function () {
         key: 'defer',
         value: function defer() {
 
-            // todo change this from delay to timer throttle like thing?
-            this.holding ? this._currentFrame.delay(0) : this.addFrame().delay(0);
+            this.holding ? this._currentFrame.defer() : this.addFrame().defer();
             return this;
         }
     }, {
@@ -1704,6 +1757,30 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'untilKeys',
+        value: function untilKeys(keys) {
+
+            Func.ASSERT_IS_HOLDING(this);
+            this._currentFrame.untilKeys(keys);
+            return this;
+        }
+    }, {
+        key: 'untilFull',
+        value: function untilFull() {
+
+            Func.ASSERT_IS_HOLDING(this);
+            this._currentFrame.untilFull();
+            return this;
+        }
+    }, {
+        key: 'willReset',
+        value: function willReset() {
+
+            Func.ASSERT_IS_HOLDING(this);
+            this._currentFrame.willReset();
+            return this;
+        }
+    }, {
         key: 'all',
         value: function all() {
             this.holding ? this._currentFrame.all() : this.addFrame().all();
@@ -1727,6 +1804,7 @@ var Bus = function () {
         key: 'run',
         value: function run(func) {
 
+            Func.ASSERT_IS_FUNCTION(func);
             Func.ASSERT_NOT_HOLDING(this);
             this.addFrame().run(func);
             return this;
@@ -1741,25 +1819,31 @@ var Bus = function () {
         }
     }, {
         key: 'transform',
-        value: function transform(func) {
+        value: function transform(fAny) {
 
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().transform(func);
+            this.addFrame().transform(fAny);
             return this;
         }
     }, {
         key: 'name',
-        value: function name(func) {
+        value: function name(fStr) {
 
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().name(func);
+
+            this.addFrame().name(fStr);
             return this;
         }
     }, {
         key: 'filter',
         value: function filter(func) {
 
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_IS_FUNCTION(func);
             Func.ASSERT_NOT_HOLDING(this);
+
             this.addFrame().filter(func);
             return this;
         }
@@ -1770,6 +1854,11 @@ var Bus = function () {
             Func.ASSERT_NOT_HOLDING(this);
             this.addFrame().filter(Func.SKIP_DUPES_FILTER);
             return this;
+        }
+    }, {
+        key: 'toStream',
+        value: function toStream() {
+            // merge, fork -> immutable stream?
         }
     }, {
         key: 'destroy',

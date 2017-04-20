@@ -1,21 +1,11 @@
 
-import Data from './data.js';
-import { DATA_TYPES, isValid } from './dataTypes.js';
+import Bus from 'bus.js';
 
-let idCounter = 0;
+class Sensor{
 
-class Scope{
+    constructor(scope) {
 
-    constructor(name) {
 
-        this._id = ++idCounter;
-        this._name = name;
-        this._parent = null;
-        this._children = [];
-        this._dataList = new Map();
-        this._valves = new Map();
-        this._mirrors = new Map();
-        this._dead = false;
 
     };
 

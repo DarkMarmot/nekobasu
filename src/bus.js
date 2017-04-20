@@ -1,3 +1,4 @@
+
 import Frame from './frame.js';
 import F from './flib.js';
 import Stream from './stream.js';
@@ -76,8 +77,7 @@ class Bus {
 
     defer() {
 
-        // todo change this from delay to timer throttle like thing?
-        this.holding ? this._currentFrame.delay(0) : this.addFrame().delay(0);
+        this.holding ? this._currentFrame.defer() : this.addFrame().defer();
         return this;
 
     };
@@ -110,7 +110,32 @@ class Bus {
         F.ASSERT_NOT_HOLDING(this);
         this.addFrame().delay(num);
         return this;
+
     };
+
+    untilKeys(keys){
+
+        F.ASSERT_IS_HOLDING(this);
+        this._currentFrame.untilKeys(keys);
+        return this;
+
+    };
+
+    untilFull(){
+
+        F.ASSERT_IS_HOLDING(this);
+        this._currentFrame.untilFull();
+        return this;
+
+    }
+
+    willReset(){
+
+        F.ASSERT_IS_HOLDING(this);
+        this._currentFrame.willReset();
+        return this;
+
+    }
 
     all() {
         this.holding ? this._currentFrame.all() : this.addFrame().all();
@@ -121,6 +146,7 @@ class Bus {
 
         this.holding ? this._currentFrame.first(n) : this.addFrame().first(n);
         return this;
+
     };
 
     last(n) {
@@ -131,9 +157,11 @@ class Bus {
 
     run(func) {
 
+        F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
         this.addFrame().run(func);
         return this;
+
     };
 
     merge() {
@@ -143,27 +171,34 @@ class Bus {
         return this;
     };
 
-    transform(func) {
+    transform(fAny) {
 
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().transform(func);
+        this.addFrame().transform(fAny);
         return this;
 
     };
 
-    name(func) {
+    name(fStr) {
 
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().name(func);
+
+        this.addFrame().name(fStr);
         return this;
 
     };
 
     filter(func) {
 
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
+
         this.addFrame().filter(func);
         return this;
+
     };
 
     skipDupes() {
@@ -172,6 +207,10 @@ class Bus {
         this.addFrame().filter(F.SKIP_DUPES_FILTER);
         return this;
 
+    };
+
+    toStream() {
+        // merge, fork -> immutable stream?
     };
 
     destroy() {
