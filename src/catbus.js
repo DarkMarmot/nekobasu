@@ -15,8 +15,8 @@ Catbus.fromEvent = function(target, eventName, useCapture){
 };
 
 
-Catbus.enqueue = function(stream){
-    _batchQueue.push(stream);
+Catbus.enqueue = function(pool){
+    _batchQueue.push(pool);
 };
 
 Catbus.scope = function(name){
@@ -33,8 +33,8 @@ Catbus.flush = function(){
         while(q.length) {
 
             while (q.length) {
-                const stream = q.shift();
-                stream.fireContent();
+                const pool = q.shift();
+                pool.release();
             }
 
             q = _batchQueue;

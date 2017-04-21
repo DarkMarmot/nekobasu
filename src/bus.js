@@ -92,7 +92,7 @@ class Bus {
 
     batch() {
 
-        this.holding ? this._currentFrame.batch() : this.addFrame().batch();
+        this.holding ? this._currentFrame.batch() : this.addFrame().hold().last().batch();
         return this;
 
     };
@@ -137,30 +137,41 @@ class Bus {
 
     }
 
-    willReset(){
+    willReset(func){
 
         F.ASSERT_IS_HOLDING(this);
-        this._currentFrame.willReset();
+        this._currentFrame.willReset(func);
         return this;
 
     }
 
     all() {
-        this.holding ? this._currentFrame.all() : this.addFrame().all();
+        const f = F.getKeepAll;
+        this.holding ? this._currentFrame.reduce(f) : this.addFrame().hold().reduce(f).sync();
         return this;
     };
 
     first(n) {
 
-        this.holding ? this._currentFrame.first(n) : this.addFrame().first(n);
+        const f = F.getKeepFirst;
+        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
         return this;
 
     };
 
     last(n) {
 
-        this.holding ? this._currentFrame.last(n) : this.addFrame().last(n);
+        const f = F.getKeepLast;
+        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
         return this;
+
+    };
+
+    reduce(factory, ...args) {
+
+        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
+        return this;
+
     };
 
     run(func) {

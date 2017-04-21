@@ -77,6 +77,40 @@ class Frame {
         return this;
 
     };
+
+    _eachPool(prop, val){
+
+        const streams = this._streams;
+        const len = streams.length;
+
+        for(let i = 0; i < len; i++){
+
+            const stream = streams[i];
+            const pool = stream.pool;
+            pool[prop] = val;
+
+        }
+
+        return this;
+
+    };
+
+    _eachPoolCall(method, val){
+
+        const streams = this._streams;
+        const len = streams.length;
+
+        for(let i = 0; i < len; i++){
+
+            const stream = streams[i];
+            const pool = stream.pool;
+            pool[method].call(pool, val);
+
+        }
+
+        return this;
+
+    };
     
     run(func){
 
@@ -90,7 +124,8 @@ class Frame {
     hold(){
 
         this._holding = true;
-        this._eachStreamCall('process', 'doHold');
+        this._eachStreamCall('createPool');
+        this._eachStreamCall('process', 'doPool');
 
         return this;
 
@@ -135,7 +170,6 @@ class Frame {
 
     filter(func){
 
-
         this._eachStream('actionMethod', func);
         this._eachStreamCall('process', 'doFilter');
 
@@ -144,89 +178,36 @@ class Frame {
 
     skipDupes() {
 
-
-        // const f = function() {
-        //
-        //     let hadMsg = false;
-        //     let lastMsg;
-        //
-        //     return function (msg) {
-        //
-        //         const diff = !hadMsg || msg !== lastMsg;
-        //         lastMsg = msg;
-        //         hadMsg = true;
-        //         return diff;
-        //     }
-        //
-        // };
-
         this._eachStreamGen('actionMethod', F.getSkipDupes);
         this._eachStreamCall('process', 'doFilter');
 
     };
 
-    group(func){
 
-        this._holding = true;
+    // factory should define content and reset methods have signature f(msg, source) return f.content()
+    reduce(factory, ...args){
 
-        func = arguments.length === 1 ? F.FUNCTOR(func) : F.TO_SOURCE_FUNC;
-
-        this._eachStreamCall('process', 'doGroup');
-        this._eachStream('groupMethod', func);
-
+        this._eachPool('keep', factory(...args));
         return this;
 
     };
 
-
-    last(n){
-
-        n = Number(n) || 0;
-
-        this._eachStream('keepMethod', F.KEEP_LAST);
-        this._eachStream('keepCount', n);
-
-        if(!this._holding)
-            this._eachStreamCall('process', 'doKeep');
-
-        return this;
-
-    };
-
-    first(n){
-
-        n = Number(n) || 0;
-        this._eachStream('keepMethod', F.KEEP_FIRST);
-        this._eachStream('keepCount', n);
-
-        if(!this._holding)
-            this._eachStreamCall('process', 'doKeep');
-
-        return this;
-
-    };
-
-
-    all(){
-
-        this._eachStream('keepMethod', F.KEEP_ALL);
-        this._eachStream('keepCount', -1);
-
-        if(!this._holding)
-            this._eachStreamCall('process', 'doKeep');
-
-        return this;
-
-    };
 
     batch(){
 
         this._holding = false; // holds end with timer
-        this._eachStream('timerMethod', F.BATCH_TIMER);
+        this._eachPoolCall('batch');
 
         return this;
 
     };
+
+    sync(){
+
+        this._holding = false;
+        this._eachPoolCall('sync');
+
+    }
 
     ready(func){
 

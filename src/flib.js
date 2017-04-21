@@ -39,55 +39,40 @@ const Func = {
         return source;
     },
 
-    BATCH_TIMER: function(){
-        Catbus.enqueue(this);
-    },
-
-    DEFER_TIMER: function(){
-        setTimeout(this.fireContent, 0);
-    },
-
-    KEEP_LAST: function(buffer, msg, n){
-
-        if(n === 0){
-            if(buffer.length === 0)
-                buffer.push(msg);
-            else
-                buffer[0] = msg;
-            return buffer;
+    BATCH_TIMER: function(pool){
+        return function() {
+            Catbus.enqueue(pool);
         }
-
-        buffer.push(msg);
-
-        if(buffer.length > n)
-            buffer.shift();
-
-        return buffer;
-
     },
 
-    KEEP_FIRST: function(buffer, msg, n){
-
-        if(buffer.length < n || buffer.length === 0)
-            buffer.push(msg);
-
-        return buffer;
-
+    DEFER_TIMER: function(pool){
+        return function() {
+            setTimeout(pool.release, 0, pool);
+        }
     },
 
-    KEEP_ALL: function(buffer, msg){
-
-        buffer.push(msg);
-        return buffer;
-
-    },
+    // getGroupLast: function
 
     getKeepLast: function(n){
 
-        if(arguments.length === 0) {
-            return function (msg, source) {
-                return msg;
+        if(!n || n < 0) {
+
+            let last;
+
+            const f = function(msg, source){
+                return last = msg;
             };
+
+            f.reset = function(){
+                last = undefined;
+            };
+
+            f.content = function(){
+                return last;
+            };
+
+            return f;
+
         }
 
         const buffer = [];
@@ -105,13 +90,19 @@ const Func = {
             }
         };
 
+        f.content = function(){
+            return buffer;
+        };
+
         return f;
 
     },
 
+
+
     getKeepFirst: function(n){
 
-        if(arguments.length === 0) {
+        if(!n || n < 0) {
 
             let firstMsg;
             let hasFirst = false;
@@ -121,6 +112,10 @@ const Func = {
 
             f.reset = function(){
                 firstMsg = false;
+            };
+
+            f.content = function(){
+                return firstMsg;
             };
 
             return f;
@@ -142,6 +137,10 @@ const Func = {
             }
         };
 
+        f.content = function(){
+            return buffer;
+        };
+
         return f;
 
     },
@@ -159,6 +158,10 @@ const Func = {
             while(buffer.length) {
                 buffer.shift();
             }
+        };
+
+        f.content = function(){
+            return buffer;
         };
 
         return f;

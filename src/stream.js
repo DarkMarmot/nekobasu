@@ -1,4 +1,4 @@
-
+import Pool from './pool.js';
 import F from './flib.js';
 
 class Stream {
@@ -98,13 +98,16 @@ class Stream {
 
     };
 
+    createPool(){
+
+        this.pool = new Pool(this);
+    };
 
     doPool(msg, source) {
 
-        this.pool(msg, source);
+        this.pool.tell(msg, source);
 
     };
-
 
     destroy(){
 
