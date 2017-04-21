@@ -83,18 +83,17 @@ class Bus {
     };
 
 
+
     defer() {
-
-        this.holding ? this._currentFrame.defer() : this.addFrame().defer();
-        return this;
-
+        return this.timer(F.getDeferTimer);
     };
 
     batch() {
+        return this.timer(F.getBatchTimer);
+    };
 
-        this.holding ? this._currentFrame.batch() : this.addFrame().hold().last().batch();
-        return this;
-
+    sync() {
+        return this.timer(F.getSyncTimer);
     };
 
     group() {
@@ -147,30 +146,29 @@ class Bus {
     }
 
     all() {
-        const f = F.getKeepAll;
-        this.holding ? this._currentFrame.reduce(f) : this.addFrame().hold().reduce(f).sync();
-        return this;
+        return this.reduce(F.getKeepAll);
     };
 
     first(n) {
-
-        const f = F.getKeepFirst;
-        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
-        return this;
-
+        return this.reduce(F.getKeepFirst, n);
     };
 
     last(n) {
-
-        const f = F.getKeepLast;
-        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
-        return this;
-
+        return this.reduce(F.getKeepLast, n);
     };
 
     reduce(factory, ...args) {
 
-        this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
+        this.holding ?
+            this._currentFrame.reduce(factory, ...args) :
+            this.addFrame().hold().reduce(factory, ...args).timer(F.getSyncTimer);
+        return this;
+
+    };
+
+    timer(factory, ...args) {
+
+        this.holding ? this._currentFrame.timer(factory, ...args) : this.addFrame().hold().timer(factory, ...args);
         return this;
 
     };

@@ -8,7 +8,7 @@ class Pool {
         this.stream = stream;
 
         this.keep = null;
-        this.until = F.ALWAYS_TRUE;
+        this.until = F.ALWAYS_TRUE; // todo rename as filter
         this.timer = null; // throttle, debounce, defer, batch, sync
         this.clear = F.ALWAYS_FALSE;
         this.isPrimed = false;
@@ -28,19 +28,17 @@ class Pool {
 
     };
 
-    sync(){
-        this.timer = this.release;
+    buildKeeper(factory, ...args){
+        this.keep = factory(...args);
     };
 
-    batch(){
-        this.timer = F.BATCH_TIMER(this);
+    buildTimer(factory, ...args){
+        this.timer = factory(this, ...args);
     };
 
-    defer(){
-        this.timer = F.DEFER_TIMER(this);
+    buildUntil(factory, ...args){
+        this.until = factory(this, ...args);
     };
-
-    // from timer callback -- pool is instance releasing
 
     release(pool) {
 

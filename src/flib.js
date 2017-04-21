@@ -24,32 +24,30 @@ const Func = {
             throw new Error('Argument [func] is not of type function.');
     },
 
-    getFilter: function(stream, condition){
 
-        var f = function(msg, source){
-            if(!condition(msg, source))
-                return;
-            stream.flowForward(msg, source);
-        };
-
-        return f;
-    },
 
     TO_SOURCE_FUNC: function(msg, source) {
         return source;
     },
 
-    BATCH_TIMER: function(pool){
+    getBatchTimer: function(pool){
         return function() {
             Catbus.enqueue(pool);
         }
     },
 
-    DEFER_TIMER: function(pool){
+    getSyncTimer: function(pool){
+        return function() {
+            pool.release(pool);
+        }
+    },
+
+    getDeferTimer: function(pool){
         return function() {
             setTimeout(pool.release, 0, pool);
         }
     },
+
 
     // getGroupLast: function
 
