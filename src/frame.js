@@ -156,8 +156,6 @@ class Frame {
 
     delay(fNum){
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-
         fNum = F.FUNCTOR(fNum);
 
         this._eachStream('actionMethod', fNum);
@@ -209,15 +207,6 @@ class Frame {
 
     }
 
-    ready(func){
-
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_IS_FUNCTION(func);
-
-        this._eachStream('readyMethod', func);
-        return this;
-
-    };
 
 
     destroy(){

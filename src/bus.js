@@ -115,6 +115,7 @@ class Bus {
 
     delay(num) {
 
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
         this.addFrame().delay(num);
         return this;
