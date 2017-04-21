@@ -57,9 +57,17 @@ class Bus {
 
     };
 
+    // convert each stream into a bus, dump in array
+
+    split(){
+
+        F.ASSERT_NOT_HOLDING(this);
+
+    };
 
     fork() {
 
+        F.ASSERT_NOT_HOLDING(this);
         const fork = new Bus();
         _wireFrames(this._currentFrame, fork._currentFrame);
 
@@ -204,7 +212,7 @@ class Bus {
     skipDupes() {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().filter(F.SKIP_DUPES_FILTER);
+        this.addFrame().skipDupes();
         return this;
 
     };

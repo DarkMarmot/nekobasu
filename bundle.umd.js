@@ -1130,8 +1130,14 @@ var Func = {
         if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
     },
 
-    SKIP_DUPES_FILTER: function SKIP_DUPES_FILTER(msg, source, last) {
-        return msg !== (last && last.msg);
+    getFilter: function getFilter(stream, condition) {
+
+        var f = function f(msg, source) {
+            if (!condition(msg, source)) return;
+            stream.flowForward(msg, source);
+        };
+
+        return f;
     },
 
     TO_SOURCE_FUNC: function TO_SOURCE_FUNC(msg, source) {
@@ -1173,19 +1179,135 @@ var Func = {
         return buffer;
     },
 
-    UNTIL_FULL: function UNTIL_FULL(messages, n) {
+    getKeepLast: function getKeepLast(n) {
 
-        return messages.length >= n;
+        if (arguments.length === 0) {
+            return function (msg, source) {
+                return msg;
+            };
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            if (buffer.length > n) buffer.shift();
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
     },
 
-    UNTIL_KEYS: function UNTIL_KEYS(messagesByKey, keys) {
+    getKeepFirst: function getKeepFirst(n) {
+
+        if (arguments.length === 0) {
+
+            var firstMsg = void 0;
+            var hasFirst = false;
+            var _f = function _f(msg, source) {
+                return hasFirst ? firstMsg : firstMsg = msg;
+            };
+
+            _f.reset = function () {
+                firstMsg = false;
+            };
+
+            return _f;
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
+    },
+
+    getKeepAll: function getKeepAll() {
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
+    },
+
+    getUntilCount: function getUntilCount(n) {
+
+        var latched = false;
+
+        var f = function f(messages) {
+            latched = latched || messages.length >= n;
+            return latched;
+        };
+
+        f.reset = function () {
+            latched = false;
+        };
+
+        return f;
+    },
+
+    getUntilKeys: function getUntilKeys(keys) {
 
         var len = keys.length;
-        for (var i = 0; i < len; i++) {
-            var k = keys[i];
-            if (!messagesByKey.hasOwnProperty(k)) return false;
-        }
-        return true;
+        var latched = false;
+
+        var f = function f(messagesByKey) {
+
+            if (latched) return true;
+
+            for (var i = 0; i < len; i++) {
+                var k = keys[i];
+                if (!messagesByKey.hasOwnProperty(k)) return false;
+            }
+
+            return latched = true;
+        };
+
+        f.reset = function () {
+            latched = false;
+        };
+
+        return f;
+    },
+
+    getSkipDupes: function getSkipDupes() {
+
+        var hadMsg = false;
+        var lastMsg = void 0;
+
+        return function (msg) {
+
+            var diff = !hadMsg || msg !== lastMsg;
+            lastMsg = msg;
+            hadMsg = true;
+            return diff;
+        };
     },
 
     ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
@@ -1206,19 +1328,16 @@ var Stream = function () {
         this.debugFrame = null;
         this.dead = false;
         this.children = [];
-        this.lastPacket = null;
         this.name = null;
         this.messages = []; // [] with hold
         this.messagesByKey = {}; // {} with group
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.processName = 'doPass'; // default to pass things along last thing unchanged
         this.processMethod = this.doPass;
         this.keepMethod = Func.KEEP_LAST; // default if holding or grouping
         this.keepCount = 0; // non-zero creates an array
         this.timerMethod = null; // throttle, debounce, defer, batch
         this.groupMethod = null;
         this.actionMethod = null; // run, transform, filter, name, delay
-        this.neededKeys = []; // todo generate this in readymethod closure
         this.readyMethod = Func.ALWAYS_TRUE;
         this.clearMethod = Func.ALWAYS_FALSE;
         this.latched = false; // from this.clearMethod()
@@ -1237,11 +1356,8 @@ var Stream = function () {
             if (this.dead) // true if canceled or disposed midstream
                 return this;
 
-            var last = this.lastPacket;
-            source = this.name || source; // named streams always pass their own name forward
-
             // tell method = doDelay, doGroup, doHold, , doFilter
-            this.processMethod.call(this, msg, source, last);
+            this.processMethod.call(this, msg, source);
 
             return this;
         }
@@ -1259,7 +1375,7 @@ var Stream = function () {
 
             this.primed = false;
 
-            this.flowForward(msg);
+            this.flowForward(msg, this.name);
         }
     }, {
         key: 'resolveKeep',
@@ -1296,7 +1412,6 @@ var Stream = function () {
         value: function flowForward(msg, source, thisStream) {
 
             thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
-            thisStream.lastPacket = new Packet(msg, null, source);
 
             var children = thisStream.children;
             var len = children.length;
@@ -1316,7 +1431,7 @@ var Stream = function () {
         key: 'doFilter',
         value: function doFilter(msg, source) {
 
-            if (!this.actionMethod(msg, source, this.lastPacket)) return;
+            if (!this.actionMethod(msg, source)) return;
             this.flowForward(msg, source);
         }
     }, {
@@ -1329,9 +1444,9 @@ var Stream = function () {
         }
     }, {
         key: 'doTransform',
-        value: function doTransform(msg, source, last) {
+        value: function doTransform(msg, source) {
 
-            msg = this.actionMethod(msg, source, last);
+            msg = this.actionMethod(msg, source);
             this.flowForward(msg, source);
         }
     }, {
@@ -1344,23 +1459,23 @@ var Stream = function () {
         }
     }, {
         key: 'doName',
-        value: function doName(msg, source, last) {
+        value: function doName(msg, source) {
 
-            source = this.actionMethod(msg, source, last);
+            source = this.actionMethod(msg, source);
             this.flowForward(msg, source);
         }
     }, {
         key: 'doRun',
-        value: function doRun(msg, source, last) {
+        value: function doRun(msg, source) {
 
-            this.actionMethod(msg, source, last);
+            this.actionMethod(msg, source);
             this.flowForward(msg, source);
         }
     }, {
         key: 'doGroup',
-        value: function doGroup(msg, source, last) {
+        value: function doGroup(msg, source) {
 
-            var groupName = this.groupMethod(msg, source, last);
+            var groupName = this.groupMethod(msg, source);
             var messages = this.messagesByKey[groupName] || [];
             this.messagesByKey[groupName] = this.keepMethod(messages, msg, this.keepCount);
 
@@ -1375,7 +1490,7 @@ var Stream = function () {
         }
     }, {
         key: 'doHold',
-        value: function doHold(msg, source, last) {
+        value: function doHold(msg, source) {
 
             this.keepMethod(this.messages, msg, this.keepCount);
 
@@ -1468,6 +1583,24 @@ var Frame = function () {
             return this;
         }
     }, {
+        key: '_eachStreamGen',
+
+
+        // properties are generated by calling f to build closure states
+        value: function _eachStreamGen(prop, f) {
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+
+                var stream = streams[i];
+                stream[prop] = f();
+            }
+
+            return this;
+        }
+    }, {
         key: '_eachStreamCall',
         value: function _eachStreamCall(method, val) {
 
@@ -1548,7 +1681,23 @@ var Frame = function () {
         key: 'skipDupes',
         value: function skipDupes() {
 
-            return this.filter(Func.SKIP_DUPES_FILTER);
+            // const f = function() {
+            //
+            //     let hadMsg = false;
+            //     let lastMsg;
+            //
+            //     return function (msg) {
+            //
+            //         const diff = !hadMsg || msg !== lastMsg;
+            //         lastMsg = msg;
+            //         hadMsg = true;
+            //         return diff;
+            //     }
+            //
+            // };
+
+            this._eachStreamGen('actionMethod', Func.getSkipDupes);
+            this._eachStreamCall('process', 'doFilter');
         }
     }, {
         key: 'group',
@@ -1702,9 +1851,20 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'split',
+
+
+        // convert each stream into a bus, dump in array
+
+        value: function split() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+        }
+    }, {
         key: 'fork',
         value: function fork() {
 
+            Func.ASSERT_NOT_HOLDING(this);
             var fork = new Bus();
             _wireFrames(this._currentFrame, fork._currentFrame);
 
@@ -1852,7 +2012,7 @@ var Bus = function () {
         value: function skipDupes() {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().filter(Func.SKIP_DUPES_FILTER);
+            this.addFrame().skipDupes();
             return this;
         }
     }, {

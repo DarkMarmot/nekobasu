@@ -14,6 +14,7 @@ Catbus.fromEvent = function(target, eventName, useCapture){
 
 };
 
+
 Catbus.enqueue = function(stream){
     _batchQueue.push(stream);
 };

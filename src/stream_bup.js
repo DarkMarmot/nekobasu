@@ -9,10 +9,19 @@ class Stream {
         this.dead = false;
         this.children = [];
         this.name = null;
-        this.pool = null;
+        this.messages = []; // [] with hold
+        this.messagesByKey = {}; // {} with group
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
-        this.processMethod = this.flowForward;
-        this.actionMethod = null; // for run, transform, filter, name, delay
+        this.processMethod = this.doPass;
+        this.keepMethod = F.KEEP_LAST; // default if holding or grouping
+        this.keepCount = 0; // non-zero creates an array
+        this.timerMethod = null; // throttle, debounce, defer, batch
+        this.groupMethod = null;
+        this.actionMethod = null; // run, transform, filter, name, delay
+        this.readyMethod = F.ALWAYS_TRUE;
+        this.clearMethod = F.ALWAYS_FALSE;
+        this.latched = false; // from this.clearMethod()
+        this.primed = false;
 
     };
 
@@ -25,9 +34,43 @@ class Stream {
         if(this.dead) // true if canceled or disposed midstream
             return this;
 
-        this.processMethod(msg, source); // tell method = doDelay, doGroup, doHold, , doFilter
+
+        // tell method = doDelay, doGroup, doHold, , doFilter
+        this.processMethod.call(this, msg, source);
 
         return this;
+
+    };
+
+    fireContent() {
+
+        const msg = this.groupMethod ? this.resolveKeepByGroup() : this.resolveKeep(this.messages);
+
+        if(this.clearMethod()){
+            this.latched = false;
+            this.messagesByKey = {};
+            this.messages = [];
+        }
+
+        this.primed = false;
+
+        this.flowForward(msg, this.name);
+
+    };
+
+    resolveKeep(messages){
+
+        return this.keepCount === 0 ? messages[0] : messages;
+
+    };
+
+    resolveKeepByGroup(){
+
+        const messagesByKey = this.messagesByKey;
+        for(const k in messagesByKey){
+            messagesByKey[k] = this.resolveKeep(messagesByKey[k]);
+        }
+        return messagesByKey;
 
     };
 
@@ -59,6 +102,12 @@ class Stream {
 
     };
 
+    doPass(msg, source) {
+
+        this.flowForward(msg, source);
+
+    };
+
     doFilter(msg, source) {
 
         if(!this.actionMethod(msg, source))
@@ -67,6 +116,13 @@ class Stream {
 
     };
 
+    doKeep(msg, source) {
+
+        this.keepMethod(this.messages, msg, this.keepCount);
+        msg = this.resolveKeep(this.messages);
+        this.flowForward(msg, source);
+
+    };
 
     doTransform(msg, source) {
 
@@ -99,9 +155,37 @@ class Stream {
     };
 
 
-    doPool(msg, source) {
+    doGroup(msg, source) {
 
-        this.pool(msg, source);
+        const groupName = this.groupMethod(msg, source);
+        const messages = this.messagesByKey[groupName] || [];
+        this.messagesByKey[groupName]  = this.keepMethod(messages, msg, this.keepCount);
+
+        if(!this.primed && (this.latched = this.latched || this.readyMethod(this.messagesByKey))) {
+            if(this.timerMethod) {
+                this.primed = true;
+                this.timerMethod(); // should call back this.fireContent
+            } else {
+                this.fireContent();
+            }
+        }
+
+    };
+
+
+
+    doHold(msg, source) {
+
+        this.keepMethod(this.messages, msg, this.keepCount);
+
+        if(!this.primed && (this.latched = this.latched || this.readyMethod(this.messages))) {
+            if(this.timerMethod) {
+                this.primed = true;
+                this.timerMethod(); // should call back this.fireContent
+            } else {
+                this.fireContent();
+            }
+        }
 
     };
 

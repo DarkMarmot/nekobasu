@@ -24,8 +24,15 @@ const Func = {
             throw new Error('Argument [func] is not of type function.');
     },
 
-    SKIP_DUPES_FILTER: function(msg, source, last){
-        return msg !== (last && last.msg);
+    getFilter: function(stream, condition){
+
+        var f = function(msg, source){
+            if(!condition(msg, source))
+                return;
+            stream.flowForward(msg, source);
+        };
+
+        return f;
     },
 
     TO_SOURCE_FUNC: function(msg, source) {
@@ -75,23 +82,150 @@ const Func = {
 
     },
 
-    UNTIL_FULL: function(messages, n){
+    getKeepLast: function(n){
 
-        return messages.length >= n;
+        if(arguments.length === 0) {
+            return function (msg, source) {
+                return msg;
+            };
+        }
+
+        const buffer = [];
+
+        const f = function(msg, source){
+            buffer.push(msg);
+            if(buffer.length > n)
+                buffer.shift();
+            return buffer;
+        };
+
+        f.reset = function(){
+            while(buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
 
     },
 
-    UNTIL_KEYS: function(messagesByKey, keys){
+    getKeepFirst: function(n){
+
+        if(arguments.length === 0) {
+
+            let firstMsg;
+            let hasFirst = false;
+            const f = function (msg, source) {
+                return hasFirst ? firstMsg : firstMsg = msg;
+            };
+
+            f.reset = function(){
+                firstMsg = false;
+            };
+
+            return f;
+        }
+
+        const buffer = [];
+
+        const f = function(msg, source){
+
+            if(buffer.length < n)
+                buffer.push(msg);
+            return buffer;
+
+        };
+
+        f.reset = function(){
+            while(buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
+
+    },
+
+    getKeepAll: function(){
+
+        const buffer = [];
+
+        const f = function(msg, source){
+            buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function(){
+            while(buffer.length) {
+                buffer.shift();
+            }
+        };
+
+        return f;
+
+    },
+
+    getUntilCount: function(n) {
+
+        let latched = false;
+
+        const f = function(messages){
+            latched = latched || messages.length >= n;
+            return latched;
+        };
+
+        f.reset = function(){
+            latched = false;
+        };
+
+        return f;
+
+    },
+
+    getUntilKeys: function(keys) {
 
         const len = keys.length;
-        for(let i = 0; i < len; i++){
-            const k = keys[i];
-            if(!messagesByKey.hasOwnProperty(k))
-                return false;
-        }
-        return true;
+        let latched = false;
+
+        const f = function (messagesByKey) {
+
+            if(latched)
+                return true;
+
+            for (let i = 0; i < len; i++) {
+                const k = keys[i];
+                if (!messagesByKey.hasOwnProperty(k))
+                    return false;
+            }
+
+            return latched = true;
+
+        };
+
+        f.reset = function(){
+            latched = false;
+        };
+
+        return f;
 
     },
+
+    getSkipDupes: function() {
+
+        let hadMsg = false;
+        let lastMsg;
+
+        return function (msg) {
+
+            const diff = !hadMsg || msg !== lastMsg;
+            lastMsg = msg;
+            hadMsg = true;
+            return diff;
+
+        }
+
+    },
+
 
     ASSERT_NOT_HOLDING: function(bus){
         if(bus.holding)
