@@ -50,7 +50,7 @@ class Bus {
         const len = streams.length;
         for (let i = 0; i < len; i++) {
             const s = streams[i];
-            s.flowsTo(mergedStream);
+            s.addTarget(mergedStream);
         }
 
         return this;
@@ -264,7 +264,7 @@ function _wireFrames(frame1, frame2) {
         const s2 = new Stream(frame2);
         s2.name = s1.name;
         streams2.push(s2);
-        s1.flowsTo(s2);
+        s1.addTarget(s2);
 
     }
 

@@ -57,7 +57,7 @@ class Pool {
         }
 
         pool.isPrimed = false;
-        pool.stream.flowForward(msg, pool.stream.name);
+        pool.stream.emit(msg, pool.stream.name);
 
     };
 

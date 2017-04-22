@@ -1431,7 +1431,7 @@ var Pool = function () {
             }
 
             pool.isPrimed = false;
-            pool.stream.flowForward(msg, pool.stream.name);
+            pool.stream.emit(msg, pool.stream.name);
         }
     }]);
     return Pool;
@@ -1448,16 +1448,11 @@ var Stream = function () {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.processMethod = this.flowForward;
+        this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
     }
 
     createClass(Stream, [{
-        key: 'process',
-        value: function process(name) {
-            this.processMethod = this[name];
-        }
-    }, {
         key: 'tell',
         value: function tell(msg, source) {
 
@@ -1478,13 +1473,13 @@ var Stream = function () {
             if (i !== -1) children.splice(i, 1);
         }
     }, {
-        key: 'flowsTo',
-        value: function flowsTo(stream) {
+        key: 'addTarget',
+        value: function addTarget(stream) {
             this.children.push(stream);
         }
     }, {
-        key: 'flowForward',
-        value: function flowForward(msg, source, thisStream) {
+        key: 'emit',
+        value: function emit(msg, source, thisStream) {
 
             thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
 
@@ -1501,14 +1496,14 @@ var Stream = function () {
         value: function doFilter(msg, source) {
 
             if (!this.actionMethod(msg, source)) return;
-            this.flowForward(msg, source);
+            this.emit(msg, source);
         }
     }, {
         key: 'doTransform',
         value: function doTransform(msg, source) {
 
             msg = this.actionMethod(msg, source);
-            this.flowForward(msg, source);
+            this.emit(msg, source);
         }
     }, {
         key: 'doDelay',
@@ -1516,21 +1511,21 @@ var Stream = function () {
 
             // todo add destroy -> kills timeout
             // passes 'this' to avoid bind slowdown
-            setTimeout(this.flowForward, this.actionMethod() || 0, msg, source, this);
+            setTimeout(this.emit, this.actionMethod() || 0, msg, source, this);
         }
     }, {
         key: 'doName',
         value: function doName(msg, source) {
 
             source = this.actionMethod(msg, source);
-            this.flowForward(msg, source);
+            this.emit(msg, source);
         }
     }, {
         key: 'doRun',
         value: function doRun(msg, source) {
 
             this.actionMethod(msg, source);
-            this.flowForward(msg, source);
+            this.emit(msg, source);
         }
     }, {
         key: 'createPool',
@@ -1851,7 +1846,7 @@ var Bus = function () {
             var len = streams.length;
             for (var i = 0; i < len; i++) {
                 var s = streams[i];
-                s.flowsTo(mergedStream);
+                s.addTarget(mergedStream);
             }
 
             return this;
@@ -2112,7 +2107,7 @@ function _wireFrames(frame1, frame2) {
         var s2 = new Stream(frame2);
         s2.name = s1.name;
         streams2.push(s2);
-        s1.flowsTo(s2);
+        s1.addTarget(s2);
     }
 }
 

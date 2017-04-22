@@ -11,13 +11,9 @@ class Stream {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
-        this.processMethod = this.flowForward;
+        this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
 
-    };
-
-    process(name) {
-        this.processMethod = this[name];
     };
 
     tell(msg, source) {
@@ -41,11 +37,11 @@ class Stream {
 
     };
 
-    flowsTo(stream){
+    addTarget(stream){
         this.children.push(stream);
     };
 
-    flowForward(msg, source, thisStream){
+    emit(msg, source, thisStream){
 
         thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
 
@@ -63,7 +59,7 @@ class Stream {
 
         if(!this.actionMethod(msg, source))
             return;
-        this.flowForward(msg, source);
+        this.emit(msg, source);
 
     };
 
@@ -71,7 +67,7 @@ class Stream {
     doTransform(msg, source) {
 
         msg = this.actionMethod(msg, source);
-        this.flowForward(msg, source);
+        this.emit(msg, source);
 
     };
 
@@ -79,14 +75,14 @@ class Stream {
 
         // todo add destroy -> kills timeout
         // passes 'this' to avoid bind slowdown
-        setTimeout(this.flowForward, this.actionMethod() || 0, msg, source, this);
+        setTimeout(this.emit, this.actionMethod() || 0, msg, source, this);
 
     };
 
     doName(msg, source) {
 
         source = this.actionMethod(msg, source);
-        this.flowForward(msg, source);
+        this.emit(msg, source);
 
     };
 
@@ -94,7 +90,7 @@ class Stream {
     doRun(msg, source) {
 
         this.actionMethod(msg, source);
-        this.flowForward(msg, source);
+        this.emit(msg, source);
 
     };
 
