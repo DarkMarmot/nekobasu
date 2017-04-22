@@ -126,6 +126,7 @@ Stream.fromData = function(data, topic, name){
 
     const stream = new Stream();
     const streamName = name || topic || data.name;
+    stream.name = streamName;
 
     const toStream = function(msg){
         stream.tell(msg, streamName);
@@ -147,6 +148,7 @@ Stream.fromEvent = function(target, eventName, useCapture){
     useCapture = !!useCapture;
 
     const stream = new Stream();
+    stream.name = eventName;
 
     const on = target.addEventListener || target.addListener || target.on;
     const off = target.removeEventListener || target.removeListener || target.off;

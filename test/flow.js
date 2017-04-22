@@ -407,8 +407,17 @@ describe('Catbus', function(){
                 var b2 = Catbus.fromEvent(dice, 'drop');
                 b2.transform(function(msg){ return -msg});
 
-                b1.add(b2).merge().group().last(3).batch().run(log);
+                b1.add(b2);
+                b1.last(3);
+                b1.merge()
+                   .hold().group().batch();
 
+                b1.run(log);
+                b1.run(function(msg, source){
+                    console.log('b1:', msg, source)}
+                    );
+
+                //add(b2).last(3).merge().hold().group().
                 dice.emit('roll', 5);
                 dice.emit('drop', 1);
                 dice.emit('roll', 4);
@@ -440,6 +449,7 @@ describe('Catbus', function(){
 
                 b1.add(b2);
                 b1.merge();
+                b1.hold();
                 b1.group();
                 b1.batch();
                 b1.run(log);

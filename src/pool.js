@@ -12,11 +12,17 @@ class Pool {
         this.timer = null; // throttle, debounce, defer, batch, sync
         this.clear = F.ALWAYS_FALSE;
         this.isPrimed = false;
+        this.source = stream.name;
 
     };
 
     tell(msg, source) {
 
+        if(typeof this.keep !== 'function'){
+            let f = 1;
+            f++;
+            console.log('no keep!', msg, source, this.keep, this);
+        }
         this.keep(msg, source);
         if(!this.isPrimed){
             const content = this.keep.content();
@@ -54,7 +60,6 @@ class Pool {
         pool.stream.flowForward(msg, pool.stream.name);
 
     };
-
 
 }
 

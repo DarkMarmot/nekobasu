@@ -1104,6 +1104,14 @@ var Scope = function () {
     return Scope;
 }();
 
+function TO_SOURCE(msg, source) {
+    return source;
+}
+
+function TO_MSG(msg, source) {
+    return msg;
+}
+
 var Func = {
 
     FUNCTOR: function FUNCTOR(val) {
@@ -1130,33 +1138,52 @@ var Func = {
         if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
     },
 
-    getFilter: function getFilter(stream, condition) {
-
-        var f = function f(msg, source) {
-            if (!condition(msg, source)) return;
-            stream.flowForward(msg, source);
-        };
-
-        return f;
-    },
-
     TO_SOURCE_FUNC: function TO_SOURCE_FUNC(msg, source) {
         return source;
     },
 
-    BATCH_TIMER: function BATCH_TIMER(pool) {
+    getBatchTimer: function getBatchTimer(pool) {
         return function () {
             Catbus$1.enqueue(pool);
         };
     },
 
-    DEFER_TIMER: function DEFER_TIMER(pool) {
+    getSyncTimer: function getSyncTimer(pool) {
+        return function () {
+            pool.release(pool);
+        };
+    },
+
+    getDeferTimer: function getDeferTimer(pool) {
         return function () {
             setTimeout(pool.release, 0, pool);
         };
     },
 
-    // getGroupLast: function
+    getGroup: function getGroup(groupBy) {
+
+        groupBy = groupBy || TO_SOURCE;
+        var hash = {};
+
+        var f = function f(msg, source) {
+
+            var g = groupBy(msg, source);
+            hash[g] = msg;
+            return hash;
+        };
+
+        f.reset = function () {
+            for (var k in hash) {
+                delete hash[k];
+            }
+        };
+
+        f.content = function () {
+            return hash;
+        };
+
+        return f;
+    },
 
     getKeepLast: function getKeepLast(n) {
 
@@ -1328,6 +1355,9 @@ var Func = {
 
 };
 
+Func.TO_SOURCE = TO_SOURCE;
+Func.To_MSG = TO_MSG;
+
 var Pool = function () {
     function Pool(stream) {
         classCallCheck(this, Pool);
@@ -1336,16 +1366,22 @@ var Pool = function () {
         this.stream = stream;
 
         this.keep = null;
-        this.until = Func.ALWAYS_TRUE;
+        this.until = Func.ALWAYS_TRUE; // todo rename as filter
         this.timer = null; // throttle, debounce, defer, batch, sync
         this.clear = Func.ALWAYS_FALSE;
         this.isPrimed = false;
+        this.source = stream.name;
     }
 
     createClass(Pool, [{
         key: 'tell',
         value: function tell(msg, source) {
 
+            if (typeof this.keep !== 'function') {
+                var f = 1;
+                f++;
+                console.log('no keep!', msg, source, this.keep, this);
+            }
             this.keep(msg, source);
             if (!this.isPrimed) {
                 var content = this.keep.content();
@@ -1356,23 +1392,32 @@ var Pool = function () {
             }
         }
     }, {
-        key: 'sync',
-        value: function sync() {
-            this.timer = this.release;
+        key: 'buildKeeper',
+        value: function buildKeeper(factory) {
+            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+                args[_key - 1] = arguments[_key];
+            }
+
+            this.keep = factory.apply(undefined, args);
         }
     }, {
-        key: 'batch',
-        value: function batch() {
-            this.timer = Func.BATCH_TIMER(this);
+        key: 'buildTimer',
+        value: function buildTimer(factory) {
+            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
+            }
+
+            this.timer = factory.apply(undefined, [this].concat(args));
         }
     }, {
-        key: 'defer',
-        value: function defer() {
-            this.timer = Func.DEFER_TIMER(this);
+        key: 'buildUntil',
+        value: function buildUntil(factory) {
+            for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
+                args[_key3 - 1] = arguments[_key3];
+            }
+
+            this.until = factory.apply(undefined, [this].concat(args));
         }
-
-        // from timer callback -- pool is instance releasing
-
     }, {
         key: 'release',
         value: function release(pool) {
@@ -1515,6 +1560,7 @@ Stream.fromData = function (data, topic, name) {
 
     var stream = new Stream();
     var streamName = name || topic || data.name;
+    stream.name = streamName;
 
     var toStream = function toStream(msg) {
         stream.tell(msg, streamName);
@@ -1534,6 +1580,7 @@ Stream.fromEvent = function (target, eventName, useCapture) {
     useCapture = !!useCapture;
 
     var stream = new Stream();
+    stream.name = eventName;
 
     var on = target.addEventListener || target.addListener || target.on;
     var off = target.removeEventListener || target.removeListener || target.off;
@@ -1556,99 +1603,30 @@ var Frame = function () {
         classCallCheck(this, Frame);
 
 
+        streams = streams || [];
         this._bus = bus;
         this._index = bus._frames.length;
         this._holding = false; //begins group, keep, schedule frames
-        this._streams = streams || [];
-        this._eachStream('debugFrame', this);
+        this._streams = streams;
+
+        var len = streams.length;
+        for (var i = 0; i < len; i++) {
+            streams[i].debugFrame = this;
+        }
     }
 
     createClass(Frame, [{
-        key: '_eachStream',
-        value: function _eachStream(prop, val) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var stream = streams[i];
-                stream[prop] = val;
-            }
-
-            return this;
-        }
-    }, {
-        key: '_eachStreamGen',
-
-
-        // properties are generated by calling f to build closure states
-        value: function _eachStreamGen(prop, f) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var stream = streams[i];
-                stream[prop] = f();
-            }
-
-            return this;
-        }
-    }, {
-        key: '_eachStreamCall',
-        value: function _eachStreamCall(method, val) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var stream = streams[i];
-                stream[method].call(stream, val);
-            }
-
-            return this;
-        }
-    }, {
-        key: '_eachPool',
-        value: function _eachPool(prop, val) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var stream = streams[i];
-                var pool = stream.pool;
-                pool[prop] = val;
-            }
-
-            return this;
-        }
-    }, {
-        key: '_eachPoolCall',
-        value: function _eachPoolCall(method, val) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var stream = streams[i];
-                var pool = stream.pool;
-                pool[method].call(pool, val);
-            }
-
-            return this;
-        }
-    }, {
         key: 'run',
         value: function run(func) {
 
-            this._eachStream('actionMethod', func);
-            this._eachStreamCall('process', 'doRun');
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = func;
+                s.processMethod = s.doRun;
+            }
 
             return this;
         }
@@ -1657,8 +1635,15 @@ var Frame = function () {
         value: function hold() {
 
             this._holding = true;
-            this._eachStreamCall('createPool');
-            this._eachStreamCall('process', 'doPool');
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.createPool();
+                s.processMethod = s.doPool;
+            }
 
             return this;
         }
@@ -1668,8 +1653,14 @@ var Frame = function () {
 
             fAny = Func.FUNCTOR(fAny);
 
-            this._eachStreamCall('process', 'doTransform');
-            this._eachStream('actionMethod', fAny);
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = fAny;
+                s.processMethod = s.doTransform;
+            }
 
             return this;
         }
@@ -1679,8 +1670,14 @@ var Frame = function () {
 
             fStr = Func.FUNCTOR(fStr);
 
-            this._eachStreamCall('process', 'doName');
-            this._eachStream('actionMethod', fStr);
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = fStr;
+                s.processMethod = s.doName;
+            }
 
             return this;
         }
@@ -1688,12 +1685,16 @@ var Frame = function () {
         key: 'delay',
         value: function delay(fNum) {
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-
             fNum = Func.FUNCTOR(fNum);
 
-            this._eachStream('actionMethod', fNum);
-            this._eachStreamCall('process', 'doDelay');
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = fNum;
+                s.processMethod = s.doDelay;
+            }
 
             return this;
         }
@@ -1701,8 +1702,14 @@ var Frame = function () {
         key: 'filter',
         value: function filter(func) {
 
-            this._eachStream('actionMethod', func);
-            this._eachStreamCall('process', 'doFilter');
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = func;
+                s.processMethod = s.doFilter;
+            }
 
             return this;
         }
@@ -1710,8 +1717,16 @@ var Frame = function () {
         key: 'skipDupes',
         value: function skipDupes() {
 
-            this._eachStreamGen('actionMethod', Func.getSkipDupes);
-            this._eachStreamCall('process', 'doFilter');
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.actionMethod = Func.getSkipDupes();
+                s.processMethod = s.doFilter;
+            }
+
+            return this;
         }
     }, {
         key: 'reduce',
@@ -1719,37 +1734,43 @@ var Frame = function () {
 
         // factory should define content and reset methods have signature f(msg, source) return f.content()
         value: function reduce(factory) {
+
+            var streams = this._streams;
+            var len = streams.length;
+
             for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
                 args[_key - 1] = arguments[_key];
             }
 
-            this._eachPool('keep', factory.apply(undefined, args));
+            for (var i = 0; i < len; i++) {
+
+                var s = streams[i];
+                var pool = s.pool;
+                pool.buildKeeper.apply(pool, [factory].concat(args));
+            }
+
             return this;
         }
     }, {
-        key: 'batch',
-        value: function batch() {
+        key: 'timer',
+        value: function timer(factory) {
 
             this._holding = false; // holds end with timer
-            this._eachPoolCall('batch');
 
-            return this;
-        }
-    }, {
-        key: 'sync',
-        value: function sync() {
+            var streams = this._streams;
+            var len = streams.length;
 
-            this._holding = false;
-            this._eachPoolCall('sync');
-        }
-    }, {
-        key: 'ready',
-        value: function ready(func) {
+            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
+            }
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_IS_FUNCTION(func);
+            for (var i = 0; i < len; i++) {
 
-            this._eachStream('readyMethod', func);
+                var s = streams[i];
+                var pool = s.pool;
+                pool.buildTimer.apply(pool, [factory].concat(args));
+            }
+
             return this;
         }
     }, {
@@ -1866,24 +1887,17 @@ var Bus = function () {
     }, {
         key: 'defer',
         value: function defer() {
-
-            this.holding ? this._currentFrame.defer() : this.addFrame().defer();
-            return this;
+            return this.timer(Func.getDeferTimer);
         }
     }, {
         key: 'batch',
         value: function batch() {
-
-            this.holding ? this._currentFrame.batch() : this.addFrame().hold().last().batch();
-            return this;
+            return this.timer(Func.getBatchTimer);
         }
     }, {
-        key: 'group',
-        value: function group() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().group();
-            return this;
+        key: 'sync',
+        value: function sync() {
+            return this.timer(Func.getSyncTimer);
         }
     }, {
         key: 'hold',
@@ -1897,6 +1911,7 @@ var Bus = function () {
         key: 'delay',
         value: function delay(num) {
 
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
             this.addFrame().delay(num);
             return this;
@@ -1926,33 +1941,48 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'group',
+        value: function group(by) {
+
+            return this.reduce(Func.getGroup, by);
+        }
+    }, {
         key: 'all',
         value: function all() {
-            var f = Func.getKeepAll;
-            this.holding ? this._currentFrame.reduce(f) : this.addFrame().hold().reduce(f).sync();
-            return this;
+            return this.reduce(Func.getKeepAll);
         }
     }, {
         key: 'first',
         value: function first(n) {
-
-            var f = Func.getKeepFirst;
-            this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
-            return this;
+            return this.reduce(Func.getKeepFirst, n);
         }
     }, {
         key: 'last',
         value: function last(n) {
-
-            var f = Func.getKeepLast;
-            this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
-            return this;
+            return this.reduce(Func.getKeepLast, n);
         }
     }, {
         key: 'reduce',
         value: function reduce(factory) {
+            var _currentFrame, _addFrame$hold;
 
-            this.holding ? this._currentFrame.reduce(f, n) : this.addFrame().hold().reduce(f, n).sync();
+            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+                args[_key - 1] = arguments[_key];
+            }
+
+            this.holding ? (_currentFrame = this._currentFrame).reduce.apply(_currentFrame, [factory].concat(args)) : (_addFrame$hold = this.addFrame().hold()).reduce.apply(_addFrame$hold, [factory].concat(args)).timer(Func.getSyncTimer);
+            return this;
+        }
+    }, {
+        key: 'timer',
+        value: function timer(factory) {
+            var _currentFrame2, _addFrame$hold2;
+
+            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
+            }
+
+            this.holding ? (_currentFrame2 = this._currentFrame).timer.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold2 = this.addFrame().hold()).timer.apply(_addFrame$hold2, [factory].concat(args));
             return this;
         }
     }, {
@@ -2031,9 +2061,9 @@ var Bus = function () {
 
             try {
                 for (var _iterator = frames[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var _f = _step.value;
+                    var f = _step.value;
 
-                    _f.destroy();
+                    f.destroy();
                 }
             } catch (err) {
                 _didIteratorError = true;
@@ -2080,6 +2110,7 @@ function _wireFrames(frame1, frame2) {
 
         var s1 = streams1[i];
         var s2 = new Stream(frame2);
+        s2.name = s1.name;
         streams2.push(s2);
         s1.flowsTo(s2);
     }

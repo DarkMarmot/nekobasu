@@ -96,13 +96,6 @@ class Bus {
         return this.timer(F.getSyncTimer);
     };
 
-    group() {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().group();
-        return this;
-
-    };
 
     hold() {
 
@@ -144,6 +137,11 @@ class Bus {
         return this;
 
     }
+
+    group(by) {
+
+        return this.reduce(F.getGroup, by);
+    };
 
     all() {
         return this.reduce(F.getKeepAll);
@@ -264,6 +262,7 @@ function _wireFrames(frame1, frame2) {
 
         const s1 = streams1[i];
         const s2 = new Stream(frame2);
+        s2.name = s1.name;
         streams2.push(s2);
         s1.flowsTo(s2);
 

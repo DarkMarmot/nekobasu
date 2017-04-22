@@ -1,6 +1,13 @@
 
 import Catbus from './catbus.js';
 
+function TO_SOURCE(msg, source) {
+    return source;
+}
+
+function TO_MSG(msg, source) {
+    return msg;
+}
 
 const Func = {
 
@@ -48,8 +55,32 @@ const Func = {
         }
     },
 
+    getGroup: function(groupBy){
 
-    // getGroupLast: function
+        groupBy = groupBy || TO_SOURCE;
+        const hash = {};
+
+        const f = function(msg, source){
+
+            const g = groupBy(msg, source);
+            hash[g] = msg;
+            return hash;
+
+        };
+
+        f.reset = function(){
+            for(const k in hash){
+                delete hash[k];
+            }
+        };
+
+        f.content = function(){
+            return hash;
+        };
+
+        return f;
+
+    },
 
     getKeepLast: function(n){
 
@@ -239,5 +270,8 @@ const Func = {
     }
 
 };
+
+Func.TO_SOURCE = TO_SOURCE;
+Func.To_MSG = TO_MSG;
 
 export default Func;
