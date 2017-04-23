@@ -57,6 +57,11 @@ class Bus {
 
     };
 
+    // create stream
+    spawn(){
+
+    }
+
     // convert each stream into a bus, dump in array
 
     split(){
@@ -81,8 +86,6 @@ class Bus {
         return this;
 
     };
-
-
 
     defer() {
         return this.timer(F.getDeferTimer);
@@ -114,13 +117,13 @@ class Bus {
 
     };
 
-    untilKeys(keys){
-
-        F.ASSERT_IS_HOLDING(this);
-        this._currentFrame.untilKeys(keys);
-        return this;
-
-    };
+    // untilKeys(keys){
+    //
+    //     F.ASSERT_IS_HOLDING(this);
+    //     this._currentFrame.untilKeys(keys);
+    //     return this;
+    //
+    // };
 
     untilFull(){
 
@@ -130,13 +133,18 @@ class Bus {
 
     }
 
-    willReset(func){
+    willReset(){
 
         F.ASSERT_IS_HOLDING(this);
-        this._currentFrame.willReset(func);
+        this._currentFrame.willReset();
         return this;
 
     }
+
+    untilKeys(keys) {
+        F.ASSERT_IS_HOLDING(this);
+        return this.until(F.getUntilKeys, keys);
+    };
 
     group(by) {
 
@@ -166,7 +174,18 @@ class Bus {
 
     timer(factory, ...args) {
 
-        this.holding ? this._currentFrame.timer(factory, ...args) : this.addFrame().hold().timer(factory, ...args);
+        this.holding ?
+            this._currentFrame.timer(factory, ...args) :
+            this.addFrame().hold().timer(factory, ...args);
+        return this;
+
+    };
+
+    until(factory, ...args) {
+
+        this.holding ?
+            this._currentFrame.until(factory, ...args) :
+            this.addFrame().hold().until(factory, ...args).timer(F.getSyncTimer);
         return this;
 
     };

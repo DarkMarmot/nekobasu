@@ -8,9 +8,9 @@ class Pool {
         this.stream = stream;
 
         this.keep = null;
-        this.until = F.ALWAYS_TRUE; // todo rename as filter
+        this.until = F.ALWAYS_TRUE;
         this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = F.ALWAYS_FALSE;
+        this.clear = false;
         this.isPrimed = false;
         this.source = stream.name;
 
@@ -18,11 +18,6 @@ class Pool {
 
     tell(msg, source) {
 
-        if(typeof this.keep !== 'function'){
-            let f = 1;
-            f++;
-            console.log('no keep!', msg, source, this.keep, this);
-        }
         this.keep(msg, source);
         if(!this.isPrimed){
             const content = this.keep.content();
@@ -43,7 +38,7 @@ class Pool {
     };
 
     buildUntil(factory, ...args){
-        this.until = factory(this, ...args);
+        this.until = factory(...args);
     };
 
     release(pool) {
@@ -51,7 +46,7 @@ class Pool {
         pool = pool || this;
         const msg = pool.keep.content();
 
-        if(pool.clear()){
+        if(pool.clear){
             pool.keep.reset();
             pool.until.reset();
         }

@@ -11,6 +11,16 @@ class Frame {
         this._holding = false; //begins group, keep, schedule frames
         this._streams = streams;
 
+        this._process = null; // name of sync process method in streams
+        this._action = null; // function defining sync stream action
+        this._isFactory = false; // whether sync action is a stateful factory function
+
+        this._keep = null; // pool storage
+        this._until = null; // stream end lifecycle -- todo switch until to when in current setup
+        this._timer = null; // release from pool timer
+        this._clear = false; // condition to clear storage on release
+        this._when = false; // invokes timer for release
+
         const len = streams.length;
         for(let i = 0; i < len; i++){
             streams[i].debugFrame = this;
@@ -34,15 +44,27 @@ class Frame {
         return [].concat(this._streams);
     }
 
-    run(func){
+    applySyncProcess(name, action, isFactory){ // generate means action function must be called to generate stateful action
+
+        this._process = name;
+        this._action = action;
+        this._isFactory = isFactory;
 
         const streams = this._streams;
         const len = streams.length;
 
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.actionMethod = func;
-            s.processMethod = s.doRun;
+        if(isFactory) {
+            for (let i = 0; i < len; i++) {
+                const s = streams[i];
+                s.actionMethod = action();
+                s.processMethod = s[name];
+            }
+        } else {
+            for (let i = 0; i < len; i++) {
+                const s = streams[i];
+                s.actionMethod = action;
+                s.processMethod = s[name];
+            }
         }
 
         return this;
@@ -66,81 +88,41 @@ class Frame {
 
     };
 
-    transform(fAny){
-
-        fAny = F.FUNCTOR(fAny);
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.actionMethod = fAny;
-            s.processMethod = s.doTransform;
-        }
-
-        return this;
-
+    run(func, stateful){
+        return this.applySyncProcess('doRun', func, stateful);
     };
 
-    name(fStr){
-
-        fStr = F.FUNCTOR(fStr);
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.actionMethod = fStr;
-            s.processMethod = s.doName;
-        }
-
-        return this;
-
+    transform(fAny, stateful){
+        return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
     };
 
-
-    delay(fNum){
-
-        fNum = F.FUNCTOR(fNum);
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.actionMethod = fNum;
-            s.processMethod = s.doDelay;
-        }
-
-        return this;
-
+    name(fStr, stateful){
+        return this.applySyncProcess('doName', F.FUNCTOR(fStr), stateful);
     };
 
-    filter(func){
+    delay(fNum, stateful){
+        return this.applySyncProcess('doDelay', F.FUNCTOR(fNum), stateful);
+    };
 
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.actionMethod = func;
-            s.processMethod = s.doFilter;
-        }
-
-        return this;
+    filter(func, stateful){
+        return this.applySyncProcess('doFilter', func, stateful);
     };
 
     skipDupes() {
+        return this.applySyncProcess('doFilter', F.getSkipDupes, true);
+    };
+
+    willReset(){
 
         const streams = this._streams;
         const len = streams.length;
 
         for(let i = 0; i < len; i++){
+
             const s = streams[i];
-            s.actionMethod = F.getSkipDupes();
-            s.processMethod = s.doFilter;
+            const pool = s.pool;
+            pool.clear = true;
+
         }
 
         return this;
@@ -184,6 +166,22 @@ class Frame {
 
     };
 
+    until(factory, ...args){
+
+        const streams = this._streams;
+        const len = streams.length;
+
+        for(let i = 0; i < len; i++){
+
+            const s = streams[i];
+            const pool = s.pool;
+            pool.buildUntil(factory, ...args);
+
+        }
+
+        return this;
+
+    };
 
     destroy(){
 

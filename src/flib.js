@@ -216,7 +216,14 @@ const Func = {
 
     getUntilKeys: function(keys) {
 
+        const keyHash = {};
         const len = keys.length;
+
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            keyHash[k] = true;
+        }
+
         let latched = false;
 
         const f = function (messagesByKey) {
@@ -236,6 +243,9 @@ const Func = {
 
         f.reset = function(){
             latched = false;
+            for(const k in keyHash){
+                delete keyHash[k];
+            }
         };
 
         return f;
