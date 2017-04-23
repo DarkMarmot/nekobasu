@@ -29,17 +29,21 @@ class Pool {
 
     };
 
-    buildKeeper(factory, ...args){
-        this.keep = factory(...args);
+    build(prop, factory, ...args){
+        this[prop] = factory.call(this, ...args);
     };
 
-    buildTimer(factory, ...args){
-        this.timer = factory(this, ...args);
-    };
-
-    buildUntil(factory, ...args){
-        this.until = factory(...args);
-    };
+    // buildKeeper(factory, ...args){
+    //     this.keep = factory.call(this, ...args);
+    // };
+    //
+    // buildTimer(factory, ...args){
+    //     this.timer = factory.call(this, ...args);
+    // };
+    //
+    // buildUntil(factory, ...args){
+    //     this.until = factory.call(this, ...args);
+    // };
 
     release(pool) {
 

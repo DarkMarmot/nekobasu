@@ -437,6 +437,9 @@ describe('Catbus', function(){
 
             });
 
+
+
+
             it('can name streams', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
@@ -473,12 +476,49 @@ describe('Catbus', function(){
 
             });
 
+            it('can need by source', function () {
+
+                var b1 = Catbus.fromEvent(dice, 'roll');
+                b1.transform(function(msg){ return msg * 2});
+
+                var b2 = Catbus.fromEvent(dice, 'drop');
+                b2.transform(function(msg){ return -msg});
+
+                b1.add(b2);
+                b1.last(3);
+                b1.merge()
+                    .hold().group().untilKeys(['roll','drop']).batch();
+
+                b1.run(log);
+                b1.run(function(msg, source){
+                    console.log('b1:', msg, source)}
+                );
+
+                //add(b2).last(3).merge().hold().group().
+                dice.emit('roll', 5);
+                dice.emit('drop', 1);
+                dice.emit('roll', 4);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 7);
+
+                Catbus.flush(); // for batch processing
+
+                assert.equal(msgLog.length, 1);
+                assert.equal(msgLog[0].roll[2], 14);
+                assert.equal(msgLog[0].drop[0], -1);
+
+                b1.destroy();
+                b2.destroy();
+
+            });
 
         });
 
 
 
-        // todo ready, clear, latch
+        // todo  clear
 
 
 

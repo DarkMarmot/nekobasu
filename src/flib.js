@@ -37,19 +37,22 @@ const Func = {
         return source;
     },
 
-    getBatchTimer: function(pool){
+    getBatchTimer: function(){
+        const pool = this;
         return function() {
             Catbus.enqueue(pool);
         }
     },
 
-    getSyncTimer: function(pool){
+    getSyncTimer: function(){
+        const pool = this;
         return function() {
             pool.release(pool);
         }
     },
 
-    getDeferTimer: function(pool){
+    getDeferTimer: function(){
+        const pool = this;
         return function() {
             setTimeout(pool.release, 0, pool);
         }
