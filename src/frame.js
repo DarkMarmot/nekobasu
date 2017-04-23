@@ -1,4 +1,5 @@
 import F from './flib.js';
+import PoolAspects from './poolAspects.js';
 
 
 class Frame {
@@ -15,11 +16,7 @@ class Frame {
         this._action = null; // function defining sync stream action
         this._isFactory = false; // whether sync action is a stateful factory function
 
-        this._keep = null; // pool storage
-        this._until = null; // stream end lifecycle -- todo switch until to when in current setup
-        this._timer = null; // release from pool timer
-        this._clear = false; // condition to clear storage on release
-        this._when = false; // invokes timer for release
+        this._poolAspects = null;
 
         const len = streams.length;
         for(let i = 0; i < len; i++){
@@ -74,6 +71,7 @@ class Frame {
     hold(){
 
         this._holding = true;
+        this._poolAspects = new PoolAspects();
 
         const streams = this._streams;
         const len = streams.length;
@@ -112,63 +110,30 @@ class Frame {
         return this.applySyncProcess('doFilter', F.getSkipDupes, true);
     };
 
-    willReset(){
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-
-            const s = streams[i];
-            const pool = s.pool;
-            pool.clear = true;
-
-        }
-
-        return this;
-
+    clear(factory, ...args){
+        return this.buildPoolAspect('clear', factory, ...args);
     };
 
     // factory should define content and reset methods have signature f(msg, source) return f.content()
+
     reduce(factory, ...args){
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-
-            const s = streams[i];
-            const pool = s.pool;
-            pool.build('keep', factory, ...args);
-
-        }
-
-        return this;
-
+        return this.buildPoolAspect('keep', factory, ...args);
     };
 
     timer(factory, ...args){
-
-        this._holding = false; // holds end with timer
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-
-            const s = streams[i];
-            const pool = s.pool;
-            pool.build('timer', factory, ...args);
-
-        }
-
-        return this;
-
+        return this.buildPoolAspect('timer', factory, ...args);
     };
 
     until(factory, ...args){
+        return this.buildPoolAspect('until', factory, ...args);
+    };
 
-        this._until = [factory, ...args];
+    buildPoolAspect(aspect, factory, ...args){
+
+        if(aspect === 'timer')
+            this._holding = false;
+
+        this._poolAspects[aspect] = [factory, ...args];
 
         const streams = this._streams;
         const len = streams.length;
@@ -177,15 +142,13 @@ class Frame {
 
             const s = streams[i];
             const pool = s.pool;
-            pool.build('until', factory, ...args);
+            pool.build(aspect, factory, ...args);
 
         }
 
         return this;
 
     };
-
-
 
     destroy(){
 

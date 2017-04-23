@@ -117,27 +117,10 @@ class Bus {
 
     };
 
-    // untilKeys(keys){
-    //
-    //     F.ASSERT_IS_HOLDING(this);
-    //     this._currentFrame.untilKeys(keys);
-    //     return this;
-    //
-    // };
-
-    untilFull(){
-
-        F.ASSERT_IS_HOLDING(this);
-        this._currentFrame.untilFull();
-        return this;
-
-    }
-
     willReset(){
 
         F.ASSERT_IS_HOLDING(this);
-        this._currentFrame.willReset();
-        return this;
+        return this.clear(F.getAlwaysTrue);
 
     }
 
@@ -161,6 +144,10 @@ class Bus {
 
     last(n) {
         return this.reduce(F.getKeepLast, n);
+    };
+
+    clear(factory, ...args) {
+        return this._currentFrame.clear(factory, ...args);
     };
 
     reduce(factory, ...args) {

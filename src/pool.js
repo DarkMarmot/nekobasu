@@ -8,9 +8,10 @@ class Pool {
         this.stream = stream;
 
         this.keep = null;
+        this.when = F.ALWAYS_TRUE;
         this.until = F.ALWAYS_TRUE;
         this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = false;
+        this.clear = F.ALWAYS_FALSE;
         this.isPrimed = false;
         this.source = stream.name;
 
@@ -33,24 +34,12 @@ class Pool {
         this[prop] = factory.call(this, ...args);
     };
 
-    // buildKeeper(factory, ...args){
-    //     this.keep = factory.call(this, ...args);
-    // };
-    //
-    // buildTimer(factory, ...args){
-    //     this.timer = factory.call(this, ...args);
-    // };
-    //
-    // buildUntil(factory, ...args){
-    //     this.until = factory.call(this, ...args);
-    // };
-
     release(pool) {
 
         pool = pool || this;
         const msg = pool.keep.content();
 
-        if(pool.clear){
+        if(pool.clear()){
             pool.keep.reset();
             pool.until.reset();
         }

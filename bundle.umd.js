@@ -1142,6 +1142,12 @@ var Func = {
         return source;
     },
 
+    getAlwaysTrue: function getAlwaysTrue() {
+        return function () {
+            return true;
+        };
+    },
+
     getBatchTimer: function getBatchTimer() {
         var pool = this;
         return function () {
@@ -1379,9 +1385,10 @@ var Pool = function () {
         this.stream = stream;
 
         this.keep = null;
+        this.when = Func.ALWAYS_TRUE;
         this.until = Func.ALWAYS_TRUE;
         this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = false;
+        this.clear = Func.ALWAYS_FALSE;
         this.isPrimed = false;
         this.source = stream.name;
     }
@@ -1410,26 +1417,12 @@ var Pool = function () {
         }
     }, {
         key: 'release',
-
-
-        // buildKeeper(factory, ...args){
-        //     this.keep = factory.call(this, ...args);
-        // };
-        //
-        // buildTimer(factory, ...args){
-        //     this.timer = factory.call(this, ...args);
-        // };
-        //
-        // buildUntil(factory, ...args){
-        //     this.until = factory.call(this, ...args);
-        // };
-
         value: function release(pool) {
 
             pool = pool || this;
             var msg = pool.keep.content();
 
-            if (pool.clear) {
+            if (pool.clear()) {
                 pool.keep.reset();
                 pool.until.reset();
             }
@@ -1597,6 +1590,24 @@ Stream.fromEvent = function (target, eventName, useCapture) {
     return stream;
 };
 
+var PoolAspects = function PoolAspects() {
+    classCallCheck(this, PoolAspects);
+
+
+    this.until = null;
+    this.reduce = null;
+    this.when = null;
+    this.clear = null;
+    this.timer = null;
+};
+
+//
+// this._keep = null; // pool storage
+// this._until = null; // stream end lifecycle -- todo switch until to when in current setup
+// this._timer = null; // release from pool timer
+// this._clear = false; // condition to clear storage on release
+// this._when = false; // invokes timer for release
+
 var Frame = function () {
     function Frame(bus, streams) {
         classCallCheck(this, Frame);
@@ -1612,11 +1623,7 @@ var Frame = function () {
         this._action = null; // function defining sync stream action
         this._isFactory = false; // whether sync action is a stateful factory function
 
-        this._keep = null; // pool storage
-        this._until = null; // stream end lifecycle -- todo switch until to when in current setup
-        this._timer = null; // release from pool timer
-        this._clear = false; // condition to clear storage on release
-        this._when = false; // invokes timer for release
+        this._poolAspects = null;
 
         var len = streams.length;
         for (var i = 0; i < len; i++) {
@@ -1657,6 +1664,7 @@ var Frame = function () {
         value: function hold() {
 
             this._holding = true;
+            this._poolAspects = new PoolAspects();
 
             var streams = this._streams;
             var len = streams.length;
@@ -1700,74 +1708,56 @@ var Frame = function () {
             return this.applySyncProcess('doFilter', Func.getSkipDupes, true);
         }
     }, {
-        key: 'willReset',
-        value: function willReset() {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var s = streams[i];
-                var pool = s.pool;
-                pool.clear = true;
+        key: 'clear',
+        value: function clear(factory) {
+            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+                args[_key - 1] = arguments[_key];
             }
 
-            return this;
+            return this.buildPoolAspect.apply(this, ['clear', factory].concat(args));
         }
     }, {
         key: 'reduce',
 
 
         // factory should define content and reset methods have signature f(msg, source) return f.content()
+
         value: function reduce(factory) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-                args[_key - 1] = arguments[_key];
-            }
-
-            for (var i = 0; i < len; i++) {
-
-                var s = streams[i];
-                var pool = s.pool;
-                pool.build.apply(pool, ['keep', factory].concat(args));
-            }
-
-            return this;
-        }
-    }, {
-        key: 'timer',
-        value: function timer(factory) {
-
-            this._holding = false; // holds end with timer
-
-            var streams = this._streams;
-            var len = streams.length;
-
             for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
                 args[_key2 - 1] = arguments[_key2];
             }
 
-            for (var i = 0; i < len; i++) {
-
-                var s = streams[i];
-                var pool = s.pool;
-                pool.build.apply(pool, ['timer', factory].concat(args));
-            }
-
-            return this;
+            return this.buildPoolAspect.apply(this, ['keep', factory].concat(args));
         }
     }, {
-        key: 'until',
-        value: function until(factory) {
+        key: 'timer',
+        value: function timer(factory) {
             for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
                 args[_key3 - 1] = arguments[_key3];
             }
 
-            this._until = [factory].concat(args);
+            return this.buildPoolAspect.apply(this, ['timer', factory].concat(args));
+        }
+    }, {
+        key: 'until',
+        value: function until(factory) {
+            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
+                args[_key4 - 1] = arguments[_key4];
+            }
+
+            return this.buildPoolAspect.apply(this, ['until', factory].concat(args));
+        }
+    }, {
+        key: 'buildPoolAspect',
+        value: function buildPoolAspect(aspect, factory) {
+
+            if (aspect === 'timer') this._holding = false;
+
+            for (var _len5 = arguments.length, args = Array(_len5 > 2 ? _len5 - 2 : 0), _key5 = 2; _key5 < _len5; _key5++) {
+                args[_key5 - 2] = arguments[_key5];
+            }
+
+            this._poolAspects[aspect] = [factory].concat(args);
 
             var streams = this._streams;
             var len = streams.length;
@@ -1776,7 +1766,7 @@ var Frame = function () {
 
                 var s = streams[i];
                 var pool = s.pool;
-                pool.build.apply(pool, ['until', factory].concat(args));
+                pool.build.apply(pool, [aspect, factory].concat(args));
             }
 
             return this;
@@ -1930,30 +1920,11 @@ var Bus = function () {
             return this;
         }
     }, {
-        key: 'untilFull',
-
-
-        // untilKeys(keys){
-        //
-        //     F.ASSERT_IS_HOLDING(this);
-        //     this._currentFrame.untilKeys(keys);
-        //     return this;
-        //
-        // };
-
-        value: function untilFull() {
-
-            Func.ASSERT_IS_HOLDING(this);
-            this._currentFrame.untilFull();
-            return this;
-        }
-    }, {
         key: 'willReset',
         value: function willReset() {
 
             Func.ASSERT_IS_HOLDING(this);
-            this._currentFrame.willReset();
-            return this;
+            return this.clear(Func.getAlwaysTrue);
         }
     }, {
         key: 'untilKeys',
@@ -1983,39 +1954,50 @@ var Bus = function () {
             return this.reduce(Func.getKeepLast, n);
         }
     }, {
-        key: 'reduce',
-        value: function reduce(factory) {
-            var _currentFrame, _addFrame$hold;
+        key: 'clear',
+        value: function clear(factory) {
+            var _currentFrame;
 
             for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
                 args[_key - 1] = arguments[_key];
             }
 
-            this.holding ? (_currentFrame = this._currentFrame).reduce.apply(_currentFrame, [factory].concat(args)) : (_addFrame$hold = this.addFrame().hold()).reduce.apply(_addFrame$hold, [factory].concat(args)).timer(Func.getSyncTimer);
-            return this;
+            return (_currentFrame = this._currentFrame).clear.apply(_currentFrame, [factory].concat(args));
         }
     }, {
-        key: 'timer',
-        value: function timer(factory) {
-            var _currentFrame2, _addFrame$hold2;
+        key: 'reduce',
+        value: function reduce(factory) {
+            var _currentFrame2, _addFrame$hold;
 
             for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
                 args[_key2 - 1] = arguments[_key2];
             }
 
-            this.holding ? (_currentFrame2 = this._currentFrame).timer.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold2 = this.addFrame().hold()).timer.apply(_addFrame$hold2, [factory].concat(args));
+            this.holding ? (_currentFrame2 = this._currentFrame).reduce.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold = this.addFrame().hold()).reduce.apply(_addFrame$hold, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {
-        key: 'until',
-        value: function until(factory) {
-            var _currentFrame3, _addFrame$hold3;
+        key: 'timer',
+        value: function timer(factory) {
+            var _currentFrame3, _addFrame$hold2;
 
             for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
                 args[_key3 - 1] = arguments[_key3];
             }
 
-            this.holding ? (_currentFrame3 = this._currentFrame).until.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold3 = this.addFrame().hold()).until.apply(_addFrame$hold3, [factory].concat(args)).timer(Func.getSyncTimer);
+            this.holding ? (_currentFrame3 = this._currentFrame).timer.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold2 = this.addFrame().hold()).timer.apply(_addFrame$hold2, [factory].concat(args));
+            return this;
+        }
+    }, {
+        key: 'until',
+        value: function until(factory) {
+            var _currentFrame4, _addFrame$hold3;
+
+            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
+                args[_key4 - 1] = arguments[_key4];
+            }
+
+            this.holding ? (_currentFrame4 = this._currentFrame).until.apply(_currentFrame4, [factory].concat(args)) : (_addFrame$hold3 = this.addFrame().hold()).until.apply(_addFrame$hold3, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {

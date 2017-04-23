@@ -37,6 +37,10 @@ const Func = {
         return source;
     },
 
+    getAlwaysTrue: function(){
+       return function(){ return true;}
+    },
+
     getBatchTimer: function(){
         const pool = this;
         return function() {
