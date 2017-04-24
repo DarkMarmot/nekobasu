@@ -204,7 +204,7 @@ const Func = {
 
     },
 
-    getUntilCount: function(n) {
+    getWhenCount: function(n) {
 
         let latched = false;
 
@@ -221,7 +221,7 @@ const Func = {
 
     },
 
-    getUntilKeys: function(keys) {
+    getWhenKeys: function(keys) {
 
         const keyHash = {};
         const len = keys.length;

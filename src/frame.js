@@ -124,6 +124,10 @@ class Frame {
         return this.buildPoolAspect('timer', factory, ...args);
     };
 
+    when(factory, ...args){
+        return this.buildPoolAspect('when', factory, ...args);
+    };
+
     until(factory, ...args){
         return this.buildPoolAspect('until', factory, ...args);
     };

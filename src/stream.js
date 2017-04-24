@@ -75,7 +75,7 @@ class Stream {
 
         // todo add destroy -> kills timeout
         // passes 'this' to avoid bind slowdown
-        setTimeout(this.emit, this.actionMethod() || 0, msg, source, this);
+        setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
 
     };
 

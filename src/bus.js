@@ -124,9 +124,9 @@ class Bus {
 
     }
 
-    untilKeys(keys) {
+    whenKeys(keys) {
         F.ASSERT_IS_HOLDING(this);
-        return this.until(F.getUntilKeys, keys);
+        return this.when(F.getWhenKeys, keys);
     };
 
     group(by) {
@@ -173,6 +173,15 @@ class Bus {
         this.holding ?
             this._currentFrame.until(factory, ...args) :
             this.addFrame().hold().until(factory, ...args).timer(F.getSyncTimer);
+        return this;
+
+    };
+
+    when(factory, ...args) {
+
+        this.holding ?
+            this._currentFrame.when(factory, ...args) :
+            this.addFrame().hold().when(factory, ...args).timer(F.getSyncTimer);
         return this;
 
     };

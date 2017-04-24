@@ -22,7 +22,7 @@ class Pool {
         this.keep(msg, source);
         if(!this.isPrimed){
             const content = this.keep.content();
-            if(this.until(content)){
+            if(this.when(content)){
                 this.isPrimed = true;
                 this.timer(this);
             }
@@ -41,7 +41,7 @@ class Pool {
 
         if(pool.clear()){
             pool.keep.reset();
-            pool.until.reset();
+            pool.when.reset();
         }
 
         pool.isPrimed = false;
