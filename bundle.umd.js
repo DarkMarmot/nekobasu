@@ -1300,7 +1300,7 @@ var Func = {
         return f;
     },
 
-    getUntilCount: function getUntilCount(n) {
+    getWhenCount: function getWhenCount(n) {
 
         var latched = false;
 
@@ -1316,7 +1316,7 @@ var Func = {
         return f;
     },
 
-    getUntilKeys: function getUntilKeys(keys) {
+    getWhenKeys: function getWhenKeys(keys) {
 
         var keyHash = {};
         var len = keys.length;
@@ -1400,7 +1400,7 @@ var Pool = function () {
             this.keep(msg, source);
             if (!this.isPrimed) {
                 var content = this.keep.content();
-                if (this.until(content)) {
+                if (this.when(content)) {
                     this.isPrimed = true;
                     this.timer(this);
                 }
@@ -1424,7 +1424,7 @@ var Pool = function () {
 
             if (pool.clear()) {
                 pool.keep.reset();
-                pool.until.reset();
+                pool.when.reset();
             }
 
             pool.isPrimed = false;
@@ -1739,10 +1739,19 @@ var Frame = function () {
             return this.buildPoolAspect.apply(this, ['timer', factory].concat(args));
         }
     }, {
-        key: 'until',
-        value: function until(factory) {
+        key: 'when',
+        value: function when(factory) {
             for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
                 args[_key4 - 1] = arguments[_key4];
+            }
+
+            return this.buildPoolAspect.apply(this, ['when', factory].concat(args));
+        }
+    }, {
+        key: 'until',
+        value: function until(factory) {
+            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
+                args[_key5 - 1] = arguments[_key5];
             }
 
             return this.buildPoolAspect.apply(this, ['until', factory].concat(args));
@@ -1753,8 +1762,8 @@ var Frame = function () {
 
             if (aspect === 'timer') this._holding = false;
 
-            for (var _len5 = arguments.length, args = Array(_len5 > 2 ? _len5 - 2 : 0), _key5 = 2; _key5 < _len5; _key5++) {
-                args[_key5 - 2] = arguments[_key5];
+            for (var _len6 = arguments.length, args = Array(_len6 > 2 ? _len6 - 2 : 0), _key6 = 2; _key6 < _len6; _key6++) {
+                args[_key6 - 2] = arguments[_key6];
             }
 
             this._poolAspects[aspect] = [factory].concat(args);
@@ -1927,10 +1936,10 @@ var Bus = function () {
             return this.clear(Func.getAlwaysTrue);
         }
     }, {
-        key: 'untilKeys',
-        value: function untilKeys(keys) {
+        key: 'whenKeys',
+        value: function whenKeys(keys) {
             Func.ASSERT_IS_HOLDING(this);
-            return this.until(Func.getUntilKeys, keys);
+            return this.when(Func.getWhenKeys, keys);
         }
     }, {
         key: 'group',
@@ -1998,6 +2007,18 @@ var Bus = function () {
             }
 
             this.holding ? (_currentFrame4 = this._currentFrame).until.apply(_currentFrame4, [factory].concat(args)) : (_addFrame$hold3 = this.addFrame().hold()).until.apply(_addFrame$hold3, [factory].concat(args)).timer(Func.getSyncTimer);
+            return this;
+        }
+    }, {
+        key: 'when',
+        value: function when(factory) {
+            var _currentFrame5, _addFrame$hold4;
+
+            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
+                args[_key5 - 1] = arguments[_key5];
+            }
+
+            this.holding ? (_currentFrame5 = this._currentFrame).when.apply(_currentFrame5, [factory].concat(args)) : (_addFrame$hold4 = this.addFrame().hold()).when.apply(_addFrame$hold4, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {

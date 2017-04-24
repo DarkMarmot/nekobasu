@@ -487,7 +487,7 @@ describe('Catbus', function(){
                 b1.add(b2);
                 b1.last(3);
                 b1.merge()
-                    .hold().group().untilKeys(['roll','drop']).batch();
+                    .hold().group().whenKeys(['roll','drop']).batch();
 
                 b1.run(log);
                 b1.run(function(msg, source){
