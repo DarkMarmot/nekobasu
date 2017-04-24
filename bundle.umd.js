@@ -1112,13 +1112,13 @@ function TO_MSG(msg, source) {
     return msg;
 }
 
-var Func = {
+function FUNCTOR(val) {
+    return typeof val === 'function' ? val : function () {
+        return val;
+    };
+}
 
-    FUNCTOR: function FUNCTOR(val) {
-        return typeof val === 'function' ? val : function () {
-            return val;
-        };
-    },
+var Func = {
 
     NOOP: function NOOP() {},
 
@@ -1169,6 +1169,80 @@ var Func = {
         };
     },
 
+    getThrottleTimer: function getThrottleTimer(fNum) {
+
+        var pool = this;
+        fNum = FUNCTOR(fNum);
+        var wasEmpty = false;
+        var timeoutId = null;
+        var msgDuringTimer = false;
+        var auto = pool.keep.auto;
+
+        function timedRelease(fromTimeout) {
+
+            if (pool.stream.dead) return;
+
+            var nowEmpty = pool.keep.isEmpty;
+
+            if (!fromTimeout) {
+                if (!timeoutId) {
+                    pool.release(pool);
+                    wasEmpty = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                } else {
+                    msgDuringTimer = true;
+                }
+                return;
+            }
+
+            if (nowEmpty) {
+                if (wasEmpty) {
+                    // throttle becomes inactive
+                } else {
+                    // try one more time period to maintain throttle
+                    wasEmpty = true;
+                    msgDuringTimer = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                }
+            } else {
+                pool.release(pool);
+                wasEmpty = false;
+                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+            }
+        }
+
+        return timedRelease;
+    },
+
+    getBuffer: function getBuffer(n) {
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.auto = true;
+
+        f.next = function () {
+            return buffer[0];
+        };
+
+        f.reset = function () {
+            if (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = buffer.length === 0;
+        };
+
+        f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
     getGroup: function getGroup(groupBy) {
 
         groupBy = groupBy || TO_SOURCE;
@@ -1185,9 +1259,10 @@ var Func = {
             for (var k in hash) {
                 delete hash[k];
             }
+            f.isEmpty = true;
         };
 
-        f.content = function () {
+        f.next = f.content = function () {
             return hash;
         };
 
@@ -1205,10 +1280,10 @@ var Func = {
             };
 
             _f.reset = function () {
-                last = undefined;
+                _f.isEmpty = true;
             };
 
-            _f.content = function () {
+            _f.next = _f.content = function () {
                 return last;
             };
 
@@ -1227,9 +1302,10 @@ var Func = {
             while (buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function () {
+        f.next = f.content = function () {
             return buffer;
         };
 
@@ -1248,9 +1324,10 @@ var Func = {
 
             _f2.reset = function () {
                 firstMsg = false;
+                _f2.isEmpty = true;
             };
 
-            _f2.content = function () {
+            _f2.next = _f2.content = function () {
                 return firstMsg;
             };
 
@@ -1269,9 +1346,10 @@ var Func = {
             while (buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function () {
+        f.next = f.content = function () {
             return buffer;
         };
 
@@ -1291,9 +1369,10 @@ var Func = {
             while (buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function () {
+        f.next = f.content = function () {
             return buffer;
         };
 
@@ -1376,6 +1455,7 @@ var Func = {
 
 Func.TO_SOURCE = TO_SOURCE;
 Func.To_MSG = TO_MSG;
+Func.FUNCTOR = FUNCTOR;
 
 var Pool = function () {
     function Pool(stream) {
@@ -1420,7 +1500,8 @@ var Pool = function () {
         value: function release(pool) {
 
             pool = pool || this;
-            var msg = pool.keep.content();
+            var hasContent = !pool.keep.isEmpty;
+            var msg = hasContent && pool.keep.next();
 
             if (pool.clear()) {
                 pool.keep.reset();
@@ -1428,7 +1509,8 @@ var Pool = function () {
             }
 
             pool.isPrimed = false;
-            pool.stream.emit(msg, pool.stream.name);
+
+            if (hasContent) pool.stream.emit(msg, pool.stream.name);
         }
     }]);
     return Pool;
@@ -1508,7 +1590,7 @@ var Stream = function () {
 
             // todo add destroy -> kills timeout
             // passes 'this' to avoid bind slowdown
-            setTimeout(this.emit, this.actionMethod() || 0, msg, source, this);
+            setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
         }
     }, {
         key: 'doName',
@@ -1910,6 +1992,11 @@ var Bus = function () {
         key: 'sync',
         value: function sync() {
             return this.timer(Func.getSyncTimer);
+        }
+    }, {
+        key: 'throttle',
+        value: function throttle(fNum) {
+            return this.timer(Func.getThrottleTimer, fNum);
         }
     }, {
         key: 'hold',

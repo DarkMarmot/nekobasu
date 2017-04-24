@@ -9,11 +9,13 @@ function TO_MSG(msg, source) {
     return msg;
 }
 
+function FUNCTOR(val) {
+    return (typeof val === 'function') ? val : function() { return val; };
+}
+
 const Func = {
 
-    FUNCTOR: function(val) {
-        return (typeof val === 'function') ? val : function() { return val; };
-    },
+
 
     NOOP: function(){},
 
@@ -62,6 +64,86 @@ const Func = {
         }
     },
 
+    getThrottleTimer: function(fNum){
+
+        const pool = this;
+        fNum = FUNCTOR(fNum);
+        let wasEmpty = false;
+        let timeoutId = null;
+        let msgDuringTimer = false;
+        const auto = pool.keep.auto;
+
+        function timedRelease(fromTimeout){
+
+            if(pool.stream.dead)
+                return;
+
+            const nowEmpty = pool.keep.isEmpty;
+
+            if(!fromTimeout){
+                if(!timeoutId) {
+                    pool.release(pool);
+                    wasEmpty = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                } else {
+                    msgDuringTimer = true;
+                }
+                return;
+            }
+
+            if(nowEmpty){
+                if(wasEmpty){
+                    // throttle becomes inactive
+                } else {
+                    // try one more time period to maintain throttle
+                    wasEmpty = true;
+                    msgDuringTimer = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                }
+            } else {
+                pool.release(pool);
+                wasEmpty = false;
+                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+            }
+
+        }
+
+        return timedRelease;
+
+    },
+
+    getBuffer: function(n){
+
+        const buffer = [];
+
+        const f = function(msg, source){
+            if(buffer.length < n)
+                buffer.push(msg);
+            return buffer;
+        };
+
+        f.auto = true;
+
+        f.next = function(){
+            return buffer[0];
+        };
+
+        f.reset = function(){
+            if(buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = (buffer.length === 0);
+        };
+
+        f.content = function(){
+            return buffer;
+        };
+
+        return f;
+
+    },
+
+
     getGroup: function(groupBy){
 
         groupBy = groupBy || TO_SOURCE;
@@ -79,9 +161,10 @@ const Func = {
             for(const k in hash){
                 delete hash[k];
             }
+            f.isEmpty = true;
         };
 
-        f.content = function(){
+        f.next = f.content = function(){
             return hash;
         };
 
@@ -100,10 +183,10 @@ const Func = {
             };
 
             f.reset = function(){
-                last = undefined;
+                f.isEmpty = true;
             };
 
-            f.content = function(){
+            f.next = f.content = function(){
                 return last;
             };
 
@@ -124,9 +207,10 @@ const Func = {
             while(buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function(){
+        f.next = f.content = function(){
             return buffer;
         };
 
@@ -148,9 +232,10 @@ const Func = {
 
             f.reset = function(){
                 firstMsg = false;
+                f.isEmpty = true;
             };
 
-            f.content = function(){
+            f.next = f.content = function(){
                 return firstMsg;
             };
 
@@ -171,9 +256,10 @@ const Func = {
             while(buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function(){
+        f.next = f.content = function(){
             return buffer;
         };
 
@@ -194,9 +280,10 @@ const Func = {
             while(buffer.length) {
                 buffer.shift();
             }
+            f.isEmpty = true;
         };
 
-        f.content = function(){
+        f.next = f.content = function(){
             return buffer;
         };
 
@@ -290,5 +377,6 @@ const Func = {
 
 Func.TO_SOURCE = TO_SOURCE;
 Func.To_MSG = TO_MSG;
+Func.FUNCTOR = FUNCTOR;
 
 export default Func;

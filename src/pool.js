@@ -37,7 +37,8 @@ class Pool {
     release(pool) {
 
         pool = pool || this;
-        const msg = pool.keep.content();
+        const hasContent = !pool.keep.isEmpty;
+        const msg = hasContent && pool.keep.next();
 
         if(pool.clear()){
             pool.keep.reset();
@@ -45,7 +46,9 @@ class Pool {
         }
 
         pool.isPrimed = false;
-        pool.stream.emit(msg, pool.stream.name);
+
+        if(hasContent)
+            pool.stream.emit(msg, pool.stream.name);
 
     };
 

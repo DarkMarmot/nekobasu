@@ -99,6 +99,9 @@ class Bus {
         return this.timer(F.getSyncTimer);
     };
 
+    throttle(fNum) {
+        return this.timer(F.getThrottleTimer, fNum);
+    };
 
     hold() {
 
