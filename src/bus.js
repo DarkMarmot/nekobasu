@@ -25,6 +25,8 @@ class Bus {
         return this._currentFrame._holding;
     };
 
+    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+
     addFrame() {
 
         const lastFrame = this._currentFrame;
@@ -36,26 +38,6 @@ class Bus {
         return nextFrame;
     };
 
-    // create a new frame with one stream fed by all streams of the current frame
-
-    mergeFrame() {
-
-        const mergedStream = new Stream();
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-        this._frames.push(nextFrame);
-
-        const streams = lastFrame._streams;
-        const len = streams.length;
-        for (let i = 0; i < len; i++) {
-            const s = streams[i];
-            s.addTarget(mergedStream);
-        }
-
-        return this;
-
-    };
 
     // create stream
     spawn(){
@@ -207,7 +189,20 @@ class Bus {
     merge() {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.mergeFrame();
+
+        const mergedStream = new Stream();
+
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
+        this._frames.push(nextFrame);
+
+        const streams = lastFrame._streams;
+        const len = streams.length;
+        for (let i = 0; i < len; i++) {
+            const s = streams[i];
+            s.addTarget(mergedStream);
+        }
+
         return this;
     };
 

@@ -1952,31 +1952,29 @@ var Bus = function () {
             return nextFrame;
         }
     }, {
-        key: 'mergeFrame',
+        key: 'spawn',
 
 
         // create a new frame with one stream fed by all streams of the current frame
 
-        value: function mergeFrame() {
-
-            var mergedStream = new Stream();
-
-            var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-            this._frames.push(nextFrame);
-
-            var streams = lastFrame._streams;
-            var len = streams.length;
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.addTarget(mergedStream);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'spawn',
-
+        // mergeFrame() {
+        //
+        //     const mergedStream = new Stream();
+        //
+        //     const lastFrame = this._currentFrame;
+        //     const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
+        //     this._frames.push(nextFrame);
+        //
+        //     const streams = lastFrame._streams;
+        //     const len = streams.length;
+        //     for (let i = 0; i < len; i++) {
+        //         const s = streams[i];
+        //         s.addTarget(mergedStream);
+        //     }
+        //
+        //     return this;
+        //
+        // };
 
         // create stream
         value: function spawn() {}
@@ -2158,7 +2156,20 @@ var Bus = function () {
         value: function merge() {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.mergeFrame();
+
+            var mergedStream = new Stream();
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
+            this._frames.push(nextFrame);
+
+            var streams = lastFrame._streams;
+            var len = streams.length;
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.addTarget(mergedStream);
+            }
+
             return this;
         }
     }, {
