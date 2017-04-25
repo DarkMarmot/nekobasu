@@ -1,7 +1,7 @@
 //run mocha from project root
 
 var assert = require('assert');
-var Catbus = require('../bundle.umd.js');
+var Catbus = require('../dist/catbus.umd.js');
 
 var root = Catbus.scope();
 

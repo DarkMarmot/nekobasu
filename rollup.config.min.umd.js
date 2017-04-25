@@ -5,13 +5,13 @@ import uglify from 'rollup-plugin-uglify';
 export default {
     entry: 'src/main.js',
     format: 'umd',
-    dest: './dist/catbus.umd.js', // equivalent to --output
+    dest: './dist/catbus.umd.min.js', // equivalent to --output
     plugins: [
         resolve(),
         babel({
             exclude: 'node_modules/**' // only transpile our source code
         }),
-        (false && uglify())
+        uglify()
     ],
     moduleName: 'Catbus',
     sourceMap: true

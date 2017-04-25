@@ -1,7 +1,7 @@
 (function (global, factory) {
 	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
 	typeof define === 'function' && define.amd ? define(factory) :
-	(global.moop = factory());
+	(global.Catbus = factory());
 }(this, (function () { 'use strict';
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) {
@@ -1104,6 +1104,14 @@ var Scope = function () {
     return Scope;
 }();
 
+function ALWAYS_TRUE() {
+    return true;
+}
+
+function ALWAYS_FALSE() {
+    return false;
+}
+
 function TO_SOURCE(msg, source) {
     return source;
 }
@@ -1111,6 +1119,8 @@ function TO_SOURCE(msg, source) {
 function TO_MSG(msg, source) {
     return msg;
 }
+
+function NOOP() {}
 
 function FUNCTOR(val) {
     return typeof val === 'function' ? val : function () {
@@ -1120,26 +1130,12 @@ function FUNCTOR(val) {
 
 var Func = {
 
-    NOOP: function NOOP() {},
-
-    ALWAYS_TRUE: function ALWAYS_TRUE() {
-        return true;
-    },
-
-    ALWAYS_FALSE: function ALWAYS_FALSE() {
-        return false;
-    },
-
     ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
         if (args.length < 1) throw new Error('Method requires at least one argument.');
     },
 
     ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
         if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
-    },
-
-    TO_SOURCE_FUNC: function TO_SOURCE_FUNC(msg, source) {
-        return source;
     },
 
     getAlwaysTrue: function getAlwaysTrue() {
@@ -1214,7 +1210,9 @@ var Func = {
         return timedRelease;
     },
 
-    getBuffer: function getBuffer(n) {
+    getQueue: function getQueue(n) {
+
+        n = n || Infinity;
 
         var buffer = [];
 
@@ -1223,21 +1221,49 @@ var Func = {
             return buffer;
         };
 
-        f.auto = true;
+        f.isBuffer = ALWAYS_TRUE;
 
         f.next = function () {
-            return buffer[0];
+            return buffer.shift();
         };
 
-        f.reset = function () {
-            if (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = buffer.length === 0;
+        f.isEmpty = function () {
+            return buffer.length === 0;
         };
 
         f.content = function () {
             return buffer;
+        };
+
+        return f;
+    },
+
+    getScan: function getScan(func, seed) {
+
+        var hasSeed = arguments.length === 2;
+        var acc = void 0;
+        var initMsg = true;
+
+        var f = function f(msg, source) {
+
+            if (initMsg) {
+                initMsg = false;
+                if (hasSeed) {
+                    acc = func(seed, msg, source);
+                } else {
+                    acc = msg;
+                }
+            } else {
+                acc = func(acc, msg, source);
+            }
+
+            return acc;
+        };
+
+        f.reset = NOOP;
+
+        f.next = f.content = function () {
+            return acc;
         };
 
         return f;
@@ -1456,6 +1482,9 @@ var Func = {
 Func.TO_SOURCE = TO_SOURCE;
 Func.To_MSG = TO_MSG;
 Func.FUNCTOR = FUNCTOR;
+Func.ALWAYS_TRUE = ALWAYS_TRUE;
+Func.ALWAYS_FALSE = ALWAYS_FALSE;
+Func.NOOP = NOOP;
 
 var Pool = function () {
     function Pool(stream) {
@@ -2007,6 +2036,11 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'scan',
+        value: function scan(func, seed) {
+            return this.reduce(Func.getScan, func, seed);
+        }
+    }, {
         key: 'delay',
         value: function delay(num) {
 
@@ -2032,7 +2066,9 @@ var Bus = function () {
         key: 'group',
         value: function group(by) {
 
-            return this.reduce(Func.getGroup, by);
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().hold().reduce(Func.getGroup, by);
+            return this;
         }
     }, {
         key: 'all',
@@ -2240,7 +2276,9 @@ function _wireFrames(frame1, frame2) {
 }
 
 var Catbus$1 = {};
+
 var _batchQueue = [];
+var _primed = false;
 
 Catbus$1.fromEvent = function (target, eventName, useCapture) {
 
@@ -2249,7 +2287,14 @@ Catbus$1.fromEvent = function (target, eventName, useCapture) {
 };
 
 Catbus$1.enqueue = function (pool) {
+
     _batchQueue.push(pool);
+
+    if (!_primed) {
+        // register to flush the queue
+        _primed = true;
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus$1.flush);else process.nextTick(Catbus$1.flush);
+    }
 };
 
 Catbus$1.scope = function (name) {
@@ -2258,6 +2303,8 @@ Catbus$1.scope = function (name) {
 };
 
 Catbus$1.flush = function () {
+
+    _primed = false;
 
     var cycles = 0;
     var q = _batchQueue;
@@ -2286,4 +2333,4 @@ Catbus$1.flush = function () {
 return Catbus$1;
 
 })));
-//# sourceMappingURL=bundle.umd.js.map
+//# sourceMappingURL=catbus.umd.js.map

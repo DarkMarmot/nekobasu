@@ -1,2 +1,2 @@
-var myBundle = require('./bundle.js');
+var myBundle = require('./bundle.umd.js');
 myBundle();

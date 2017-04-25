@@ -1,0 +1,27 @@
+
+<html>
+
+<script src="./js/catbus.umd.js"></script>
+
+<button id="up">up</button>
+<button id="down">down</button>
+
+
+<script>
+
+    const up = document.querySelectorAll('#up')[0];
+    const down = document.querySelectorAll('#down')[0];
+
+    const upClicks = Catbus.fromEvent(up, 'click').transform(1);
+
+    const downClicks = Catbus.fromEvent(down, 'click').transform(-1);
+
+    var b = upClicks
+        .add(downClicks)
+        .merge()
+        .scan(function(total, msg){ return total + msg;}, 0)
+        .run(function(msg, source){ console.log('total:', msg, source);});
+
+</script>
+
+</html>

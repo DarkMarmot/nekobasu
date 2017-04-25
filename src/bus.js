@@ -111,6 +111,10 @@ class Bus {
 
     };
 
+    scan(func, seed){
+        return this.reduce(F.getScan, func, seed);
+    };
+
     delay(num) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
@@ -134,7 +138,9 @@ class Bus {
 
     group(by) {
 
-        return this.reduce(F.getGroup, by);
+        F.ASSERT_NOT_HOLDING(this);
+        this.addFrame().hold().reduce(F.getGroup, by);
+        return this;
     };
 
     all() {

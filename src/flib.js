@@ -1,6 +1,14 @@
 
 import Catbus from './catbus.js';
 
+function ALWAYS_TRUE(){
+    return true;
+}
+
+function ALWAYS_FALSE(){
+    return false;
+}
+
 function TO_SOURCE(msg, source) {
     return source;
 }
@@ -9,19 +17,16 @@ function TO_MSG(msg, source) {
     return msg;
 }
 
+function NOOP(){
+
+}
+
+
 function FUNCTOR(val) {
     return (typeof val === 'function') ? val : function() { return val; };
 }
 
 const Func = {
-
-
-
-    NOOP: function(){},
-
-    ALWAYS_TRUE: function(){ return true; },
-
-    ALWAYS_FALSE: function(){ return false;},
 
     ASSERT_NEED_ONE_ARGUMENT: function(args){
         if(args.length < 1)
@@ -31,12 +36,6 @@ const Func = {
     ASSERT_IS_FUNCTION: function(func){
         if(typeof func !== 'function')
             throw new Error('Argument [func] is not of type function.');
-    },
-
-
-
-    TO_SOURCE_FUNC: function(msg, source) {
-        return source;
     },
 
     getAlwaysTrue: function(){
@@ -112,7 +111,9 @@ const Func = {
 
     },
 
-    getBuffer: function(n){
+    getQueue: function(n){
+
+        n = n || Infinity;
 
         const buffer = [];
 
@@ -122,17 +123,14 @@ const Func = {
             return buffer;
         };
 
-        f.auto = true;
+        f.isBuffer = ALWAYS_TRUE;
 
         f.next = function(){
-            return buffer[0];
+            return buffer.shift();
         };
 
-        f.reset = function(){
-            if(buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = (buffer.length === 0);
+        f.isEmpty = function(){
+            return buffer.length === 0;
         };
 
         f.content = function(){
@@ -143,6 +141,38 @@ const Func = {
 
     },
 
+    getScan: function(func, seed){
+
+        const hasSeed = arguments.length === 2;
+        let acc;
+        let initMsg = true;
+
+        const f = function(msg, source){
+
+            if(initMsg){
+                initMsg = false;
+                if(hasSeed){
+                    acc = func(seed, msg, source);
+                } else {
+                    acc = msg;
+                }
+            } else {
+                acc = func(acc, msg, source);
+            }
+
+            return acc;
+
+        };
+
+        f.reset = NOOP;
+
+        f.next = f.content = function(){
+            return acc;
+        };
+
+
+        return f;
+    },
 
     getGroup: function(groupBy){
 
@@ -378,5 +408,8 @@ const Func = {
 Func.TO_SOURCE = TO_SOURCE;
 Func.To_MSG = TO_MSG;
 Func.FUNCTOR = FUNCTOR;
+Func.ALWAYS_TRUE = ALWAYS_TRUE;
+Func.ALWAYS_FALSE = ALWAYS_FALSE;
+Func.NOOP = NOOP;
 
 export default Func;

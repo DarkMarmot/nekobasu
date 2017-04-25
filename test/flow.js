@@ -7,7 +7,7 @@ var events = require('events');
 var dice = new events.EventEmitter();
 
 var assert = require('assert');
-var Catbus = require('../bundle.umd.js');
+var Catbus = require('../dist/catbus.umd.js');
 
 var msgLog, sourceLog, packetLog, lastMsg;
 
@@ -410,7 +410,8 @@ describe('Catbus', function(){
                 b1.add(b2);
                 b1.last(3);
                 b1.merge()
-                   .hold().group().batch();
+                   // .hold()
+                    .group().batch();
 
                 b1.run(log);
                 b1.run(function(msg, source){
@@ -452,7 +453,7 @@ describe('Catbus', function(){
 
                 b1.add(b2);
                 b1.merge();
-                b1.hold();
+                // b1.hold();
                 b1.group();
                 b1.batch();
                 b1.run(log);
@@ -486,8 +487,7 @@ describe('Catbus', function(){
 
                 b1.add(b2);
                 b1.last(3);
-                b1.merge()
-                    .hold().group().whenKeys(['roll','drop']).batch();
+                b1.merge().group().whenKeys(['roll','drop']).batch();
 
                 b1.run(log);
                 b1.run(function(msg, source){
@@ -513,6 +513,42 @@ describe('Catbus', function(){
                 b2.destroy();
 
             });
+
+            it('can scan', function () {
+
+                var b1 = Catbus.fromEvent(dice, 'roll');
+                b1.transform(function(msg){ return msg * 2});
+
+                var b2 = Catbus.fromEvent(dice, 'drop');
+                b2.transform(function(msg){ return -msg});
+
+                b1.add(b2);
+                b1.merge().scan(function(acc, msg){ return acc + msg;}, 0);
+
+                b1.run(log);
+                b1.run(function(msg, source){
+                    console.log('b1:', msg, source)}
+                );
+
+                //add(b2).last(3).merge().hold().group().
+                dice.emit('roll', 5);
+                dice.emit('drop', 1);
+                dice.emit('roll', 4);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 7);
+
+                Catbus.flush(); // for batch processing
+
+                assert.equal(msgLog.length, 7);
+                assert.equal(msgLog[6], 49);
+
+                b1.destroy();
+                b2.destroy();
+
+            });
+
 
         });
 
