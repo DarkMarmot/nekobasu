@@ -2,6 +2,9 @@
 import Scope from './scope.js';
 import Stream from './stream.js';
 import Bus from './bus.js';
+import Nyan from './nyan.js';
+
+
 
 const Catbus = {};
 
@@ -11,7 +14,7 @@ let _primed = false;
 Catbus.fromEvent = function(target, eventName, useCapture){
 
     const stream = Stream.fromEvent(target, eventName, useCapture);
-    return new Bus([stream]);
+    return new Bus(null, [stream]);
 
 };
 
@@ -29,6 +32,24 @@ Catbus.enqueue = function(pool){
 };
 
 Catbus.scope = function(name){
+
+    console.log('NYAN');
+    const k = Nyan.parse('!bunny?, cow, moo? (*toMuffin? | =order) (=raw)');
+
+    for(const sentence of k){
+        if(typeof sentence === 'string'){
+            console.log(sentence);
+            continue;
+        }
+        for(const phrase of sentence){
+            for(const word of phrase){
+                console.log(word.name, word.operation, word.optional);
+            }
+        }
+    }
+
+    console.log(k);
+
     console.log('root is ', name);
     return new Scope(name);
 };

@@ -4,6 +4,388 @@
 	(global.Catbus = factory());
 }(this, (function () { 'use strict';
 
+function ALWAYS_TRUE() {
+    return true;
+}
+
+function ALWAYS_FALSE() {
+    return false;
+}
+
+function TO_SOURCE(msg, source) {
+    return source;
+}
+
+function TO_MSG(msg, source) {
+    return msg;
+}
+
+function NOOP() {}
+
+function FUNCTOR(val) {
+    return typeof val === 'function' ? val : function () {
+        return val;
+    };
+}
+
+var Func = {
+
+    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
+        if (args.length < 1) throw new Error('Method requires at least one argument.');
+    },
+
+    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
+        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
+    },
+
+    getAlwaysTrue: function getAlwaysTrue() {
+        return function () {
+            return true;
+        };
+    },
+
+    getBatchTimer: function getBatchTimer() {
+        var pool = this;
+        return function () {
+            Catbus$1.enqueue(pool);
+        };
+    },
+
+    getSyncTimer: function getSyncTimer() {
+        var pool = this;
+        return function () {
+            pool.release(pool);
+        };
+    },
+
+    getDeferTimer: function getDeferTimer() {
+        var pool = this;
+        return function () {
+            setTimeout(pool.release, 0, pool);
+        };
+    },
+
+    getThrottleTimer: function getThrottleTimer(fNum) {
+
+        var pool = this;
+        fNum = FUNCTOR(fNum);
+        var wasEmpty = false;
+        var timeoutId = null;
+        var msgDuringTimer = false;
+        var auto = pool.keep.auto;
+
+        function timedRelease(fromTimeout) {
+
+            if (pool.stream.dead) return;
+
+            var nowEmpty = pool.keep.isEmpty;
+
+            if (!fromTimeout) {
+                if (!timeoutId) {
+                    pool.release(pool);
+                    wasEmpty = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                } else {
+                    msgDuringTimer = true;
+                }
+                return;
+            }
+
+            if (nowEmpty) {
+                if (wasEmpty) {
+                    // throttle becomes inactive
+                } else {
+                    // try one more time period to maintain throttle
+                    wasEmpty = true;
+                    msgDuringTimer = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                }
+            } else {
+                pool.release(pool);
+                wasEmpty = false;
+                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+            }
+        }
+
+        return timedRelease;
+    },
+
+    getQueue: function getQueue(n) {
+
+        n = n || Infinity;
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.isBuffer = ALWAYS_TRUE;
+
+        f.next = function () {
+            return buffer.shift();
+        };
+
+        f.isEmpty = function () {
+            return buffer.length === 0;
+        };
+
+        f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getScan: function getScan(func, seed) {
+
+        var hasSeed = arguments.length === 2;
+        var acc = void 0;
+        var initMsg = true;
+
+        var f = function f(msg, source) {
+
+            if (initMsg) {
+                initMsg = false;
+                if (hasSeed) {
+                    acc = func(seed, msg, source);
+                } else {
+                    acc = msg;
+                }
+            } else {
+                acc = func(acc, msg, source);
+            }
+
+            return acc;
+        };
+
+        f.reset = NOOP;
+
+        f.next = f.content = function () {
+            return acc;
+        };
+
+        return f;
+    },
+
+    getGroup: function getGroup(groupBy) {
+
+        groupBy = groupBy || TO_SOURCE;
+        var hash = {};
+
+        var f = function f(msg, source) {
+
+            var g = groupBy(msg, source);
+            hash[g] = msg;
+            return hash;
+        };
+
+        f.reset = function () {
+            for (var k in hash) {
+                delete hash[k];
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return hash;
+        };
+
+        return f;
+    },
+
+    getKeepLast: function getKeepLast(n) {
+
+        if (!n || n < 0) {
+
+            var last = void 0;
+
+            var _f = function _f(msg, source) {
+                return last = msg;
+            };
+
+            _f.reset = function () {
+                _f.isEmpty = true;
+            };
+
+            _f.next = _f.content = function () {
+                return last;
+            };
+
+            return _f;
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            if (buffer.length > n) buffer.shift();
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getKeepFirst: function getKeepFirst(n) {
+
+        if (!n || n < 0) {
+
+            var firstMsg = void 0;
+            var hasFirst = false;
+            var _f2 = function _f2(msg, source) {
+                return hasFirst ? firstMsg : firstMsg = msg;
+            };
+
+            _f2.reset = function () {
+                firstMsg = false;
+                _f2.isEmpty = true;
+            };
+
+            _f2.next = _f2.content = function () {
+                return firstMsg;
+            };
+
+            return _f2;
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getKeepAll: function getKeepAll() {
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getWhenCount: function getWhenCount(n) {
+
+        var latched = false;
+
+        var f = function f(messages) {
+            latched = latched || messages.length >= n;
+            return latched;
+        };
+
+        f.reset = function () {
+            latched = false;
+        };
+
+        return f;
+    },
+
+    getWhenKeys: function getWhenKeys(keys) {
+
+        var keyHash = {};
+        var len = keys.length;
+
+        for (var i = 0; i < len; i++) {
+            var k = keys[i];
+            keyHash[k] = true;
+        }
+
+        var latched = false;
+
+        var f = function f(messagesByKey) {
+
+            if (latched) return true;
+
+            for (var _i = 0; _i < len; _i++) {
+                var _k = keys[_i];
+                if (!messagesByKey.hasOwnProperty(_k)) return false;
+            }
+
+            return latched = true;
+        };
+
+        f.reset = function () {
+            latched = false;
+            for (var _k2 in keyHash) {
+                delete keyHash[_k2];
+            }
+        };
+
+        return f;
+    },
+
+    getSkipDupes: function getSkipDupes() {
+
+        var hadMsg = false;
+        var lastMsg = void 0;
+
+        return function (msg) {
+
+            var diff = !hadMsg || msg !== lastMsg;
+            lastMsg = msg;
+            hadMsg = true;
+            return diff;
+        };
+    },
+
+    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
+        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
+    },
+
+    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
+        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    }
+
+};
+
+Func.TO_SOURCE = TO_SOURCE;
+Func.To_MSG = TO_MSG;
+Func.FUNCTOR = FUNCTOR;
+Func.ALWAYS_TRUE = ALWAYS_TRUE;
+Func.ALWAYS_FALSE = ALWAYS_FALSE;
+Func.NOOP = NOOP;
+
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) {
   return typeof obj;
 } : function (obj) {
@@ -470,1237 +852,6 @@ var Data = function () {
     return Data;
 }();
 
-var idCounter = 0;
-
-var Scope = function () {
-    function Scope(name) {
-        classCallCheck(this, Scope);
-
-
-        this._id = ++idCounter;
-        this._name = name;
-        this._parent = null;
-        this._children = [];
-        this._dataList = new Map();
-        this._valves = new Map();
-        this._mirrors = new Map();
-        this._dead = false;
-    }
-
-    createClass(Scope, [{
-        key: 'clear',
-        value: function clear() {
-
-            if (this._dead) return;
-
-            var _iteratorNormalCompletion = true;
-            var _didIteratorError = false;
-            var _iteratorError = undefined;
-
-            try {
-                for (var _iterator = this._children[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var child = _step.value;
-
-                    child.destroy();
-                }
-            } catch (err) {
-                _didIteratorError = true;
-                _iteratorError = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion && _iterator.return) {
-                        _iterator.return();
-                    }
-                } finally {
-                    if (_didIteratorError) {
-                        throw _iteratorError;
-                    }
-                }
-            }
-
-            var _iteratorNormalCompletion2 = true;
-            var _didIteratorError2 = false;
-            var _iteratorError2 = undefined;
-
-            try {
-                for (var _iterator2 = this._dataList.values()[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var data = _step2.value;
-
-                    data.destroy();
-                }
-            } catch (err) {
-                _didIteratorError2 = true;
-                _iteratorError2 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                        _iterator2.return();
-                    }
-                } finally {
-                    if (_didIteratorError2) {
-                        throw _iteratorError2;
-                    }
-                }
-            }
-
-            this._children = [];
-            this._dataList.clear();
-            this._valves.clear();
-            this._mirrors.clear();
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            this.clear();
-            this.parent = null;
-            this._dead = true;
-        }
-    }, {
-        key: 'createChild',
-        value: function createChild(name) {
-
-            var child = new Scope(name);
-            child.parent = this;
-            return child;
-        }
-    }, {
-        key: 'insertParent',
-        value: function insertParent(newParent) {
-
-            newParent.parent = this.parent;
-            this.parent = newParent;
-            return this;
-        }
-    }, {
-        key: '_createMirror',
-        value: function _createMirror(data) {
-
-            var mirror = Object.create(data);
-            mirror._type = DATA_TYPES.MIRROR;
-            this._mirrors.set(data.name, mirror);
-            return mirror;
-        }
-    }, {
-        key: '_createData',
-        value: function _createData(name, type) {
-
-            var d = new Data(this, name, type);
-            this._dataList.set(name, d);
-            return d;
-        }
-    }, {
-        key: 'data',
-        value: function data(name) {
-
-            return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
-        }
-    }, {
-        key: 'action',
-        value: function action(name) {
-
-            var d = this.grab(name);
-
-            if (d) return d.verify(DATA_TYPES.ACTION);
-
-            return this._createData(name, DATA_TYPES.ACTION);
-        }
-    }, {
-        key: 'state',
-        value: function state(name) {
-
-            var d = this.grab(name);
-
-            if (d) return d.verify(DATA_TYPES.STATE);
-
-            var state = this._createData(name, DATA_TYPES.STATE);
-            this._createMirror(state);
-            return state;
-        }
-    }, {
-        key: 'findDataSet',
-        value: function findDataSet(names, required) {
-
-            var result = {};
-            var _iteratorNormalCompletion3 = true;
-            var _didIteratorError3 = false;
-            var _iteratorError3 = undefined;
-
-            try {
-                for (var _iterator3 = names[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-                    var name = _step3.value;
-
-                    result[name] = this.find(name, required);
-                }
-            } catch (err) {
-                _didIteratorError3 = true;
-                _iteratorError3 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion3 && _iterator3.return) {
-                        _iterator3.return();
-                    }
-                } finally {
-                    if (_didIteratorError3) {
-                        throw _iteratorError3;
-                    }
-                }
-            }
-
-            return result;
-        }
-    }, {
-        key: 'readDataSet',
-        value: function readDataSet(names, required) {
-
-            var dataSet = this.findDataSet(names, required);
-            var result = {};
-
-            var _iteratorNormalCompletion4 = true;
-            var _didIteratorError4 = false;
-            var _iteratorError4 = undefined;
-
-            try {
-                for (var _iterator4 = dataSet[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
-                    var d = _step4.value;
-
-                    if (d) {
-                        var lastPacket = d.peek();
-                        if (lastPacket) result[d.name] = lastPacket.msg;
-                    }
-                }
-            } catch (err) {
-                _didIteratorError4 = true;
-                _iteratorError4 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion4 && _iterator4.return) {
-                        _iterator4.return();
-                    }
-                } finally {
-                    if (_didIteratorError4) {
-                        throw _iteratorError4;
-                    }
-                }
-            }
-
-            return result;
-        }
-    }, {
-        key: 'flatten',
-
-
-        // created a flattened view of all data at and above this scope
-
-        value: function flatten() {
-
-            var scope = this;
-
-            var result = new Map();
-            var appliedValves = new Map();
-
-            var _iteratorNormalCompletion5 = true;
-            var _didIteratorError5 = false;
-            var _iteratorError5 = undefined;
-
-            try {
-                for (var _iterator5 = scope._dataList[Symbol.iterator](), _step5; !(_iteratorNormalCompletion5 = (_step5 = _iterator5.next()).done); _iteratorNormalCompletion5 = true) {
-                    var _step5$value = slicedToArray(_step5.value, 2),
-                        _key3 = _step5$value[0],
-                        value = _step5$value[1];
-
-                    result.set(_key3, value);
-                }
-            } catch (err) {
-                _didIteratorError5 = true;
-                _iteratorError5 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion5 && _iterator5.return) {
-                        _iterator5.return();
-                    }
-                } finally {
-                    if (_didIteratorError5) {
-                        throw _iteratorError5;
-                    }
-                }
-            }
-
-            while (scope = scope._parent) {
-
-                var dataList = scope._dataList;
-                var valves = scope._valves;
-                var mirrors = scope._mirrors;
-
-                if (!dataList.size) continue;
-
-                // further restrict valves with each new scope
-
-                if (valves.size) {
-                    if (appliedValves.size) {
-                        var _iteratorNormalCompletion6 = true;
-                        var _didIteratorError6 = false;
-                        var _iteratorError6 = undefined;
-
-                        try {
-                            for (var _iterator6 = appliedValves.keys()[Symbol.iterator](), _step6; !(_iteratorNormalCompletion6 = (_step6 = _iterator6.next()).done); _iteratorNormalCompletion6 = true) {
-                                var key = _step6.value;
-
-                                if (!valves.has(key)) appliedValves.delete(key);
-                            }
-                        } catch (err) {
-                            _didIteratorError6 = true;
-                            _iteratorError6 = err;
-                        } finally {
-                            try {
-                                if (!_iteratorNormalCompletion6 && _iterator6.return) {
-                                    _iterator6.return();
-                                }
-                            } finally {
-                                if (_didIteratorError6) {
-                                    throw _iteratorError6;
-                                }
-                            }
-                        }
-                    } else {
-                        var _iteratorNormalCompletion7 = true;
-                        var _didIteratorError7 = false;
-                        var _iteratorError7 = undefined;
-
-                        try {
-                            for (var _iterator7 = valves.entries()[Symbol.iterator](), _step7; !(_iteratorNormalCompletion7 = (_step7 = _iterator7.next()).done); _iteratorNormalCompletion7 = true) {
-                                var _step7$value = slicedToArray(_step7.value, 2),
-                                    _key = _step7$value[0],
-                                    value = _step7$value[1];
-
-                                appliedValves.set(_key, value);
-                            }
-                        } catch (err) {
-                            _didIteratorError7 = true;
-                            _iteratorError7 = err;
-                        } finally {
-                            try {
-                                if (!_iteratorNormalCompletion7 && _iterator7.return) {
-                                    _iterator7.return();
-                                }
-                            } finally {
-                                if (_didIteratorError7) {
-                                    throw _iteratorError7;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                var possibles = appliedValves.size ? appliedValves : dataList;
-
-                var _iteratorNormalCompletion8 = true;
-                var _didIteratorError8 = false;
-                var _iteratorError8 = undefined;
-
-                try {
-                    for (var _iterator8 = possibles.keys()[Symbol.iterator](), _step8; !(_iteratorNormalCompletion8 = (_step8 = _iterator8.next()).done); _iteratorNormalCompletion8 = true) {
-                        var _key2 = _step8.value;
-
-                        if (!result.has(_key2)) {
-
-                            var data = mirrors.get(_key2) || dataList.get(_key2);
-                            if (data) result.set(_key2, data);
-                        }
-                    }
-                } catch (err) {
-                    _didIteratorError8 = true;
-                    _iteratorError8 = err;
-                } finally {
-                    try {
-                        if (!_iteratorNormalCompletion8 && _iterator8.return) {
-                            _iterator8.return();
-                        }
-                    } finally {
-                        if (_didIteratorError8) {
-                            throw _iteratorError8;
-                        }
-                    }
-                }
-            }
-
-            return result;
-        }
-    }, {
-        key: 'find',
-        value: function find(name, required) {
-
-            var localData = this.grab(name);
-            if (localData) return localData;
-
-            var scope = this;
-
-            while (scope = scope._parent) {
-
-                var valves = scope._valves;
-
-                // if valves exist and the name is not present, stop looking
-                if (valves.size && !valves.has(name)) {
-                    break;
-                }
-
-                var mirror = scope._mirrors.get(name);
-
-                if (mirror) return mirror;
-
-                var d = scope.grab(name);
-
-                if (d) return d;
-            }
-
-            if (required) throw new Error('Required data: ' + name + ' not found!');
-
-            return null;
-        }
-    }, {
-        key: 'findOuter',
-        value: function findOuter(name, required) {
-
-            var foundInner = false;
-            var localData = this.grab(name);
-            if (localData) foundInner = true;
-
-            var scope = this;
-
-            while (scope = scope._parent) {
-
-                var valves = scope._valves;
-
-                // if valves exist and the name is not present, stop looking
-                if (valves.size && !valves.has(name)) {
-                    break;
-                }
-
-                var mirror = scope._mirrors.get(name);
-
-                if (mirror) {
-
-                    if (foundInner) return mirror;
-
-                    foundInner = true;
-                    continue;
-                }
-
-                var d = scope.grab(name);
-
-                if (d) {
-
-                    if (foundInner) return d;
-
-                    foundInner = true;
-                }
-            }
-
-            if (required) throw new Error('Required data: ' + name + ' not found!');
-
-            return null;
-        }
-    }, {
-        key: 'grab',
-        value: function grab(name, required) {
-
-            var data = this._dataList.get(name);
-
-            if (!data && required) throw new Error('Required Data: ' + name + ' not found!');
-
-            return data || null;
-        }
-    }, {
-        key: 'transaction',
-        value: function transaction(writes) {
-
-            if (Array.isArray(writes)) return this._multiWriteArray(writes);else if ((typeof writes === 'undefined' ? 'undefined' : _typeof(writes)) === 'object') return this._multiWriteHash(writes);
-
-            throw new Error('Write values must be in an array of object hash.');
-        }
-    }, {
-        key: '_multiWriteArray',
-
-
-        // write {name, topic, value} objects as a transaction
-        value: function _multiWriteArray(writeArray, dimension) {
-
-            var list = [];
-
-            var _iteratorNormalCompletion9 = true;
-            var _didIteratorError9 = false;
-            var _iteratorError9 = undefined;
-
-            try {
-                for (var _iterator9 = writeArray[Symbol.iterator](), _step9; !(_iteratorNormalCompletion9 = (_step9 = _iterator9.next()).done); _iteratorNormalCompletion9 = true) {
-                    var w = _step9.value;
-
-                    var d = this.find(w.name);
-                    d.silentWrite(w.value, w.topic || null);
-                    list.push(d);
-                }
-            } catch (err) {
-                _didIteratorError9 = true;
-                _iteratorError9 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion9 && _iterator9.return) {
-                        _iterator9.return();
-                    }
-                } finally {
-                    if (_didIteratorError9) {
-                        throw _iteratorError9;
-                    }
-                }
-            }
-
-            var i = 0;
-            var _iteratorNormalCompletion10 = true;
-            var _didIteratorError10 = false;
-            var _iteratorError10 = undefined;
-
-            try {
-                for (var _iterator10 = list[Symbol.iterator](), _step10; !(_iteratorNormalCompletion10 = (_step10 = _iterator10.next()).done); _iteratorNormalCompletion10 = true) {
-                    var _d = _step10.value;
-
-                    var _w = writeArray[i];
-                    _d.refresh(_w.topic || null);
-                }
-            } catch (err) {
-                _didIteratorError10 = true;
-                _iteratorError10 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion10 && _iterator10.return) {
-                        _iterator10.return();
-                    }
-                } finally {
-                    if (_didIteratorError10) {
-                        throw _iteratorError10;
-                    }
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: '_multiWriteHash',
-
-
-        // write key-values as a transaction
-        value: function _multiWriteHash(writeHash) {
-
-            var list = [];
-
-            for (var k in writeHash) {
-                var v = writeHash[k];
-                var d = this.find(k);
-                d.silentWrite(v);
-                list.push(d);
-            }
-
-            var _iteratorNormalCompletion11 = true;
-            var _didIteratorError11 = false;
-            var _iteratorError11 = undefined;
-
-            try {
-                for (var _iterator11 = list[Symbol.iterator](), _step11; !(_iteratorNormalCompletion11 = (_step11 = _iterator11.next()).done); _iteratorNormalCompletion11 = true) {
-                    var _d2 = _step11.value;
-
-                    _d2.refresh();
-                }
-            } catch (err) {
-                _didIteratorError11 = true;
-                _iteratorError11 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion11 && _iterator11.return) {
-                        _iterator11.return();
-                    }
-                } finally {
-                    if (_didIteratorError11) {
-                        throw _iteratorError11;
-                    }
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'children',
-        get: function get$$1() {
-
-            return this._children.map(function (d) {
-                return d;
-            });
-        }
-    }, {
-        key: 'parent',
-        get: function get$$1() {
-            return this._parent;
-        },
-        set: function set$$1(newParent) {
-
-            var oldParent = this.parent;
-
-            if (oldParent === newParent) return;
-
-            if (oldParent) {
-                var i = oldParent._children.indexOf(this);
-                oldParent._children.splice(i, 1);
-            }
-
-            this._parent = newParent;
-
-            if (newParent) {
-                newParent._children.push(this);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'valves',
-        set: function set$$1(list) {
-            var _iteratorNormalCompletion12 = true;
-            var _didIteratorError12 = false;
-            var _iteratorError12 = undefined;
-
-            try {
-
-                for (var _iterator12 = list[Symbol.iterator](), _step12; !(_iteratorNormalCompletion12 = (_step12 = _iterator12.next()).done); _iteratorNormalCompletion12 = true) {
-                    var name = _step12.value;
-
-                    this._valves.set(name, true);
-                }
-            } catch (err) {
-                _didIteratorError12 = true;
-                _iteratorError12 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion12 && _iterator12.return) {
-                        _iterator12.return();
-                    }
-                } finally {
-                    if (_didIteratorError12) {
-                        throw _iteratorError12;
-                    }
-                }
-            }
-        },
-        get: function get$$1() {
-            return Array.from(this._valves.keys());
-        }
-    }]);
-    return Scope;
-}();
-
-function ALWAYS_TRUE() {
-    return true;
-}
-
-function ALWAYS_FALSE() {
-    return false;
-}
-
-function TO_SOURCE(msg, source) {
-    return source;
-}
-
-function TO_MSG(msg, source) {
-    return msg;
-}
-
-function NOOP() {}
-
-function FUNCTOR(val) {
-    return typeof val === 'function' ? val : function () {
-        return val;
-    };
-}
-
-var Func = {
-
-    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
-        if (args.length < 1) throw new Error('Method requires at least one argument.');
-    },
-
-    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
-        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
-    },
-
-    getAlwaysTrue: function getAlwaysTrue() {
-        return function () {
-            return true;
-        };
-    },
-
-    getBatchTimer: function getBatchTimer() {
-        var pool = this;
-        return function () {
-            Catbus$1.enqueue(pool);
-        };
-    },
-
-    getSyncTimer: function getSyncTimer() {
-        var pool = this;
-        return function () {
-            pool.release(pool);
-        };
-    },
-
-    getDeferTimer: function getDeferTimer() {
-        var pool = this;
-        return function () {
-            setTimeout(pool.release, 0, pool);
-        };
-    },
-
-    getThrottleTimer: function getThrottleTimer(fNum) {
-
-        var pool = this;
-        fNum = FUNCTOR(fNum);
-        var wasEmpty = false;
-        var timeoutId = null;
-        var msgDuringTimer = false;
-        var auto = pool.keep.auto;
-
-        function timedRelease(fromTimeout) {
-
-            if (pool.stream.dead) return;
-
-            var nowEmpty = pool.keep.isEmpty;
-
-            if (!fromTimeout) {
-                if (!timeoutId) {
-                    pool.release(pool);
-                    wasEmpty = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                } else {
-                    msgDuringTimer = true;
-                }
-                return;
-            }
-
-            if (nowEmpty) {
-                if (wasEmpty) {
-                    // throttle becomes inactive
-                } else {
-                    // try one more time period to maintain throttle
-                    wasEmpty = true;
-                    msgDuringTimer = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                }
-            } else {
-                pool.release(pool);
-                wasEmpty = false;
-                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-            }
-        }
-
-        return timedRelease;
-    },
-
-    getQueue: function getQueue(n) {
-
-        n = n || Infinity;
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.isBuffer = ALWAYS_TRUE;
-
-        f.next = function () {
-            return buffer.shift();
-        };
-
-        f.isEmpty = function () {
-            return buffer.length === 0;
-        };
-
-        f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getScan: function getScan(func, seed) {
-
-        var hasSeed = arguments.length === 2;
-        var acc = void 0;
-        var initMsg = true;
-
-        var f = function f(msg, source) {
-
-            if (initMsg) {
-                initMsg = false;
-                if (hasSeed) {
-                    acc = func(seed, msg, source);
-                } else {
-                    acc = msg;
-                }
-            } else {
-                acc = func(acc, msg, source);
-            }
-
-            return acc;
-        };
-
-        f.reset = NOOP;
-
-        f.next = f.content = function () {
-            return acc;
-        };
-
-        return f;
-    },
-
-    getGroup: function getGroup(groupBy) {
-
-        groupBy = groupBy || TO_SOURCE;
-        var hash = {};
-
-        var f = function f(msg, source) {
-
-            var g = groupBy(msg, source);
-            hash[g] = msg;
-            return hash;
-        };
-
-        f.reset = function () {
-            for (var k in hash) {
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return hash;
-        };
-
-        return f;
-    },
-
-    getKeepLast: function getKeepLast(n) {
-
-        if (!n || n < 0) {
-
-            var last = void 0;
-
-            var _f = function _f(msg, source) {
-                return last = msg;
-            };
-
-            _f.reset = function () {
-                _f.isEmpty = true;
-            };
-
-            _f.next = _f.content = function () {
-                return last;
-            };
-
-            return _f;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            if (buffer.length > n) buffer.shift();
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepFirst: function getKeepFirst(n) {
-
-        if (!n || n < 0) {
-
-            var firstMsg = void 0;
-            var hasFirst = false;
-            var _f2 = function _f2(msg, source) {
-                return hasFirst ? firstMsg : firstMsg = msg;
-            };
-
-            _f2.reset = function () {
-                firstMsg = false;
-                _f2.isEmpty = true;
-            };
-
-            _f2.next = _f2.content = function () {
-                return firstMsg;
-            };
-
-            return _f2;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepAll: function getKeepAll() {
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getWhenCount: function getWhenCount(n) {
-
-        var latched = false;
-
-        var f = function f(messages) {
-            latched = latched || messages.length >= n;
-            return latched;
-        };
-
-        f.reset = function () {
-            latched = false;
-        };
-
-        return f;
-    },
-
-    getWhenKeys: function getWhenKeys(keys) {
-
-        var keyHash = {};
-        var len = keys.length;
-
-        for (var i = 0; i < len; i++) {
-            var k = keys[i];
-            keyHash[k] = true;
-        }
-
-        var latched = false;
-
-        var f = function f(messagesByKey) {
-
-            if (latched) return true;
-
-            for (var _i = 0; _i < len; _i++) {
-                var _k = keys[_i];
-                if (!messagesByKey.hasOwnProperty(_k)) return false;
-            }
-
-            return latched = true;
-        };
-
-        f.reset = function () {
-            latched = false;
-            for (var _k2 in keyHash) {
-                delete keyHash[_k2];
-            }
-        };
-
-        return f;
-    },
-
-    getSkipDupes: function getSkipDupes() {
-
-        var hadMsg = false;
-        var lastMsg = void 0;
-
-        return function (msg) {
-
-            var diff = !hadMsg || msg !== lastMsg;
-            lastMsg = msg;
-            hadMsg = true;
-            return diff;
-        };
-    },
-
-    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
-        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
-
-    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
-        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
-
-};
-
-Func.TO_SOURCE = TO_SOURCE;
-Func.To_MSG = TO_MSG;
-Func.FUNCTOR = FUNCTOR;
-Func.ALWAYS_TRUE = ALWAYS_TRUE;
-Func.ALWAYS_FALSE = ALWAYS_FALSE;
-Func.NOOP = NOOP;
-
-var Pool = function () {
-    function Pool(stream) {
-        classCallCheck(this, Pool);
-
-
-        this.stream = stream;
-
-        this.keep = null;
-        this.when = Func.ALWAYS_TRUE;
-        this.until = Func.ALWAYS_TRUE;
-        this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = Func.ALWAYS_FALSE;
-        this.isPrimed = false;
-        this.source = stream.name;
-    }
-
-    createClass(Pool, [{
-        key: 'tell',
-        value: function tell(msg, source) {
-
-            this.keep(msg, source);
-            if (!this.isPrimed) {
-                var content = this.keep.content();
-                if (this.when(content)) {
-                    this.isPrimed = true;
-                    this.timer(this);
-                }
-            }
-        }
-    }, {
-        key: 'build',
-        value: function build(prop, factory) {
-            for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-                args[_key - 2] = arguments[_key];
-            }
-
-            this[prop] = factory.call.apply(factory, [this].concat(args));
-        }
-    }, {
-        key: 'release',
-        value: function release(pool) {
-
-            pool = pool || this;
-            var hasContent = !pool.keep.isEmpty;
-            var msg = hasContent && pool.keep.next();
-
-            if (pool.clear()) {
-                pool.keep.reset();
-                pool.when.reset();
-            }
-
-            pool.isPrimed = false;
-
-            if (hasContent) pool.stream.emit(msg, pool.stream.name);
-        }
-    }]);
-    return Pool;
-}();
-
-var Stream = function () {
-    function Stream() {
-        classCallCheck(this, Stream);
-
-
-        this.debugFrame = null;
-        this.dead = false;
-        this.children = [];
-        this.name = null;
-        this.pool = null;
-        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.processMethod = this.emit;
-        this.actionMethod = null; // for run, transform, filter, name, delay
-    }
-
-    createClass(Stream, [{
-        key: 'tell',
-        value: function tell(msg, source) {
-
-            if (this.dead) // true if canceled or disposed midstream
-                return this;
-
-            this.processMethod(msg, source); // tell method = doDelay, doGroup, doHold, , doFilter
-
-            return this;
-        }
-    }, {
-        key: 'drop',
-        value: function drop(stream) {
-
-            var children = this.children;
-            var i = children.indexOf(stream);
-
-            if (i !== -1) children.splice(i, 1);
-        }
-    }, {
-        key: 'addTarget',
-        value: function addTarget(stream) {
-            this.children.push(stream);
-        }
-    }, {
-        key: 'emit',
-        value: function emit(msg, source, thisStream) {
-
-            thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
-
-            var children = thisStream.children;
-            var len = children.length;
-
-            for (var i = 0; i < len; i++) {
-                var c = children[i];
-                c.tell(msg, source);
-            }
-        }
-    }, {
-        key: 'doFilter',
-        value: function doFilter(msg, source) {
-
-            if (!this.actionMethod(msg, source)) return;
-            this.emit(msg, source);
-        }
-    }, {
-        key: 'doTransform',
-        value: function doTransform(msg, source) {
-
-            msg = this.actionMethod(msg, source);
-            this.emit(msg, source);
-        }
-    }, {
-        key: 'doDelay',
-        value: function doDelay(msg, source) {
-
-            // todo add destroy -> kills timeout
-            // passes 'this' to avoid bind slowdown
-            setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
-        }
-    }, {
-        key: 'doName',
-        value: function doName(msg, source) {
-
-            source = this.actionMethod(msg, source);
-            this.emit(msg, source);
-        }
-    }, {
-        key: 'doRun',
-        value: function doRun(msg, source) {
-
-            this.actionMethod(msg, source);
-            this.emit(msg, source);
-        }
-    }, {
-        key: 'createPool',
-        value: function createPool() {
-
-            this.pool = new Pool(this);
-        }
-    }, {
-        key: 'doPool',
-        value: function doPool(msg, source) {
-
-            this.pool.tell(msg, source);
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return;
-
-            this.cleanupMethod(); // should remove an eventListener if present
-        }
-    }]);
-    return Stream;
-}();
-
-Stream.fromData = function (data, topic, name) {
-
-    var stream = new Stream();
-    var streamName = name || topic || data.name;
-    stream.name = streamName;
-
-    var toStream = function toStream(msg) {
-        stream.tell(msg, streamName);
-    };
-
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream, topic);
-    };
-
-    data.follow(toStream, topic);
-
-    return stream;
-};
-
-Stream.fromEvent = function (target, eventName, useCapture) {
-
-    useCapture = !!useCapture;
-
-    var stream = new Stream();
-    stream.name = eventName;
-
-    var on = target.addEventListener || target.addListener || target.on;
-    var off = target.removeEventListener || target.removeListener || target.off;
-
-    var toStream = function toStream(msg) {
-        stream.tell(msg, eventName);
-    };
-
-    stream.cleanupMethod = function () {
-        off.call(target, eventName, toStream, useCapture);
-    };
-
-    on.call(target, eventName, toStream, useCapture);
-
-    return stream;
-};
-
 var PoolAspects = function PoolAspects() {
     classCallCheck(this, PoolAspects);
 
@@ -1926,21 +1077,241 @@ var Frame = function () {
     return Frame;
 }();
 
+var Pool = function () {
+    function Pool(stream) {
+        classCallCheck(this, Pool);
+
+
+        this.stream = stream;
+
+        this.keep = null;
+        this.when = Func.ALWAYS_TRUE;
+        this.until = Func.ALWAYS_TRUE;
+        this.timer = null; // throttle, debounce, defer, batch, sync
+        this.clear = Func.ALWAYS_FALSE;
+        this.isPrimed = false;
+        this.source = stream.name;
+    }
+
+    createClass(Pool, [{
+        key: 'tell',
+        value: function tell(msg, source) {
+
+            this.keep(msg, source);
+            if (!this.isPrimed) {
+                var content = this.keep.content();
+                if (this.when(content)) {
+                    this.isPrimed = true;
+                    this.timer(this);
+                }
+            }
+        }
+    }, {
+        key: 'build',
+        value: function build(prop, factory) {
+            for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+                args[_key - 2] = arguments[_key];
+            }
+
+            this[prop] = factory.call.apply(factory, [this].concat(args));
+        }
+    }, {
+        key: 'release',
+        value: function release(pool) {
+
+            pool = pool || this;
+            var hasContent = !pool.keep.isEmpty;
+            var msg = hasContent && pool.keep.next();
+
+            if (pool.clear()) {
+                pool.keep.reset();
+                pool.when.reset();
+            }
+
+            pool.isPrimed = false;
+
+            if (hasContent) pool.stream.emit(msg, pool.stream.name);
+        }
+    }]);
+    return Pool;
+}();
+
+var Stream = function () {
+    function Stream() {
+        classCallCheck(this, Stream);
+
+
+        this.debugFrame = null;
+        this.dead = false;
+        this.children = [];
+        this.name = null;
+        this.pool = null;
+        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
+        this.processMethod = this.emit;
+        this.actionMethod = null; // for run, transform, filter, name, delay
+    }
+
+    createClass(Stream, [{
+        key: 'tell',
+        value: function tell(msg, source) {
+
+            if (this.dead) // true if canceled or disposed midstream
+                return this;
+
+            this.processMethod(msg, source); // tell method = doDelay, doGroup, doHold, , doFilter
+
+            return this;
+        }
+    }, {
+        key: 'drop',
+        value: function drop(stream) {
+
+            var children = this.children;
+            var i = children.indexOf(stream);
+
+            if (i !== -1) children.splice(i, 1);
+        }
+    }, {
+        key: 'addTarget',
+        value: function addTarget(stream) {
+            this.children.push(stream);
+        }
+    }, {
+        key: 'emit',
+        value: function emit(msg, source, thisStream) {
+
+            thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
+
+            var children = thisStream.children;
+            var len = children.length;
+
+            for (var i = 0; i < len; i++) {
+                var c = children[i];
+                c.tell(msg, source);
+            }
+        }
+    }, {
+        key: 'doFilter',
+        value: function doFilter(msg, source) {
+
+            if (!this.actionMethod(msg, source)) return;
+            this.emit(msg, source);
+        }
+    }, {
+        key: 'doTransform',
+        value: function doTransform(msg, source) {
+
+            msg = this.actionMethod(msg, source);
+            this.emit(msg, source);
+        }
+    }, {
+        key: 'doDelay',
+        value: function doDelay(msg, source) {
+
+            // todo add destroy -> kills timeout
+            // passes 'this' to avoid bind slowdown
+            setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
+        }
+    }, {
+        key: 'doName',
+        value: function doName(msg, source) {
+
+            source = this.actionMethod(msg, source);
+            this.emit(msg, source);
+        }
+    }, {
+        key: 'doRun',
+        value: function doRun(msg, source) {
+
+            this.actionMethod(msg, source);
+            this.emit(msg, source);
+        }
+    }, {
+        key: 'createPool',
+        value: function createPool() {
+
+            this.pool = new Pool(this);
+        }
+    }, {
+        key: 'doPool',
+        value: function doPool(msg, source) {
+
+            this.pool.tell(msg, source);
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            if (this.dead) return;
+
+            this.cleanupMethod(); // should remove an eventListener if present
+        }
+    }]);
+    return Stream;
+}();
+
+Stream.fromData = function (data, topic, name) {
+
+    var stream = new Stream();
+    var streamName = name || topic || data.name;
+    stream.name = streamName;
+
+    var toStream = function toStream(msg) {
+        stream.tell(msg, streamName);
+    };
+
+    stream.cleanupMethod = function () {
+        data.unsubscribe(toStream, topic);
+    };
+
+    data.follow(toStream, topic);
+
+    return stream;
+};
+
+Stream.fromEvent = function (target, eventName, useCapture) {
+
+    useCapture = !!useCapture;
+
+    var stream = new Stream();
+    stream.name = eventName;
+
+    var on = target.addEventListener || target.addListener || target.on;
+    var off = target.removeEventListener || target.removeListener || target.off;
+
+    var toStream = function toStream(msg) {
+        stream.tell(msg, eventName);
+    };
+
+    stream.cleanupMethod = function () {
+        off.call(target, eventName, toStream, useCapture);
+    };
+
+    on.call(target, eventName, toStream, useCapture);
+
+    return stream;
+};
+
 var Bus = function () {
-    function Bus(streams) {
+    function Bus(scope, streams) {
         classCallCheck(this, Bus);
 
 
         this._frames = [];
         this._dead = false;
-        this._scope = null;
-        var f = new Frame(this, streams);
+        this._scope = scope;
+        if (scope) scope._busList.push(this);
+        var f = new Frame(this, streams || []);
         this._frames.push(f);
         this._currentFrame = f;
     }
 
     createClass(Bus, [{
         key: 'addFrame',
+
+
+        // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+
         value: function addFrame() {
 
             var lastFrame = this._currentFrame;
@@ -1955,31 +1326,10 @@ var Bus = function () {
         key: 'spawn',
 
 
-        // create a new frame with one stream fed by all streams of the current frame
-
-        // mergeFrame() {
-        //
-        //     const mergedStream = new Stream();
-        //
-        //     const lastFrame = this._currentFrame;
-        //     const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-        //     this._frames.push(nextFrame);
-        //
-        //     const streams = lastFrame._streams;
-        //     const len = streams.length;
-        //     for (let i = 0; i < len; i++) {
-        //         const s = streams[i];
-        //         s.addTarget(mergedStream);
-        //     }
-        //
-        //     return this;
-        //
-        // };
-
         // create stream
         value: function spawn() {}
 
-        // convert each stream into a bus, dump in array
+        // convert each stream into a bus, wiring prior streams, dump in array
 
     }, {
         key: 'split',
@@ -1992,7 +1342,7 @@ var Bus = function () {
         value: function fork() {
 
             Func.ASSERT_NOT_HOLDING(this);
-            var fork = new Bus();
+            var fork = new Bus(this.scope);
             _wireFrames(this._currentFrame, fork._currentFrame);
 
             return fork;
@@ -2262,6 +1612,11 @@ var Bus = function () {
         get: function get$$1() {
             return this._currentFrame._holding;
         }
+    }, {
+        key: 'scope',
+        get: function get$$1() {
+            return this._scope;
+        }
     }]);
     return Bus;
 }();
@@ -2286,6 +1641,740 @@ function _wireFrames(frame1, frame2) {
     }
 }
 
+var idCounter = 0;
+
+function _destroyEach(arr) {
+
+    var len = arr.length;
+    for (var i = 0; i < len; i++) {
+        var item = arr[i];
+        item.destroy();
+    }
+}
+
+var Scope = function () {
+    function Scope(name) {
+        classCallCheck(this, Scope);
+
+
+        this._id = ++idCounter;
+        this._name = name;
+        this._parent = null;
+        this._children = [];
+        this._busList = [];
+        this._dataList = new Map();
+        this._valves = new Map();
+        this._mirrors = new Map();
+        this._dead = false;
+    }
+
+    createClass(Scope, [{
+        key: 'watch',
+        value: function watch(fStr) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            fStr = Func.FUNCTOR(fStr);
+        }
+    }, {
+        key: 'clear',
+        value: function clear() {
+
+            if (this._dead) return;
+
+            // console.log('clearing:', this._id, 'has:', this.children.length);
+
+            _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
+            _destroyEach(this._busList);
+            _destroyEach(this._dataList.values());
+
+            // console.log('done:', this._id, 'has:', this.children.length);
+
+            // for(const data of this._dataList.values()){
+            //     data.destroy();
+            // }
+
+            // this._destroyEach(this._children);
+            // this._destroyEach(this._busList);
+            // this._destroyEach(this._dataList.values());
+
+
+            this._children = [];
+            this._busList = [];
+            this._dataList.clear();
+            this._valves.clear();
+            this._mirrors.clear();
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            this.clear();
+            this.parent = null;
+            this._dead = true;
+        }
+    }, {
+        key: 'createChild',
+        value: function createChild(name) {
+
+            var child = new Scope(name);
+            child.parent = this;
+            return child;
+        }
+    }, {
+        key: 'insertParent',
+        value: function insertParent(newParent) {
+
+            newParent.parent = this.parent;
+            this.parent = newParent;
+            return this;
+        }
+    }, {
+        key: '_createMirror',
+        value: function _createMirror(data) {
+
+            var mirror = Object.create(data);
+            mirror._type = DATA_TYPES.MIRROR;
+            this._mirrors.set(data.name, mirror);
+            return mirror;
+        }
+    }, {
+        key: '_createData',
+        value: function _createData(name, type) {
+
+            var d = new Data(this, name, type);
+            this._dataList.set(name, d);
+            return d;
+        }
+    }, {
+        key: 'data',
+        value: function data(name) {
+
+            return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
+        }
+    }, {
+        key: 'action',
+        value: function action(name) {
+
+            var d = this.grab(name);
+
+            if (d) return d.verify(DATA_TYPES.ACTION);
+
+            return this._createData(name, DATA_TYPES.ACTION);
+        }
+    }, {
+        key: 'state',
+        value: function state(name) {
+
+            var d = this.grab(name);
+
+            if (d) return d.verify(DATA_TYPES.STATE);
+
+            var state = this._createData(name, DATA_TYPES.STATE);
+            this._createMirror(state);
+            return state;
+        }
+    }, {
+        key: 'findDataSet',
+        value: function findDataSet(names, required) {
+
+            var result = {};
+            var _iteratorNormalCompletion = true;
+            var _didIteratorError = false;
+            var _iteratorError = undefined;
+
+            try {
+                for (var _iterator = names[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                    var name = _step.value;
+
+                    result[name] = this.find(name, required);
+                }
+            } catch (err) {
+                _didIteratorError = true;
+                _iteratorError = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion && _iterator.return) {
+                        _iterator.return();
+                    }
+                } finally {
+                    if (_didIteratorError) {
+                        throw _iteratorError;
+                    }
+                }
+            }
+
+            return result;
+        }
+    }, {
+        key: 'readDataSet',
+        value: function readDataSet(names, required) {
+
+            var dataSet = this.findDataSet(names, required);
+            var result = {};
+
+            var _iteratorNormalCompletion2 = true;
+            var _didIteratorError2 = false;
+            var _iteratorError2 = undefined;
+
+            try {
+                for (var _iterator2 = dataSet[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+                    var d = _step2.value;
+
+                    if (d) {
+                        var lastPacket = d.peek();
+                        if (lastPacket) result[d.name] = lastPacket.msg;
+                    }
+                }
+            } catch (err) {
+                _didIteratorError2 = true;
+                _iteratorError2 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
+                        _iterator2.return();
+                    }
+                } finally {
+                    if (_didIteratorError2) {
+                        throw _iteratorError2;
+                    }
+                }
+            }
+
+            return result;
+        }
+    }, {
+        key: 'flatten',
+
+
+        // created a flattened view of all data at and above this scope
+
+        value: function flatten() {
+
+            var scope = this;
+
+            var result = new Map();
+            var appliedValves = new Map();
+
+            var _iteratorNormalCompletion3 = true;
+            var _didIteratorError3 = false;
+            var _iteratorError3 = undefined;
+
+            try {
+                for (var _iterator3 = scope._dataList[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+                    var _step3$value = slicedToArray(_step3.value, 2),
+                        _key3 = _step3$value[0],
+                        value = _step3$value[1];
+
+                    result.set(_key3, value);
+                }
+            } catch (err) {
+                _didIteratorError3 = true;
+                _iteratorError3 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion3 && _iterator3.return) {
+                        _iterator3.return();
+                    }
+                } finally {
+                    if (_didIteratorError3) {
+                        throw _iteratorError3;
+                    }
+                }
+            }
+
+            while (scope = scope._parent) {
+
+                var dataList = scope._dataList;
+                var valves = scope._valves;
+                var mirrors = scope._mirrors;
+
+                if (!dataList.size) continue;
+
+                // further restrict valves with each new scope
+
+                if (valves.size) {
+                    if (appliedValves.size) {
+                        var _iteratorNormalCompletion4 = true;
+                        var _didIteratorError4 = false;
+                        var _iteratorError4 = undefined;
+
+                        try {
+                            for (var _iterator4 = appliedValves.keys()[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
+                                var key = _step4.value;
+
+                                if (!valves.has(key)) appliedValves.delete(key);
+                            }
+                        } catch (err) {
+                            _didIteratorError4 = true;
+                            _iteratorError4 = err;
+                        } finally {
+                            try {
+                                if (!_iteratorNormalCompletion4 && _iterator4.return) {
+                                    _iterator4.return();
+                                }
+                            } finally {
+                                if (_didIteratorError4) {
+                                    throw _iteratorError4;
+                                }
+                            }
+                        }
+                    } else {
+                        var _iteratorNormalCompletion5 = true;
+                        var _didIteratorError5 = false;
+                        var _iteratorError5 = undefined;
+
+                        try {
+                            for (var _iterator5 = valves.entries()[Symbol.iterator](), _step5; !(_iteratorNormalCompletion5 = (_step5 = _iterator5.next()).done); _iteratorNormalCompletion5 = true) {
+                                var _step5$value = slicedToArray(_step5.value, 2),
+                                    _key = _step5$value[0],
+                                    value = _step5$value[1];
+
+                                appliedValves.set(_key, value);
+                            }
+                        } catch (err) {
+                            _didIteratorError5 = true;
+                            _iteratorError5 = err;
+                        } finally {
+                            try {
+                                if (!_iteratorNormalCompletion5 && _iterator5.return) {
+                                    _iterator5.return();
+                                }
+                            } finally {
+                                if (_didIteratorError5) {
+                                    throw _iteratorError5;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var possibles = appliedValves.size ? appliedValves : dataList;
+
+                var _iteratorNormalCompletion6 = true;
+                var _didIteratorError6 = false;
+                var _iteratorError6 = undefined;
+
+                try {
+                    for (var _iterator6 = possibles.keys()[Symbol.iterator](), _step6; !(_iteratorNormalCompletion6 = (_step6 = _iterator6.next()).done); _iteratorNormalCompletion6 = true) {
+                        var _key2 = _step6.value;
+
+                        if (!result.has(_key2)) {
+
+                            var data = mirrors.get(_key2) || dataList.get(_key2);
+                            if (data) result.set(_key2, data);
+                        }
+                    }
+                } catch (err) {
+                    _didIteratorError6 = true;
+                    _iteratorError6 = err;
+                } finally {
+                    try {
+                        if (!_iteratorNormalCompletion6 && _iterator6.return) {
+                            _iterator6.return();
+                        }
+                    } finally {
+                        if (_didIteratorError6) {
+                            throw _iteratorError6;
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }, {
+        key: 'find',
+        value: function find(name, required) {
+
+            var localData = this.grab(name);
+            if (localData) return localData;
+
+            var scope = this;
+
+            while (scope = scope._parent) {
+
+                var valves = scope._valves;
+
+                // if valves exist and the name is not present, stop looking
+                if (valves.size && !valves.has(name)) {
+                    break;
+                }
+
+                var mirror = scope._mirrors.get(name);
+
+                if (mirror) return mirror;
+
+                var d = scope.grab(name);
+
+                if (d) return d;
+            }
+
+            if (required) throw new Error('Required data: ' + name + ' not found!');
+
+            return null;
+        }
+    }, {
+        key: 'findOuter',
+        value: function findOuter(name, required) {
+
+            var foundInner = false;
+            var localData = this.grab(name);
+            if (localData) foundInner = true;
+
+            var scope = this;
+
+            while (scope = scope._parent) {
+
+                var valves = scope._valves;
+
+                // if valves exist and the name is not present, stop looking
+                if (valves.size && !valves.has(name)) {
+                    break;
+                }
+
+                var mirror = scope._mirrors.get(name);
+
+                if (mirror) {
+
+                    if (foundInner) return mirror;
+
+                    foundInner = true;
+                    continue;
+                }
+
+                var d = scope.grab(name);
+
+                if (d) {
+
+                    if (foundInner) return d;
+
+                    foundInner = true;
+                }
+            }
+
+            if (required) throw new Error('Required data: ' + name + ' not found!');
+
+            return null;
+        }
+    }, {
+        key: 'grab',
+        value: function grab(name, required) {
+
+            var data = this._dataList.get(name);
+
+            if (!data && required) throw new Error('Required Data: ' + name + ' not found!');
+
+            return data || null;
+        }
+    }, {
+        key: 'transaction',
+        value: function transaction(writes) {
+
+            if (Array.isArray(writes)) return this._multiWriteArray(writes);else if ((typeof writes === 'undefined' ? 'undefined' : _typeof(writes)) === 'object') return this._multiWriteHash(writes);
+
+            throw new Error('Write values must be in an array of object hash.');
+        }
+    }, {
+        key: '_multiWriteArray',
+
+
+        // write {name, topic, value} objects as a transaction
+        value: function _multiWriteArray(writeArray, dimension) {
+
+            var list = [];
+
+            var _iteratorNormalCompletion7 = true;
+            var _didIteratorError7 = false;
+            var _iteratorError7 = undefined;
+
+            try {
+                for (var _iterator7 = writeArray[Symbol.iterator](), _step7; !(_iteratorNormalCompletion7 = (_step7 = _iterator7.next()).done); _iteratorNormalCompletion7 = true) {
+                    var w = _step7.value;
+
+                    var d = this.find(w.name);
+                    d.silentWrite(w.value, w.topic || null);
+                    list.push(d);
+                }
+            } catch (err) {
+                _didIteratorError7 = true;
+                _iteratorError7 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion7 && _iterator7.return) {
+                        _iterator7.return();
+                    }
+                } finally {
+                    if (_didIteratorError7) {
+                        throw _iteratorError7;
+                    }
+                }
+            }
+
+            var i = 0;
+            var _iteratorNormalCompletion8 = true;
+            var _didIteratorError8 = false;
+            var _iteratorError8 = undefined;
+
+            try {
+                for (var _iterator8 = list[Symbol.iterator](), _step8; !(_iteratorNormalCompletion8 = (_step8 = _iterator8.next()).done); _iteratorNormalCompletion8 = true) {
+                    var _d = _step8.value;
+
+                    var _w = writeArray[i];
+                    _d.refresh(_w.topic || null);
+                }
+            } catch (err) {
+                _didIteratorError8 = true;
+                _iteratorError8 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion8 && _iterator8.return) {
+                        _iterator8.return();
+                    }
+                } finally {
+                    if (_didIteratorError8) {
+                        throw _iteratorError8;
+                    }
+                }
+            }
+
+            return this;
+        }
+    }, {
+        key: '_multiWriteHash',
+
+
+        // write key-values as a transaction
+        value: function _multiWriteHash(writeHash) {
+
+            var list = [];
+
+            for (var k in writeHash) {
+                var v = writeHash[k];
+                var d = this.find(k);
+                d.silentWrite(v);
+                list.push(d);
+            }
+
+            var _iteratorNormalCompletion9 = true;
+            var _didIteratorError9 = false;
+            var _iteratorError9 = undefined;
+
+            try {
+                for (var _iterator9 = list[Symbol.iterator](), _step9; !(_iteratorNormalCompletion9 = (_step9 = _iterator9.next()).done); _iteratorNormalCompletion9 = true) {
+                    var _d2 = _step9.value;
+
+                    _d2.refresh();
+                }
+            } catch (err) {
+                _didIteratorError9 = true;
+                _iteratorError9 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion9 && _iterator9.return) {
+                        _iterator9.return();
+                    }
+                } finally {
+                    if (_didIteratorError9) {
+                        throw _iteratorError9;
+                    }
+                }
+            }
+
+            return this;
+        }
+    }, {
+        key: 'name',
+        get: function get$$1() {
+            return this._name;
+        }
+    }, {
+        key: 'dead',
+        get: function get$$1() {
+            return this._dead;
+        }
+    }, {
+        key: 'children',
+        get: function get$$1() {
+
+            return this._children.map(function (d) {
+                return d;
+            });
+        }
+    }, {
+        key: 'parent',
+        get: function get$$1() {
+            return this._parent;
+        },
+        set: function set$$1(newParent) {
+
+            var oldParent = this.parent;
+
+            if (oldParent === newParent) return;
+
+            if (oldParent) {
+                var i = oldParent._children.indexOf(this);
+                oldParent._children.splice(i, 1);
+            }
+
+            this._parent = newParent;
+
+            if (newParent) {
+                newParent._children.push(this);
+            }
+
+            return this;
+        }
+    }, {
+        key: 'valves',
+        set: function set$$1(list) {
+            var _iteratorNormalCompletion10 = true;
+            var _didIteratorError10 = false;
+            var _iteratorError10 = undefined;
+
+            try {
+
+                for (var _iterator10 = list[Symbol.iterator](), _step10; !(_iteratorNormalCompletion10 = (_step10 = _iterator10.next()).done); _iteratorNormalCompletion10 = true) {
+                    var name = _step10.value;
+
+                    this._valves.set(name, true);
+                }
+            } catch (err) {
+                _didIteratorError10 = true;
+                _iteratorError10 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion10 && _iterator10.return) {
+                        _iterator10.return();
+                    }
+                } finally {
+                    if (_didIteratorError10) {
+                        throw _iteratorError10;
+                    }
+                }
+            }
+        },
+        get: function get$$1() {
+            return Array.from(this._valves.keys());
+        }
+    }]);
+    return Scope;
+}();
+
+var Nyan = {};
+
+var operationDefs = [{ name: 'ACT', sym: '^' }, { name: 'NEED', sym: '!' }, { name: 'EVENT', sym: '@' }, { name: 'RUN', sym: '*' }, { name: 'READ', sym: '~' }, { name: 'ATTR', sym: '#' }, { name: 'ADD', sym: '+' }, { name: 'STYLE', sym: '$' }, { name: 'BEGIN', sym: '(' }, { name: 'END', sym: ')' }, { name: 'WRITE', sym: '=' }, { name: 'PIPE', sym: '|' }, { name: 'WATCH', sym: '-' }];
+
+var operationsBySymbol = {};
+var symbolsByOperation = {};
+
+for (var i = 0; i < operationDefs.length; i++) {
+    var op = operationDefs[i];
+    var name = op.name;
+    var sym = op.sym;
+    operationsBySymbol[sym] = name;
+    symbolsByOperation[name] = sym;
+}
+
+var NyanWord = function () {
+    function NyanWord(name, operation, optional) {
+        classCallCheck(this, NyanWord);
+
+        this.name = name;
+        this.operation = operation;
+        this.optional = optional;
+    }
+
+    createClass(NyanWord, [{
+        key: 'toString',
+        value: function toString() {
+            return 'meow';
+        }
+    }]);
+    return NyanWord;
+}();
+
+function parse(str) {
+
+    var result = [];
+    var chunks = str.split(/([()])/); // split on parentheses
+
+    for (var _i = 0; _i < chunks.length; _i++) {
+        var chunk = chunks[_i].trim();
+
+        if (!chunk) continue;
+
+        var sentence = chunk === ')' || chunk === '(' ? chunk : parseSentence(chunk);
+
+        if (typeof sentence === 'string' || sentence.length > 0) result.push(sentence);
+    }
+
+    return result;
+}
+
+function parseSentence(str) {
+
+    var result = [];
+    var chunks = str.split('|');
+
+    for (var _i2 = 0; _i2 < chunks.length; _i2++) {
+        var chunk = chunks[_i2].trim();
+
+        if (!chunk) continue;
+
+        var phrase = parsePhrase(chunk);
+        result.push(phrase);
+    }
+
+    return result;
+}
+
+function parsePhrase(str) {
+
+    var words = [];
+    var rawWords = str.split(',');
+    var usingAct = false;
+
+    var len = rawWords.length;
+
+    for (var _i3 = 0; _i3 < len; _i3++) {
+
+        var rawWord = rawWords[_i3].trim();
+        var charCount = rawWord.length;
+
+        if (!charCount) continue;
+
+        var lastIndex = charCount - 1;
+        var firstChar = rawWord[0];
+        var lastChar = rawWord[lastIndex];
+
+        var operation = operationsBySymbol[firstChar];
+        var optional = lastChar === '?';
+
+        var start = operation ? 1 : 0;
+        var end = optional ? -1 : charCount;
+        var _name = rawWord.slice(start, end);
+
+        if (!_name.length) throw new Error('Word missing name!');
+
+        if (operation === 'ACT') usingAct = true;
+
+        var nw = new NyanWord(_name, operation, optional);
+        words.push(nw);
+    }
+
+    var wordCount = words.length;
+    for (var _i4 = 0; _i4 < wordCount; _i4++) {
+        var _nw = words[_i4];
+        if (!_nw.operation) {
+            _nw.operation = usingAct ? 'READ' : 'WATCH';
+        }
+    }
+
+    return words;
+}
+
+Nyan.parse = parse;
+
 var Catbus$1 = {};
 
 var _batchQueue = [];
@@ -2294,7 +2383,7 @@ var _primed = false;
 Catbus$1.fromEvent = function (target, eventName, useCapture) {
 
     var stream = Stream.fromEvent(target, eventName, useCapture);
-    return new Bus([stream]);
+    return new Bus(null, [stream]);
 };
 
 Catbus$1.enqueue = function (pool) {
@@ -2309,6 +2398,86 @@ Catbus$1.enqueue = function (pool) {
 };
 
 Catbus$1.scope = function (name) {
+
+    console.log('NYAN');
+    var k = Nyan.parse('!bunny?, cow, moo? | (*toMuffin? | =order) (=raw)');
+
+    var _iteratorNormalCompletion = true;
+    var _didIteratorError = false;
+    var _iteratorError = undefined;
+
+    try {
+        for (var _iterator = k[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+            var sentence = _step.value;
+
+            if (typeof sentence === 'string') {
+                console.log(sentence);
+                continue;
+            }
+            var _iteratorNormalCompletion2 = true;
+            var _didIteratorError2 = false;
+            var _iteratorError2 = undefined;
+
+            try {
+                for (var _iterator2 = sentence[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+                    var phrase = _step2.value;
+                    var _iteratorNormalCompletion3 = true;
+                    var _didIteratorError3 = false;
+                    var _iteratorError3 = undefined;
+
+                    try {
+                        for (var _iterator3 = phrase[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+                            var word = _step3.value;
+
+                            console.log(word.name, word.operation, word.optional);
+                        }
+                    } catch (err) {
+                        _didIteratorError3 = true;
+                        _iteratorError3 = err;
+                    } finally {
+                        try {
+                            if (!_iteratorNormalCompletion3 && _iterator3.return) {
+                                _iterator3.return();
+                            }
+                        } finally {
+                            if (_didIteratorError3) {
+                                throw _iteratorError3;
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                _didIteratorError2 = true;
+                _iteratorError2 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
+                        _iterator2.return();
+                    }
+                } finally {
+                    if (_didIteratorError2) {
+                        throw _iteratorError2;
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        _didIteratorError = true;
+        _iteratorError = err;
+    } finally {
+        try {
+            if (!_iteratorNormalCompletion && _iterator.return) {
+                _iterator.return();
+            }
+        } finally {
+            if (_didIteratorError) {
+                throw _iteratorError;
+            }
+        }
+    }
+
+    console.log(k);
+
     console.log('root is ', name);
     return new Scope(name);
 };

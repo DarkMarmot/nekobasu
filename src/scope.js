@@ -1,8 +1,20 @@
 
+import F from './flib.js';
 import Data from './data.js';
 import { DATA_TYPES, isValid } from './dataTypes.js';
+import Bus from './bus.js';
 
 let idCounter = 0;
+
+function _destroyEach(arr){
+
+    const len = arr.length;
+    for(let i = 0; i < len; i++){
+        const item = arr[i];
+        item.destroy();
+    }
+
+}
 
 class Scope{
 
@@ -12,6 +24,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
+        this._busList = [];
         this._dataList = new Map();
         this._valves = new Map();
         this._mirrors = new Map();
@@ -30,26 +43,43 @@ class Scope{
 
     };
 
+    watch(fStr){
+
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        fStr = F.FUNCTOR(fStr);
+
+
+    };
+
     clear(){
 
         if(this._dead)
             return;
 
-        for(const child of this._children){
-            child.destroy();
-        }
+        // console.log('clearing:', this._id, 'has:', this.children.length);
 
-        for(const data of this._dataList.values()){
-            data.destroy();
-        }
+        _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
+        _destroyEach(this._busList);
+        _destroyEach(this._dataList.values());
+
+        // console.log('done:', this._id, 'has:', this.children.length);
+
+        // for(const data of this._dataList.values()){
+        //     data.destroy();
+        // }
+
+        // this._destroyEach(this._children);
+        // this._destroyEach(this._busList);
+        // this._destroyEach(this._dataList.values());
+
 
         this._children = [];
+        this._busList = [];
         this._dataList.clear();
         this._valves.clear();
         this._mirrors.clear();
 
     };
-
 
     destroy(){
 

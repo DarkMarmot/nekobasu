@@ -6,12 +6,14 @@ import Stream from './stream.js';
 
 class Bus {
 
-    constructor(streams) {
+    constructor(scope, streams) {
 
         this._frames = [];
         this._dead = false;
-        this._scope = null;
-        const f = new Frame(this, streams);
+        this._scope = scope;
+        if(scope)
+            scope._busList.push(this);
+        const f = new Frame(this, streams || []);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -24,6 +26,10 @@ class Bus {
     get holding() {
         return this._currentFrame._holding;
     };
+
+    get scope() {
+        return this._scope;
+    }
 
     // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
@@ -44,7 +50,7 @@ class Bus {
 
     }
 
-    // convert each stream into a bus, dump in array
+    // convert each stream into a bus, wiring prior streams, dump in array
 
     split(){
 
@@ -55,7 +61,7 @@ class Bus {
     fork() {
 
         F.ASSERT_NOT_HOLDING(this);
-        const fork = new Bus();
+        const fork = new Bus(this.scope);
         _wireFrames(this._currentFrame, fork._currentFrame);
 
         return fork;
