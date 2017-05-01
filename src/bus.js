@@ -33,16 +33,18 @@ class Bus {
 
     // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
-    addFrame() {
+    addFrame(streams) {
 
         const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this);
+        const nextFrame = this._currentFrame = new Frame(this, streams);
         this._frames.push(nextFrame);
 
         _wireFrames(lastFrame, nextFrame);
 
         return nextFrame;
     };
+
+
 
 
     // create stream
@@ -131,6 +133,13 @@ class Bus {
         return this;
     };
 
+    groupByTopic() {
+
+        F.ASSERT_NOT_HOLDING(this);
+        this.addFrame().hold().reduce(F.getGroup, F.TO_TOPIC);
+        return this;
+    };
+
     all() {
         return this.reduce(F.getKeepAll);
     };
@@ -212,6 +221,15 @@ class Bus {
         return this;
     };
 
+    msg(fAny) {
+
+        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        F.ASSERT_NOT_HOLDING(this);
+        this.addFrame().msg(fAny);
+        return this;
+
+    };
+
     transform(fAny) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
@@ -221,12 +239,12 @@ class Bus {
 
     };
 
-    name(fStr) {
+    source(fStr) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().name(fStr);
+        this.addFrame().source(fStr);
         return this;
 
     };

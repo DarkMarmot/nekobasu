@@ -2,63 +2,87 @@
 
 const Nyan = {};
 
+// across = applies to all words in a phrase
+//
 const operationDefs = [
 
-    {name: 'ACT',   sym: '^'},
-    {name: 'NEED',  sym: '!'},
-    {name: 'EVENT', sym: '@'},
-    {name: 'RUN',   sym: '*'},
-    {name: 'READ',  sym: '~'},
-    {name: 'ATTR',  sym: '#'},
-    {name: 'ADD',   sym: '+'},
-    {name: 'STYLE', sym: '$'},
-    {name: 'BEGIN', sym: '('},
-    {name: 'END',   sym: ')'},
-    {name: 'WRITE', sym: '='},
-    {name: 'PIPE',  sym: '|'},
-    {name: 'WATCH', sym: '-'}
+    {name: 'ACTION', sym: '^', react: true, subscribe: true},
+    {name: 'NEED',   sym: '!', react: true, follow: true, need: true},
+    {name: 'EVENT',  sym: '@', react: true, event: true},
+    {name: 'RUN',    sym: '*', across: true},
+    {name: 'READ',   sym: '~', with_react: true, read: true},
+    {name: 'ATTR',   sym: '#'},
+    {name: 'AND',    sym: '&', across: true},
+    {name: 'STYLE',  sym: '$'},
+    {name: 'WRITE',  sym: '='},
+    {name: 'MUST',   sym: '_', with_react: true, read: true, need: true}, // must have data on read
+    {name: 'FILTER', sym: '-', across: true},
+    {name: 'WATCH',  sym: '%', react: true, follow: true} // default
 
 ];
 
+// {name: 'BEGIN',  sym: '{'},
+// {name: 'END',    sym: '}'},
+// {name: 'PIPE',   sym: '|'},
+
 const operationsBySymbol = {};
-const symbolsByOperation = {};
+const operationsByName = {};
+const symbolsByName = {};
+const namesBySymbol = {};
+const reactionsByName = {};
+const withReactionsByName = {};
+const acrossByName = {};
 
 for(let i = 0; i < operationDefs.length; i++){
+
     const op = operationDefs[i];
     const name = op.name;
     const sym = op.sym;
-    operationsBySymbol[sym] = name;
-    symbolsByOperation[name] = sym;
+    operationsBySymbol[sym] = op;
+    operationsByName[name] = op;
+    symbolsByName[name] = sym;
+    namesBySymbol[sym] = name;
+
+    if(op.across){
+        acrossByName[name] = true;
+    } else if(op.react) {
+        reactionsByName[name] = true;
+        withReactionsByName[name] = true;
+    }
+    else if(op.with_react) {
+        withReactionsByName[name] = true;
+    }
+
 }
+
 
 
 class NyanWord {
-    constructor(name, operation, optional){
+
+    constructor(name, operation, maybe, topic, alias, monitor){
+
         this.name = name;
         this.operation = operation;
-        this.optional = optional;
+        this.maybe = maybe || false;
+        this.topic = topic || null;
+        this.alias = alias || null;
+        this.monitor = monitor || false;
+
     }
 
-    toString(){
-        return 'meow';
-    };
 }
 
-function throwError(text){
-    throw new Error(text);
-}
 
 function parse(str) {
 
     const result = [];
-    const chunks = str.split(/([()])/); // split on parentheses
+
+    // split on parentheses and remove empty chunks (todo optimize for speed)
+    let chunks = str.split(/([{}])/).map(d => d.trim()).filter(d => d);
 
     for(let i = 0; i < chunks.length; i++){
-        const chunk = chunks[i].trim();
 
-        if(!chunk)
-            continue;
-
+        const chunk = chunks[i];
         const sentence = (chunk === ')' || chunk === '(') ? chunk : parseSentence(chunk);
 
         if(typeof sentence === 'string' || sentence.length > 0)
@@ -66,22 +90,97 @@ function parse(str) {
 
     }
 
+    validate(result);
+    
     return result;
 
 }
+
+function validate(sentences){
+
+    let firstPhrase = true;
+    
+    for(let i = 0; i < sentences.length; i++){
+        const s = sentences[i];
+        if(typeof s !== 'string') {
+            for (let j = 0; j < s.length; j++) {
+                const phrase = s[j];
+                if(firstPhrase) {
+                    validateReactivePhrase(phrase);
+                    firstPhrase = false;
+                }
+                else {
+                    validateStandardPhrase(phrase);
+                }
+            }
+        }
+    }
+}
+
+
+function validateReactivePhrase(phrase){
+    
+    let usingAction = false;
+    for(let i = 0; i < phrase.length; i++){
+        const nw = phrase[i];
+        if(nw.operation === 'ACTION') {
+            usingAction = true;
+            break;
+        }
+    }
+
+    let hasReaction = false;
+    for(let i = 0; i < phrase.length; i++){
+
+        const nw = phrase[i];
+        const blankMeaning = (usingAction ? 'READ' : 'WATCH');
+        const operation = nw.operation = nw.operation || blankMeaning;
+        hasReaction = hasReaction || reactionsByName[operation];
+        if(!withReactionsByName[operation])
+            throw new Error('This Nyan command cannot be in a reaction!');
+
+    }
+
+    if(!hasReaction)
+        throw new Error('Nyan commands must begin with a reaction!');
+
+}
+
+
+function validateStandardPhrase(phrase){
+
+    const firstOperation = phrase[0].operation;
+    const defaultOperation = acrossByName[firstOperation] && firstOperation;
+
+    for(let i = 0; i < phrase.length; i++){
+        const nw = phrase[i];
+        nw.operation = nw.operation || defaultOperation || 'READ';
+
+        if(defaultOperation && nw.operation !== defaultOperation){
+            throw new Error('Incompatible Nyan commands in phrase!');
+        }
+
+        if (!defaultOperation && acrossByName[nw.operation]){
+            throw new Error('Later incompatible in phrase!');
+        }
+
+        if (!defaultOperation && reactionsByName[nw.operation]){
+            throw new Error('Reactions in later phrase!');
+        }
+    }
+
+}
+
 
 
 function parseSentence(str) {
 
     const result = [];
-    const chunks = str.split('|');
+    const chunks = str.split('|').map(d => d.trim()).filter(d => d);
 
     for(let i = 0; i < chunks.length; i++){
-        const chunk = chunks[i].trim();
 
-        if(!chunk)
-            continue;
-
+        const chunk = chunks[i];
         const phrase = parsePhrase(chunk);
         result.push(phrase);
 
@@ -94,47 +193,55 @@ function parseSentence(str) {
 function parsePhrase(str) {
 
     const words = [];
-    const rawWords = str.split(',');
-    let usingAct = false;
+    const rawWords = str.split(',').map(d => d.trim()).filter(d => d);
 
     const len = rawWords.length;
 
     for (let i = 0; i < len; i++) {
 
-        const rawWord = rawWords[i].trim();
-        const charCount = rawWord.length;
-
-        if (!charCount)
-            continue;
-
-        const lastIndex = charCount - 1;
+        const rawWord = rawWords[i];
+        const chunks = rawWord.split(/([(?:)])/).map(d => d.trim()).filter(d => d);
+        const nameAndOperation = chunks.shift();
         const firstChar = rawWord[0];
-        const lastChar = rawWord[lastIndex];
-
-        const operation = operationsBySymbol[firstChar];
-        const optional = lastChar === '?';
-
+        const operation = namesBySymbol[firstChar];
         const start = operation ? 1 : 0;
-        const end = optional ? -1 : charCount;
-        const name = rawWord.slice(start, end);
+        const name = nameAndOperation.slice(start);
+        let maybe = false;
+        let monitor = false;
+        let topic = null;
+        let alias = null;
 
-        if (!name.length)
-            throw new Error('Word missing name!');
+        while(chunks.length){
+            const c = chunks.shift();
 
-        if (operation === 'ACT')
-            usingAct = true;
+            if(c === '?'){
+                maybe = true;
+                continue;
+            }
 
-        const nw = new NyanWord(name, operation, optional);
+            if(c === ':'){
+                if(chunks.length){
+                    const next = chunks[0];
+                    if(next === '('){
+                        monitor = true;
+                    } else {
+                        topic = next;
+                    }
+                } else {
+                    monitor = true;
+                }
+                continue;
+            }
+
+            if(c === '(' && chunks.length){
+                alias = chunks[0];
+            }
+
+        }
+
+        const nw = new NyanWord(name, operation, maybe, topic, alias, monitor);
         words.push(nw);
 
-    }
-
-    const wordCount = words.length;
-    for (let i = 0; i < wordCount; i++) {
-        const nw = words[i];
-        if(!nw.operation){
-            nw.operation = usingAct ? 'READ' : 'WATCH';
-        }
     }
 
     return words;

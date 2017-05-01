@@ -16,7 +16,11 @@ function TO_SOURCE(msg, source) {
     return source;
 }
 
-function TO_MSG(msg, source) {
+function TO_TOPIC(msg, source, topic) {
+    return topic;
+}
+
+function TO_MSG(msg) {
     return msg;
 }
 
@@ -380,6 +384,7 @@ var Func = {
 };
 
 Func.TO_SOURCE = TO_SOURCE;
+Func.TO_TOPIC = TO_TOPIC;
 Func.To_MSG = TO_MSG;
 Func.FUNCTOR = FUNCTOR;
 Func.ALWAYS_TRUE = ALWAYS_TRUE;
@@ -945,14 +950,19 @@ var Frame = function () {
             return this.applySyncProcess('doRun', func, stateful);
         }
     }, {
+        key: 'msg',
+        value: function msg(fAny, stateful) {
+            return this.applySyncProcess('doMsg', Func.FUNCTOR(fAny), stateful);
+        }
+    }, {
         key: 'transform',
         value: function transform(fAny, stateful) {
             return this.applySyncProcess('doTransform', Func.FUNCTOR(fAny), stateful);
         }
     }, {
-        key: 'name',
-        value: function name(fStr, stateful) {
-            return this.applySyncProcess('doName', Func.FUNCTOR(fStr), stateful);
+        key: 'source',
+        value: function source(fStr, stateful) {
+            return this.applySyncProcess('doSource', Func.FUNCTOR(fStr), stateful);
         }
     }, {
         key: 'delay',
@@ -1178,7 +1188,7 @@ var Stream = function () {
         }
     }, {
         key: 'emit',
-        value: function emit(msg, source, thisStream) {
+        value: function emit(msg, source, topic, thisStream) {
 
             thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
 
@@ -1187,44 +1197,53 @@ var Stream = function () {
 
             for (var i = 0; i < len; i++) {
                 var c = children[i];
-                c.tell(msg, source);
+                c.tell(msg, source, topic);
             }
         }
     }, {
         key: 'doFilter',
-        value: function doFilter(msg, source) {
+        value: function doFilter(msg, source, topic) {
 
-            if (!this.actionMethod(msg, source)) return;
-            this.emit(msg, source);
+            if (!this.actionMethod(msg, source, topic)) return;
+            this.emit(msg, source, topic);
+        }
+    }, {
+        key: 'doMsg',
+        value: function doMsg(msg, source, topic) {
+
+            msg = this.actionMethod(msg, source, topic);
+            this.emit(msg, source, topic);
         }
     }, {
         key: 'doTransform',
-        value: function doTransform(msg, source) {
+        value: function doTransform(msg, source, topic) {
 
-            msg = this.actionMethod(msg, source);
-            this.emit(msg, source);
+            msg = this.actionMethod.msg ? this.actionMethod.msg(msg, source, topic) : msg;
+            source = this.actionMethod.source ? this.actionMethod.source(msg, source, topic) : source;
+            topic = this.actionMethod.topic ? this.actionMethod.topic(msg, source, topic) : topic;
+            this.emit(msg, source, topic);
         }
     }, {
         key: 'doDelay',
-        value: function doDelay(msg, source) {
+        value: function doDelay(msg, source, topic) {
 
             // todo add destroy -> kills timeout
             // passes 'this' to avoid bind slowdown
-            setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
+            setTimeout(this.emit, this.actionMethod(msg, source, topic) || 0, msg, source, topic, this);
         }
     }, {
-        key: 'doName',
-        value: function doName(msg, source) {
+        key: 'doSource',
+        value: function doSource(msg, source, topic) {
 
-            source = this.actionMethod(msg, source);
-            this.emit(msg, source);
+            source = this.actionMethod(msg, source, topic);
+            this.emit(msg, source, topic);
         }
     }, {
         key: 'doRun',
-        value: function doRun(msg, source) {
+        value: function doRun(msg, source, topic) {
 
-            this.actionMethod(msg, source);
-            this.emit(msg, source);
+            this.actionMethod(msg, source, topic);
+            this.emit(msg, source, topic);
         }
     }, {
         key: 'createPool',
@@ -1234,9 +1253,9 @@ var Stream = function () {
         }
     }, {
         key: 'doPool',
-        value: function doPool(msg, source) {
+        value: function doPool(msg, source, topic) {
 
-            this.pool.tell(msg, source);
+            this.pool.tell(msg, source, topic);
         }
     }, {
         key: 'destroy',
@@ -1250,14 +1269,54 @@ var Stream = function () {
     return Stream;
 }();
 
-Stream.fromData = function (data, topic, name) {
+Stream.fromMonitor = function (data, name) {
+
+    var stream = new Stream();
+    var streamName = name || data.name;
+
+    stream.name = streamName;
+
+    var toStream = function toStream(msg, source, topic) {
+        stream.tell(msg, streamName || source, topic);
+    };
+
+    stream.cleanupMethod = function () {
+        data.unsubscribe(toStream);
+    };
+
+    data.monitor(toStream);
+
+    return stream;
+};
+
+Stream.fromSubscribe = function (data, topic, name) {
+
+    var stream = new Stream();
+    var streamName = name || topic || data.name;
+
+    stream.name = streamName;
+
+    var toStream = function toStream(msg, source, topic) {
+        stream.tell(msg, streamName || source, topic);
+    };
+
+    stream.cleanupMethod = function () {
+        data.unsubscribe(toStream, topic);
+    };
+
+    data.subscribe(toStream, topic);
+
+    return stream;
+};
+
+Stream.fromFollow = function (data, topic, name) {
 
     var stream = new Stream();
     var streamName = name || topic || data.name;
     stream.name = streamName;
 
-    var toStream = function toStream(msg) {
-        stream.tell(msg, streamName);
+    var toStream = function toStream(msg, source, topic) {
+        stream.tell(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1312,10 +1371,10 @@ var Bus = function () {
 
         // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
-        value: function addFrame() {
+        value: function addFrame(streams) {
 
             var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this);
+            var nextFrame = this._currentFrame = new Frame(this, streams);
             this._frames.push(nextFrame);
 
             _wireFrames(lastFrame, nextFrame);
@@ -1416,6 +1475,14 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
             this.addFrame().hold().reduce(Func.getGroup, by);
+            return this;
+        }
+    }, {
+        key: 'groupByTopic',
+        value: function groupByTopic() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().hold().reduce(Func.getGroup, Func.TO_TOPIC);
             return this;
         }
     }, {
@@ -1523,6 +1590,15 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'msg',
+        value: function msg(fAny) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().msg(fAny);
+            return this;
+        }
+    }, {
         key: 'transform',
         value: function transform(fAny) {
 
@@ -1532,13 +1608,13 @@ var Bus = function () {
             return this;
         }
     }, {
-        key: 'name',
-        value: function name(fStr) {
+        key: 'source',
+        value: function source(fStr) {
 
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().name(fStr);
+            this.addFrame().source(fStr);
             return this;
         }
     }, {
@@ -1641,6 +1717,234 @@ function _wireFrames(frame1, frame2) {
     }
 }
 
+var Nyan = {};
+
+// across = applies to all words in a phrase
+//
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'NEED', sym: '!', react: true, follow: true, need: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'RUN', sym: '*', across: true }, { name: 'READ', sym: '~', with_react: true, read: true }, { name: 'ATTR', sym: '#' }, { name: 'AND', sym: '&', across: true }, { name: 'STYLE', sym: '$' }, { name: 'WRITE', sym: '=' }, { name: 'MUST', sym: '_', with_react: true, read: true, need: true }, // must have data on read
+{ name: 'FILTER', sym: '-', across: true }, { name: 'WATCH', sym: '%', react: true, follow: true } // default
+
+];
+
+// {name: 'BEGIN',  sym: '{'},
+// {name: 'END',    sym: '}'},
+// {name: 'PIPE',   sym: '|'},
+
+var operationsBySymbol = {};
+var operationsByName = {};
+var symbolsByName = {};
+var namesBySymbol = {};
+var reactionsByName = {};
+var withReactionsByName = {};
+var acrossByName = {};
+
+for (var i = 0; i < operationDefs.length; i++) {
+
+    var op = operationDefs[i];
+    var name = op.name;
+    var sym = op.sym;
+    operationsBySymbol[sym] = op;
+    operationsByName[name] = op;
+    symbolsByName[name] = sym;
+    namesBySymbol[sym] = name;
+
+    if (op.across) {
+        acrossByName[name] = true;
+    } else if (op.react) {
+        reactionsByName[name] = true;
+        withReactionsByName[name] = true;
+    } else if (op.with_react) {
+        withReactionsByName[name] = true;
+    }
+}
+
+var NyanWord = function NyanWord(name, operation, maybe, topic, alias, monitor) {
+    classCallCheck(this, NyanWord);
+
+
+    this.name = name;
+    this.operation = operation;
+    this.maybe = maybe || false;
+    this.topic = topic || null;
+    this.alias = alias || null;
+    this.monitor = monitor || false;
+};
+
+function parse(str) {
+
+    var result = [];
+
+    // split on parentheses and remove empty chunks (todo optimize for speed)
+    var chunks = str.split(/([{}])/).map(function (d) {
+        return d.trim();
+    }).filter(function (d) {
+        return d;
+    });
+
+    for (var _i = 0; _i < chunks.length; _i++) {
+
+        var chunk = chunks[_i];
+        var sentence = chunk === ')' || chunk === '(' ? chunk : parseSentence(chunk);
+
+        if (typeof sentence === 'string' || sentence.length > 0) result.push(sentence);
+    }
+
+    validate(result);
+
+    return result;
+}
+
+function validate(sentences) {
+
+    var firstPhrase = true;
+
+    for (var _i2 = 0; _i2 < sentences.length; _i2++) {
+        var s = sentences[_i2];
+        if (typeof s !== 'string') {
+            for (var j = 0; j < s.length; j++) {
+                var phrase = s[j];
+                if (firstPhrase) {
+                    validateReactivePhrase(phrase);
+                    firstPhrase = false;
+                } else {
+                    validateStandardPhrase(phrase);
+                }
+            }
+        }
+    }
+}
+
+function validateReactivePhrase(phrase) {
+
+    var usingAction = false;
+    for (var _i3 = 0; _i3 < phrase.length; _i3++) {
+        var nw = phrase[_i3];
+        if (nw.operation === 'ACTION') {
+            usingAction = true;
+            break;
+        }
+    }
+
+    var hasReaction = false;
+    for (var _i4 = 0; _i4 < phrase.length; _i4++) {
+
+        var _nw = phrase[_i4];
+        var blankMeaning = usingAction ? 'READ' : 'WATCH';
+        var operation = _nw.operation = _nw.operation || blankMeaning;
+        hasReaction = hasReaction || reactionsByName[operation];
+        if (!withReactionsByName[operation]) throw new Error('This Nyan command cannot be in a reaction!');
+    }
+
+    if (!hasReaction) throw new Error('Nyan commands must begin with a reaction!');
+}
+
+function validateStandardPhrase(phrase) {
+
+    var firstOperation = phrase[0].operation;
+    var defaultOperation = acrossByName[firstOperation] && firstOperation;
+
+    for (var _i5 = 0; _i5 < phrase.length; _i5++) {
+        var nw = phrase[_i5];
+        nw.operation = nw.operation || defaultOperation || 'READ';
+
+        if (defaultOperation && nw.operation !== defaultOperation) {
+            throw new Error('Incompatible Nyan commands in phrase!');
+        }
+
+        if (!defaultOperation && acrossByName[nw.operation]) {
+            throw new Error('Later incompatible in phrase!');
+        }
+
+        if (!defaultOperation && reactionsByName[nw.operation]) {
+            throw new Error('Reactions in later phrase!');
+        }
+    }
+}
+
+function parseSentence(str) {
+
+    var result = [];
+    var chunks = str.split('|').map(function (d) {
+        return d.trim();
+    }).filter(function (d) {
+        return d;
+    });
+
+    for (var _i6 = 0; _i6 < chunks.length; _i6++) {
+
+        var chunk = chunks[_i6];
+        var phrase = parsePhrase(chunk);
+        result.push(phrase);
+    }
+
+    return result;
+}
+
+function parsePhrase(str) {
+
+    var words = [];
+    var rawWords = str.split(',').map(function (d) {
+        return d.trim();
+    }).filter(function (d) {
+        return d;
+    });
+
+    var len = rawWords.length;
+
+    for (var _i7 = 0; _i7 < len; _i7++) {
+
+        var rawWord = rawWords[_i7];
+        var chunks = rawWord.split(/([(?:)])/).map(function (d) {
+            return d.trim();
+        }).filter(function (d) {
+            return d;
+        });
+        var nameAndOperation = chunks.shift();
+        var firstChar = rawWord[0];
+        var operation = namesBySymbol[firstChar];
+        var start = operation ? 1 : 0;
+        var _name = nameAndOperation.slice(start);
+        var maybe = false;
+        var monitor = false;
+        var topic = null;
+        var alias = null;
+
+        while (chunks.length) {
+            var c = chunks.shift();
+
+            if (c === '?') {
+                maybe = true;
+                continue;
+            }
+
+            if (c === ':') {
+                if (chunks.length) {
+                    var next = chunks[0];
+                    if (next === '(') {
+                        monitor = true;
+                    } else {
+                        topic = next;
+                    }
+                } else {
+                    monitor = true;
+                }
+                continue;
+            }
+
+            if (c === '(' && chunks.length) {
+                alias = chunks[0];
+            }
+        }
+
+        var nw = new NyanWord(_name, operation, maybe, topic, alias, monitor);
+        words.push(nw);
+    }
+
+    return words;
+}
+
+Nyan.parse = parse;
+
 var idCounter = 0;
 
 function _destroyEach(arr) {
@@ -1669,11 +1973,114 @@ var Scope = function () {
     }
 
     createClass(Scope, [{
-        key: 'watch',
-        value: function watch(fStr) {
+        key: 'bus',
+        value: function bus(str, context, node) {
+            // string is Nyan
 
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            fStr = Func.FUNCTOR(fStr);
+            var b = new Bus(this);
+
+            if (!str) return b;
+
+            var nyan = Nyan.parse(str);
+
+            var stack = [b];
+            var busList = [];
+
+            for (var i = 0; i < nyan.length; i++) {
+                var sentence = nyan[i];
+                if (sentence === '(') {
+                    var bus = stack[stack.length - 1];
+                    stack.push(bus.fork());
+                } else if (sentence === ')') {
+                    stack.pop();
+                } else {
+                    for (var j = 0; j < sentence.length; j++) {
+                        var phrase = sentence[j];
+                        var _bus = stack[stack.length - 1];
+                        if (i === 0 && j === 0) {
+                            addReaction(this, _bus, phrase);
+                        } else {
+                            addProcess(this, _bus, phrase);
+                        }
+                    }
+                }
+            }
+
+            function addReaction(scope, bus, phrase) {
+
+                var subscribe = [];
+                var follow = [];
+                var read = [];
+                var need = [];
+
+                for (var _i = 0; _i < phrase.length; _i++) {
+
+                    var word = phrase[_i];
+                    var operation = word.operation;
+
+                    if (operation.subscribe) subscribe.push(word);
+                    if (operation.read) read.push(word);
+                    if (operation.follow) follow.push(word);
+                    if (operation.need) need.push(word);
+                }
+
+                // convert nyan words to streams
+
+                for (var _i2 = 0; _i2 < subscribe.length; _i2++) {
+                    var _word = subscribe[_i2];
+                    var data = scope.find(_word.name, !_word.maybe);
+                    if (_word.monitor) {
+                        subscribe[_i2] = Stream.fromMonitor(data, _word.alias);
+                    } else {
+                        subscribe[_i2] = Stream.fromSubscribe(data, _word.topic, _word.alias);
+                    }
+                }
+
+                for (var _i3 = 0; _i3 < follow.length; _i3++) {
+                    var _word2 = follow[_i3];
+                    var _data = scope.find(_word2.name, !_word2.maybe);
+                    follow[_i3] = Stream.fromFollow(_data);
+                }
+
+                var reactions = subscribe.concat(follow);
+
+                bus.addFrame(reactions).merge().group().batch();
+                bus.msg(getMsg(scope, read));
+                bus.whenKeys(need.map(function (d) {
+                    return d.name;
+                }));
+            }
+
+            function getMsg(scope, read) {
+
+                var f = function f(msg) {
+
+                    for (var _i4 = 0; _i4 < read.length; _i4++) {
+                        var word = read[_i4];
+                        var data = scope.find(word.name, !word.maybe);
+                        if (data.peek()) msg[word.name] = data.read();
+                    }
+
+                    return msg;
+                };
+
+                return f;
+            }
+
+            function addProcess(bus) {}
+
+            // first phrase ->
+
+            // Stream.fromEvent(target, eventName, useCapture);
+            // Stream.fromSubscribe = function(data, topic, name){
+            // Stream.fromFollow = function(data, topic, name){
+            // needs/musts -> list
+            // read list
+
+            // get all watch streams | & read list | filter needs list
+            // first char in nyan can't be ()
+
+            // then do later phrases
         }
     }, {
         key: 'clear',
@@ -2260,121 +2667,6 @@ var Scope = function () {
     return Scope;
 }();
 
-var Nyan = {};
-
-var operationDefs = [{ name: 'ACT', sym: '^' }, { name: 'NEED', sym: '!' }, { name: 'EVENT', sym: '@' }, { name: 'RUN', sym: '*' }, { name: 'READ', sym: '~' }, { name: 'ATTR', sym: '#' }, { name: 'ADD', sym: '+' }, { name: 'STYLE', sym: '$' }, { name: 'BEGIN', sym: '(' }, { name: 'END', sym: ')' }, { name: 'WRITE', sym: '=' }, { name: 'PIPE', sym: '|' }, { name: 'WATCH', sym: '-' }];
-
-var operationsBySymbol = {};
-var symbolsByOperation = {};
-
-for (var i = 0; i < operationDefs.length; i++) {
-    var op = operationDefs[i];
-    var name = op.name;
-    var sym = op.sym;
-    operationsBySymbol[sym] = name;
-    symbolsByOperation[name] = sym;
-}
-
-var NyanWord = function () {
-    function NyanWord(name, operation, optional) {
-        classCallCheck(this, NyanWord);
-
-        this.name = name;
-        this.operation = operation;
-        this.optional = optional;
-    }
-
-    createClass(NyanWord, [{
-        key: 'toString',
-        value: function toString() {
-            return 'meow';
-        }
-    }]);
-    return NyanWord;
-}();
-
-function parse(str) {
-
-    var result = [];
-    var chunks = str.split(/([()])/); // split on parentheses
-
-    for (var _i = 0; _i < chunks.length; _i++) {
-        var chunk = chunks[_i].trim();
-
-        if (!chunk) continue;
-
-        var sentence = chunk === ')' || chunk === '(' ? chunk : parseSentence(chunk);
-
-        if (typeof sentence === 'string' || sentence.length > 0) result.push(sentence);
-    }
-
-    return result;
-}
-
-function parseSentence(str) {
-
-    var result = [];
-    var chunks = str.split('|');
-
-    for (var _i2 = 0; _i2 < chunks.length; _i2++) {
-        var chunk = chunks[_i2].trim();
-
-        if (!chunk) continue;
-
-        var phrase = parsePhrase(chunk);
-        result.push(phrase);
-    }
-
-    return result;
-}
-
-function parsePhrase(str) {
-
-    var words = [];
-    var rawWords = str.split(',');
-    var usingAct = false;
-
-    var len = rawWords.length;
-
-    for (var _i3 = 0; _i3 < len; _i3++) {
-
-        var rawWord = rawWords[_i3].trim();
-        var charCount = rawWord.length;
-
-        if (!charCount) continue;
-
-        var lastIndex = charCount - 1;
-        var firstChar = rawWord[0];
-        var lastChar = rawWord[lastIndex];
-
-        var operation = operationsBySymbol[firstChar];
-        var optional = lastChar === '?';
-
-        var start = operation ? 1 : 0;
-        var end = optional ? -1 : charCount;
-        var _name = rawWord.slice(start, end);
-
-        if (!_name.length) throw new Error('Word missing name!');
-
-        if (operation === 'ACT') usingAct = true;
-
-        var nw = new NyanWord(_name, operation, optional);
-        words.push(nw);
-    }
-
-    var wordCount = words.length;
-    for (var _i4 = 0; _i4 < wordCount; _i4++) {
-        var _nw = words[_i4];
-        if (!_nw.operation) {
-            _nw.operation = usingAct ? 'READ' : 'WATCH';
-        }
-    }
-
-    return words;
-}
-
-Nyan.parse = parse;
-
 var Catbus$1 = {};
 
 var _batchQueue = [];
@@ -2400,7 +2692,7 @@ Catbus$1.enqueue = function (pool) {
 Catbus$1.scope = function (name) {
 
     console.log('NYAN');
-    var k = Nyan.parse('!bunny?, cow, moo? | (*toMuffin? | =order) (=raw)');
+    var k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | -kitten, moo, dog' + '                       {*toMuffin?, toBunny | =order {=raw}} meow {you} woo');
 
     var _iteratorNormalCompletion = true;
     var _didIteratorError = false;
@@ -2429,7 +2721,7 @@ Catbus$1.scope = function (name) {
                         for (var _iterator3 = phrase[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
                             var word = _step3.value;
 
-                            console.log(word.name, word.operation, word.optional);
+                            console.log(word.name, word.operation, word.maybe);
                         }
                     } catch (err) {
                         _didIteratorError3 = true;

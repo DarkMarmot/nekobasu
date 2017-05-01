@@ -90,12 +90,17 @@ class Frame {
         return this.applySyncProcess('doRun', func, stateful);
     };
 
+    msg(fAny, stateful){
+        return this.applySyncProcess('doMsg', F.FUNCTOR(fAny), stateful);
+    };
+
+
     transform(fAny, stateful){
         return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
     };
 
-    name(fStr, stateful){
-        return this.applySyncProcess('doName', F.FUNCTOR(fStr), stateful);
+    source(fStr, stateful){
+        return this.applySyncProcess('doSource', F.FUNCTOR(fStr), stateful);
     };
 
     delay(fNum, stateful){

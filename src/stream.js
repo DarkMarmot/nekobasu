@@ -41,7 +41,7 @@ class Stream {
         this.children.push(stream);
     };
 
-    emit(msg, source, thisStream){
+    emit(msg, source, topic, thisStream){
 
         thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
 
@@ -50,47 +50,57 @@ class Stream {
 
         for(let i = 0; i < len; i++){
             const c = children[i];
-            c.tell(msg, source);
+            c.tell(msg, source, topic);
         }
 
     };
 
-    doFilter(msg, source) {
+    doFilter(msg, source, topic) {
 
-        if(!this.actionMethod(msg, source))
+        if(!this.actionMethod(msg, source, topic))
             return;
-        this.emit(msg, source);
+        this.emit(msg, source, topic);
 
     };
 
 
-    doTransform(msg, source) {
+    doMsg(msg, source, topic) {
 
-        msg = this.actionMethod(msg, source);
-        this.emit(msg, source);
+        msg = this.actionMethod(msg, source, topic);
+        this.emit(msg, source, topic);
 
     };
 
-    doDelay(msg, source) {
+    doTransform(msg, source, topic) {
+
+
+        msg = this.actionMethod.msg ? this.actionMethod.msg(msg, source, topic) : msg;
+        source = this.actionMethod.source ? this.actionMethod.source(msg, source, topic) : source;
+        topic = this.actionMethod.topic ? this.actionMethod.topic(msg, source, topic) : topic;
+        this.emit(msg, source, topic);
+
+    };
+
+    doDelay(msg, source, topic) {
 
         // todo add destroy -> kills timeout
         // passes 'this' to avoid bind slowdown
-        setTimeout(this.emit, this.actionMethod(msg, source) || 0, msg, source, this);
+        setTimeout(this.emit, this.actionMethod(msg, source, topic) || 0, msg, source, topic, this);
 
     };
 
-    doName(msg, source) {
+    doSource(msg, source, topic) {
 
-        source = this.actionMethod(msg, source);
-        this.emit(msg, source);
+        source = this.actionMethod(msg, source, topic);
+        this.emit(msg, source, topic);
 
     };
 
 
-    doRun(msg, source) {
+    doRun(msg, source, topic) {
 
-        this.actionMethod(msg, source);
-        this.emit(msg, source);
+        this.actionMethod(msg, source, topic);
+        this.emit(msg, source, topic);
 
     };
 
@@ -99,9 +109,9 @@ class Stream {
         this.pool = new Pool(this);
     };
 
-    doPool(msg, source) {
+    doPool(msg, source, topic) {
 
-        this.pool.tell(msg, source);
+        this.pool.tell(msg, source, topic);
 
     };
 
@@ -117,15 +127,58 @@ class Stream {
 }
 
 
+Stream.fromMonitor = function(data, name){
 
-Stream.fromData = function(data, topic, name){
+    const stream = new Stream();
+    const streamName = name || data.name;
+
+    stream.name = streamName;
+
+    const toStream = function(msg, source, topic){
+        stream.tell(msg, streamName || source, topic);
+    };
+
+    stream.cleanupMethod = function(){
+        data.unsubscribe(toStream);
+    };
+
+    data.monitor(toStream);
+
+    return stream;
+
+};
+
+
+Stream.fromSubscribe = function(data, topic, name){
+
+    const stream = new Stream();
+    const streamName = name || topic || data.name;
+
+    stream.name = streamName;
+
+    const toStream = function(msg, source, topic){
+        stream.tell(msg, streamName || source, topic);
+    };
+
+    stream.cleanupMethod = function(){
+        data.unsubscribe(toStream, topic);
+    };
+
+    data.subscribe(toStream, topic);
+
+    return stream;
+
+};
+
+
+Stream.fromFollow = function(data, topic, name){
 
     const stream = new Stream();
     const streamName = name || topic || data.name;
     stream.name = streamName;
 
-    const toStream = function(msg){
-        stream.tell(msg, streamName);
+    const toStream = function(msg, source, topic){
+        stream.tell(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function(){

@@ -5,7 +5,6 @@ import Bus from './bus.js';
 import Nyan from './nyan.js';
 
 
-
 const Catbus = {};
 
 let _batchQueue = [];
@@ -34,7 +33,8 @@ Catbus.enqueue = function(pool){
 Catbus.scope = function(name){
 
     console.log('NYAN');
-    const k = Nyan.parse('!bunny?, cow, moo? (*toMuffin? | =order) (=raw)');
+    const k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | -kitten, moo, dog' +
+        '                       {*toMuffin?, toBunny | =order {=raw}} meow {you} woo');
 
     for(const sentence of k){
         if(typeof sentence === 'string'){
@@ -43,7 +43,7 @@ Catbus.scope = function(name){
         }
         for(const phrase of sentence){
             for(const word of phrase){
-                console.log(word.name, word.operation, word.optional);
+                console.log(word.name, word.operation, word.maybe);
             }
         }
     }

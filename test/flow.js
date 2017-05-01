@@ -45,7 +45,7 @@ reset();
 //
 //
 //var b = Catbus.fromEvent(emitter, 'boo');
-//b.transform(function(msg){ return msg + '-cat';});
+//b.msg(function(msg){ return msg + '-cat';});
 //b.run(log);
 
 
@@ -107,7 +107,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.run(log);
 
                 dice.emit('roll', 5);
@@ -129,7 +129,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.filter(function(msg){ return msg < 6});
                 b.run(log);
 
@@ -152,7 +152,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.skipDupes();
                 b.run(log);
 
@@ -179,7 +179,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.last(3);
                 b.run(log);
 
@@ -213,7 +213,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.first(2);
                 b.run(log);
 
@@ -240,7 +240,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.all();
                 b.run(log);
 
@@ -270,7 +270,7 @@ describe('Catbus', function(){
                 //  console.log('delay!!!');
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.delay(100);
                 b.run(log);
 
@@ -306,7 +306,7 @@ describe('Catbus', function(){
 
 
                 var b = Catbus.fromEvent(dice, 'roll');
-                b.transform(function(msg){ return msg * 2});
+                b.msg(function(msg){ return msg * 2});
                 b.delay(100);
                 b.hold();
                 b.last(2);
@@ -344,10 +344,10 @@ describe('Catbus', function(){
 
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2});
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.transform(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg});
 
                 b1.add(b2);
                 b1.run(log);
@@ -374,10 +374,10 @@ describe('Catbus', function(){
             it('can fork buses', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2});
 
                 var b2 = b1.fork(); // could do back wiring to preserve expected order?
-                b2.transform(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg});
 
                 b1.run(log);
                 b2.run(log);
@@ -402,10 +402,10 @@ describe('Catbus', function(){
             it('can group by source', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2});
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.transform(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg});
 
                 b1.add(b2);
                 b1.last(3);
@@ -444,12 +444,12 @@ describe('Catbus', function(){
             it('can name streams', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
-                b1.name('cat');
+                b1.msg(function(msg){ return msg * 2});
+                b1.source('cat');
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.transform(function(msg){ return -msg});
-                b2.name('dog');
+                b2.msg(function(msg){ return -msg});
+                b2.source('dog');
 
                 b1.add(b2);
                 b1.merge();
@@ -480,10 +480,10 @@ describe('Catbus', function(){
             it('can need by source', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2});
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.transform(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg});
 
                 b1.add(b2);
                 b1.last(3);
@@ -517,10 +517,10 @@ describe('Catbus', function(){
             it('can scan', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.transform(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2});
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.transform(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg});
 
                 b1.add(b2);
                 b1.merge().scan(function(acc, msg){ return acc + msg;}, 0);

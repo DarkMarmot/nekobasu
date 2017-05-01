@@ -13,7 +13,11 @@ function TO_SOURCE(msg, source) {
     return source;
 }
 
-function TO_MSG(msg, source) {
+function TO_TOPIC(msg, source, topic) {
+    return topic;
+}
+
+function TO_MSG(msg) {
     return msg;
 }
 
@@ -406,6 +410,7 @@ const Func = {
 };
 
 Func.TO_SOURCE = TO_SOURCE;
+Func.TO_TOPIC = TO_TOPIC;
 Func.To_MSG = TO_MSG;
 Func.FUNCTOR = FUNCTOR;
 Func.ALWAYS_TRUE = ALWAYS_TRUE;

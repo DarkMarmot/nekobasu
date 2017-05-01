@@ -3,6 +3,8 @@ import F from './flib.js';
 import Data from './data.js';
 import { DATA_TYPES, isValid } from './dataTypes.js';
 import Bus from './bus.js';
+import Nyan from './nyan.js';
+import Stream from './stream.js';
 
 let idCounter = 0;
 
@@ -32,8 +34,6 @@ class Scope{
 
     };
 
-
-
     get name() { return this._name; };
     get dead() { return this._dead; };
 
@@ -43,11 +43,122 @@ class Scope{
 
     };
 
-    watch(fStr){
+    bus(str, context, node){ // string is Nyan
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        fStr = F.FUNCTOR(fStr);
+        const b = new Bus(this);
 
+        if(!str)
+            return b;
+
+        const nyan = Nyan.parse(str);
+
+        const stack = [b];
+        const busList = [];
+
+        for(let i = 0; i < nyan.length; i++){
+            const sentence = nyan[i];
+            if(sentence === '('){
+                const bus = stack[stack.length - 1];
+                stack.push(bus.fork());
+            } else if (sentence === ')'){
+                stack.pop();
+            } else {
+                for(let j = 0; j < sentence.length; j++){
+                    const phrase = sentence[j];
+                    const bus = stack[stack.length - 1];
+                    if(i === 0 && j=== 0){
+                        addReaction(this, bus, phrase);
+                    } else {
+                        addProcess(this, bus, phrase);
+                    }
+                }
+            }
+        }
+
+
+        function addReaction(scope, bus, phrase){
+
+            const subscribe = [];
+            const follow = [];
+            const read = [];
+            const need = [];
+
+            for(let i = 0; i < phrase.length; i++){
+
+                const word = phrase[i];
+                const operation = word.operation;
+
+                if(operation.subscribe)
+                    subscribe.push(word);
+                if(operation.read)
+                    read.push(word);
+                if(operation.follow)
+                    follow.push(word);
+                if(operation.need)
+                    need.push(word);
+
+            }
+
+            // convert nyan words to streams
+
+            for(let i = 0; i < subscribe.length; i++){
+                const word = subscribe[i];
+                const data = scope.find(word.name, !word.maybe);
+                if(word.monitor){
+                    subscribe[i] = Stream.fromMonitor(data, word.alias);
+                } else {
+                    subscribe[i] = Stream.fromSubscribe(data, word.topic, word.alias);
+                }
+            }
+
+            for(let i = 0; i < follow.length; i++){
+                const word = follow[i];
+                const data = scope.find(word.name, !word.maybe);
+                follow[i] = Stream.fromFollow(data);
+            }
+
+            const reactions = subscribe.concat(follow);
+
+            bus.addFrame(reactions).merge().group().batch();
+            bus.msg(getMsg(scope, read));
+            bus.whenKeys(need.map(d => d.name));
+
+        }
+
+        function getMsg(scope, read){
+
+            const f = function(msg) {
+
+                for (let i = 0; i < read.length; i++) {
+                    const word = read[i];
+                    const data = scope.find(word.name, !word.maybe);
+                    if(data.peek())
+                        msg[word.name] = data.read();
+                }
+
+                return msg;
+            };
+
+            return f;
+
+        }
+
+        function addProcess(bus){
+
+        }
+
+        // first phrase ->
+
+        // Stream.fromEvent(target, eventName, useCapture);
+        // Stream.fromSubscribe = function(data, topic, name){
+        // Stream.fromFollow = function(data, topic, name){
+        // needs/musts -> list
+        // read list
+
+        // get all watch streams | & read list | filter needs list
+        // first char in nyan can't be ()
+
+        // then do later phrases
 
     };
 
@@ -189,8 +300,6 @@ class Scope{
         return state;
 
     };
-
-
 
 
     findDataSet(names, required){

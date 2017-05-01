@@ -5,7 +5,9 @@ const STREAM_TYPES = {
     GROUP:     'group',
     HOLD:      'hold',
     TRANSFORM: 'transform',
-    NAME:      'name',
+    MSG:       'msg',
+    SOURCE:    'source',
+    TOPIC:     'topic',
     DELAY:     'delay',
     FILTER:    'filter',
     RUN:       'run'
