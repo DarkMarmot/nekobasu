@@ -9,6 +9,7 @@ function ALWAYS_FALSE(){
     return false;
 }
 
+
 function TO_SOURCE(msg, source) {
     return source;
 }
@@ -31,6 +32,7 @@ function FUNCTOR(val) {
 }
 
 const Func = {
+
 
     ASSERT_NEED_ONE_ARGUMENT: function(args){
         if(args.length < 1)

@@ -2,28 +2,31 @@
 
 const Nyan = {};
 
-// across = applies to all words in a phrase
-//
+// then = applies to all words in a phrase
+// watch: ^ = action, need, event, watch | read, must
+// then:  run, read, attr, and, style, write, blast, filter
+
 const operationDefs = [
 
-    {name: 'ACTION', sym: '^', react: true, subscribe: true},
-    {name: 'NEED',   sym: '!', react: true, follow: true, need: true},
-    {name: 'EVENT',  sym: '@', react: true, event: true},
-    {name: 'RUN',    sym: '*', across: true},
-    {name: 'READ',   sym: '~', with_react: true, read: true},
-    {name: 'ATTR',   sym: '#'},
-    {name: 'AND',    sym: '&', across: true},
-    {name: 'STYLE',  sym: '$'},
-    {name: 'WRITE',  sym: '='},
-    {name: 'MUST',   sym: '_', with_react: true, read: true, need: true}, // must have data on read
-    {name: 'FILTER', sym: '-', across: true},
-    {name: 'WATCH',  sym: '%', react: true, follow: true} // default
+    {name: 'ACTION', sym: '^',  react: true, subscribe: true},
+    {name: 'WATCH',  sym: null, react: true, follow: true},
+    {name: 'NEED',   sym: '!',  react: true, follow: true, need: true},
+    {name: 'EVENT',  sym: '@',  react: true, event: true},
+    {name: 'READ',   sym: null, then: true, with_react: true, read: true},
+    {name: 'MUST',   sym: '_',  then: true, with_react: true, read: true, need: true}, // must have data on read
+    {name: 'ATTR',   sym: '#',  then: true},
+    {name: 'AND',    sym: '&',  then: true},
+    {name: 'STYLE',  sym: '$',  then: true},
+    {name: 'WRITE',  sym: '=',  then: true},
+    {name: 'RUN',    sym: '*',  then: true},
+    {name: 'FILTER', sym: '%',  then: true}
 
 ];
 
-// {name: 'BEGIN',  sym: '{'},
-// {name: 'END',    sym: '}'},
-// {name: 'PIPE',   sym: '|'},
+// {name: 'BEGIN',  sym: '{'}, -- fork
+// {name: 'END',    sym: '}'}, -- join
+// {name: 'PIPE',   sym: '|'}, -- phrase delimiter
+// read = SPACE
 
 const operationsBySymbol = {};
 const operationsByName = {};
@@ -31,25 +34,30 @@ const symbolsByName = {};
 const namesBySymbol = {};
 const reactionsByName = {};
 const withReactionsByName = {};
-const acrossByName = {};
+const thenByName = {};
 
 for(let i = 0; i < operationDefs.length; i++){
 
     const op = operationDefs[i];
     const name = op.name;
     const sym = op.sym;
-    operationsBySymbol[sym] = op;
+
+    if(sym) {
+        operationsBySymbol[sym] = op;
+        namesBySymbol[sym] = name;
+    }
+
     operationsByName[name] = op;
     symbolsByName[name] = sym;
-    namesBySymbol[sym] = name;
 
-    if(op.across){
-        acrossByName[name] = true;
-    } else if(op.react) {
+    if(op.then){
+        thenByName[name] = true;
+    }
+
+    if(op.react) {
         reactionsByName[name] = true;
         withReactionsByName[name] = true;
-    }
-    else if(op.with_react) {
+    } else if(op.with_react) {
         withReactionsByName[name] = true;
     }
 
@@ -73,9 +81,9 @@ class NyanWord {
 }
 
 
-function parse(str) {
+function parse(str, isProcess) {
 
-    const result = [];
+    const sentences = [];
 
     // split on parentheses and remove empty chunks (todo optimize for speed)
     let chunks = str.split(/([{}])/).map(d => d.trim()).filter(d => d);
@@ -83,21 +91,21 @@ function parse(str) {
     for(let i = 0; i < chunks.length; i++){
 
         const chunk = chunks[i];
-        const sentence = (chunk === ')' || chunk === '(') ? chunk : parseSentence(chunk);
+        const sentence = (chunk === '}' || chunk === '{') ? chunk : parseSentence(chunk);
 
         if(typeof sentence === 'string' || sentence.length > 0)
-            result.push(sentence);
+            sentences.push(sentence);
 
     }
 
-    validate(result);
-    
-    return result;
+    return validate(sentences, isProcess);
+
 
 }
 
-function validate(sentences){
+function validate(sentences, isProcess){
 
+    const cmdList = [];
     let firstPhrase = true;
     
     for(let i = 0; i < sentences.length; i++){
@@ -105,21 +113,29 @@ function validate(sentences){
         if(typeof s !== 'string') {
             for (let j = 0; j < s.length; j++) {
                 const phrase = s[j];
-                if(firstPhrase) {
-                    validateReactivePhrase(phrase);
+                if(firstPhrase && !isProcess) {
+                    validateReactPhrase(phrase);
                     firstPhrase = false;
+                    cmdList.push({name: 'REACT', phrase: phrase})
                 }
                 else {
-                    validateStandardPhrase(phrase);
+                    validateProcessPhrase(phrase);
+                    cmdList.push({name: 'PROCESS', phrase: phrase})
                 }
             }
+        } else if (s === '{') {
+            cmdList.push({name: 'FORK'});
+        } else if (s === '}') {
+            cmdList.push({name: 'JOIN'});
         }
     }
+
+    return cmdList;
 }
 
 
-function validateReactivePhrase(phrase){
-    
+function validateReactPhrase(phrase){
+
     let usingAction = false;
     for(let i = 0; i < phrase.length; i++){
         const nw = phrase[i];
@@ -142,31 +158,29 @@ function validateReactivePhrase(phrase){
     }
 
     if(!hasReaction)
-        throw new Error('Nyan commands must begin with a reaction!');
+        throw new Error('Nyan commands must begin with an observation!');
 
 }
 
 
-function validateStandardPhrase(phrase){
 
-    const firstOperation = phrase[0].operation;
-    const defaultOperation = acrossByName[firstOperation] && firstOperation;
+function validateProcessPhrase(phrase){
+
+    const firstPhrase = phrase[0];
+    const firstOperation = firstPhrase.operation || 'READ';
+
+    if(!thenByName[firstOperation])
+        throw new Error('Illegal operation in phrase!'); // unknown or reactive
 
     for(let i = 0; i < phrase.length; i++){
+
         const nw = phrase[i];
-        nw.operation = nw.operation || defaultOperation || 'READ';
-
-        if(defaultOperation && nw.operation !== defaultOperation){
-            throw new Error('Incompatible Nyan commands in phrase!');
+        nw.operation = nw.operation || firstOperation;
+        if(nw.operation !== firstOperation){
+            console.log('mult', nw.operation, firstOperation);
+            throw new Error('Multiple operation types in phrase (only one allowed)!');
         }
 
-        if (!defaultOperation && acrossByName[nw.operation]){
-            throw new Error('Later incompatible in phrase!');
-        }
-
-        if (!defaultOperation && reactionsByName[nw.operation]){
-            throw new Error('Reactions in later phrase!');
-        }
     }
 
 }

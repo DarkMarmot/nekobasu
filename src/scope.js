@@ -18,6 +18,129 @@ function _destroyEach(arr){
 
 }
 
+function _getMsg(scope, read){
+
+    const f = function(msg) {
+
+        for (let i = 0; i < read.length; i++) {
+            const word = read[i];
+            const data = scope.find(word.name, !word.maybe);
+            if(data.peek())
+                msg[word.name] = data.read();
+        }
+
+        return msg;
+    };
+
+    return f;
+
+}
+
+function _applyReaction(scope, bus, phrase, context, node) {
+
+    const subscribe = [];
+    const follow = [];
+    const read = [];
+    const need = [];
+    const must = [];
+
+    for(let i = 0; i < phrase.length; i++){
+
+        const word = phrase[i];
+        const operation = word.operation;
+
+        if(operation.subscribe)
+            subscribe.push(word);
+        if(operation.read)
+            read.push(word);
+        if(operation.follow)
+            follow.push(word);
+        if(operation.name === 'NEED')
+            need.push(word);
+        if(operation.name === 'MUST')
+            must.push(word);
+
+    }
+
+    // convert nyan words to streams
+
+    for(let i = 0; i < subscribe.length; i++){
+        const word = subscribe[i];
+        const data = scope.find(word.name, !word.maybe);
+        if(word.monitor){
+            subscribe[i] = Stream.fromMonitor(data, word.alias);
+        } else {
+            subscribe[i] = Stream.fromSubscribe(data, word.topic, word.alias);
+        }
+    }
+
+    for(let i = 0; i < follow.length; i++){
+
+        // todo, follow/monitor, blast all topics?
+        const word = follow[i];
+        const data = scope.find(word.name, !word.maybe);
+        follow[i] = Stream.fromFollow(data);
+
+    }
+
+    const reactions = subscribe.concat(follow);
+
+    bus.addFrame(reactions);
+
+    if(reactions.length)
+        bus.merge().group();
+
+    if(need.length)
+        bus.whenKeys(need.map(d => d.name));
+
+    if(reactions.length)
+        bus.batch();
+
+    if(read.length)
+        bus.msg(_getMsg(scope, read));
+
+    if(must.length)
+        bus.whenKeys(must.map(d => d.name));
+
+
+}
+
+
+function _applyProcess(scope, bus, phrase, context, node) {
+
+
+
+}
+
+function _applyNyan(scope, bus, str, context, node){
+
+    const nyan = Nyan.parse(str);
+
+    for(let i = 0; i < nyan.length; i++){
+
+        const cmd = nyan[i];
+        const name = cmd.name;
+        const phrase = cmd.phrase;
+
+        if(name === 'FORK'){
+            bus = bus.fork();
+        } else if (name === 'JOIN'){
+            bus = bus.join();
+        } else {
+
+           if(name === 'PROCESS')
+               addProcess(scope, bus, phrase, context, node);
+           else // name === 'REACT'
+               addReaction(scope, bus, phrase, context, node);
+
+        }
+    }
+
+    return bus;
+
+}
+
+
 class Scope{
 
     constructor(name) {
@@ -43,122 +166,29 @@ class Scope{
 
     };
 
-    bus(str, context, node){ // string is Nyan
 
-        const b = new Bus(this);
+
+    process(str, context, node) {
+
+        // todo this should be on Bus
+        if(!str)
+            throw new Error('Need a Nyan phrase!');
+
+        let b = new Bus(this);
+
+        return _applyNyan(this, b, str, context, node);
+
+
+    };
+
+    react(str, context, node){ // string is Nyan
 
         if(!str)
-            return b;
+            throw new Error('Need a Nyan phrase!');
 
-        const nyan = Nyan.parse(str);
+        let b = new Bus(this);
 
-        const stack = [b];
-        const busList = [];
-
-        for(let i = 0; i < nyan.length; i++){
-            const sentence = nyan[i];
-            if(sentence === '('){
-                const bus = stack[stack.length - 1];
-                stack.push(bus.fork());
-            } else if (sentence === ')'){
-                stack.pop();
-            } else {
-                for(let j = 0; j < sentence.length; j++){
-                    const phrase = sentence[j];
-                    const bus = stack[stack.length - 1];
-                    if(i === 0 && j=== 0){
-                        addReaction(this, bus, phrase);
-                    } else {
-                        addProcess(this, bus, phrase);
-                    }
-                }
-            }
-        }
-
-
-        function addReaction(scope, bus, phrase){
-
-            const subscribe = [];
-            const follow = [];
-            const read = [];
-            const need = [];
-
-            for(let i = 0; i < phrase.length; i++){
-
-                const word = phrase[i];
-                const operation = word.operation;
-
-                if(operation.subscribe)
-                    subscribe.push(word);
-                if(operation.read)
-                    read.push(word);
-                if(operation.follow)
-                    follow.push(word);
-                if(operation.need)
-                    need.push(word);
-
-            }
-
-            // convert nyan words to streams
-
-            for(let i = 0; i < subscribe.length; i++){
-                const word = subscribe[i];
-                const data = scope.find(word.name, !word.maybe);
-                if(word.monitor){
-                    subscribe[i] = Stream.fromMonitor(data, word.alias);
-                } else {
-                    subscribe[i] = Stream.fromSubscribe(data, word.topic, word.alias);
-                }
-            }
-
-            for(let i = 0; i < follow.length; i++){
-                const word = follow[i];
-                const data = scope.find(word.name, !word.maybe);
-                follow[i] = Stream.fromFollow(data);
-            }
-
-            const reactions = subscribe.concat(follow);
-
-            bus.addFrame(reactions).merge().group().batch();
-            bus.msg(getMsg(scope, read));
-            bus.whenKeys(need.map(d => d.name));
-
-        }
-
-        function getMsg(scope, read){
-
-            const f = function(msg) {
-
-                for (let i = 0; i < read.length; i++) {
-                    const word = read[i];
-                    const data = scope.find(word.name, !word.maybe);
-                    if(data.peek())
-                        msg[word.name] = data.read();
-                }
-
-                return msg;
-            };
-
-            return f;
-
-        }
-
-        function addProcess(bus){
-
-        }
-
-        // first phrase ->
-
-        // Stream.fromEvent(target, eventName, useCapture);
-        // Stream.fromSubscribe = function(data, topic, name){
-        // Stream.fromFollow = function(data, topic, name){
-        // needs/musts -> list
-        // read list
-
-        // get all watch streams | & read list | filter needs list
-        // first char in nyan can't be ()
-
-        // then do later phrases
+        return _applyNyan(this, b, str, context, node);
 
     };
 
@@ -167,22 +197,9 @@ class Scope{
         if(this._dead)
             return;
 
-        // console.log('clearing:', this._id, 'has:', this.children.length);
-
         _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
         _destroyEach(this._busList);
         _destroyEach(this._dataList.values());
-
-        // console.log('done:', this._id, 'has:', this.children.length);
-
-        // for(const data of this._dataList.values()){
-        //     data.destroy();
-        // }
-
-        // this._destroyEach(this._children);
-        // this._destroyEach(this._busList);
-        // this._destroyEach(this._dataList.values());
-
 
         this._children = [];
         this._busList = [];

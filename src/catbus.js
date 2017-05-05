@@ -10,6 +10,8 @@ const Catbus = {};
 let _batchQueue = [];
 let _primed = false;
 
+
+
 Catbus.fromEvent = function(target, eventName, useCapture){
 
     const stream = Stream.fromEvent(target, eventName, useCapture);
@@ -30,21 +32,20 @@ Catbus.enqueue = function(pool){
 
 };
 
+
 Catbus.scope = function(name){
 
     console.log('NYAN');
-    const k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | -kitten, moo, dog' +
-        '                       {*toMuffin?, toBunny | =order {=raw}} meow {you} woo');
+    const k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | %kitten' +
+        '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
 
-    for(const sentence of k){
-        if(typeof sentence === 'string'){
-            console.log(sentence);
+    for(const cmd of k){
+        console.log('CMD: ', cmd.name);
+        const phrase = cmd.phrase;
+        if(!phrase)
             continue;
-        }
-        for(const phrase of sentence){
-            for(const word of phrase){
-                console.log(word.name, word.operation, word.maybe);
-            }
+        for(const word of phrase){
+            console.log(word.name, word.operation, word.maybe);
         }
     }
 
@@ -52,7 +53,9 @@ Catbus.scope = function(name){
 
     console.log('root is ', name);
     return new Scope(name);
+
 };
+
 
 Catbus.flush = function(){
 

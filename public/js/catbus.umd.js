@@ -1358,8 +1358,12 @@ var Bus = function () {
 
         this._frames = [];
         this._dead = false;
-        this._scope = scope;
+        this._scope = scope; // data scope
+        this._children = []; // from forks
+        this._parent = null;
+
         if (scope) scope._busList.push(this);
+
         var f = new Frame(this, streams || []);
         this._frames.push(f);
         this._currentFrame = f;
@@ -1402,9 +1406,18 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
             var fork = new Bus(this.scope);
+            fork.parent = this;
             _wireFrames(this._currentFrame, fork._currentFrame);
 
             return fork;
+        }
+    }, {
+        key: 'join',
+        value: function join() {
+
+            if (!this._parent) throw new Error('Cannot join fork, parent does not exist!');
+
+            return this.parent;
         }
     }, {
         key: 'add',
@@ -1443,6 +1456,38 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'event',
+        value: function event(name, target, eventName, useCapture) {
+
+            eventName = eventName || name;
+            Func.ASSERT_NOT_HOLDING(this);
+            var stream = Stream.fromEvent(target, eventName, useCapture);
+            stream.name = name;
+            this.addFrame([stream]);
+            return this;
+        }
+    }, {
+        key: 'eventList',
+        value: function eventList(list) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+
+            var len = list.length;
+            var streams = [];
+
+            for (var i = 0; i < len; i++) {
+                var e = list[i];
+                var eventName = e.eventName || e.name;
+                var name = e.name || e.eventName;
+                var s = Stream.fromEvent(e.target, eventName, e.useCapture);
+                s.name = name;
+                streams.push(s);
+            }
+
+            this.addFrame(streams);
+            return this;
+        }
+    }, {
         key: 'scan',
         value: function scan(func, seed) {
             return this.reduce(Func.getScan, func, seed);
@@ -1466,7 +1511,6 @@ var Bus = function () {
     }, {
         key: 'whenKeys',
         value: function whenKeys(keys) {
-            Func.ASSERT_IS_HOLDING(this);
             return this.when(Func.getWhenKeys, keys);
         }
     }, {
@@ -1679,6 +1723,38 @@ var Bus = function () {
             return this;
         }
     }, {
+        key: 'children',
+        get: function get$$1() {
+
+            return this._children.map(function (d) {
+                return d;
+            });
+        }
+    }, {
+        key: 'parent',
+        get: function get$$1() {
+            return this._parent;
+        },
+        set: function set$$1(newParent) {
+
+            var oldParent = this.parent;
+
+            if (oldParent === newParent) return;
+
+            if (oldParent) {
+                var i = oldParent._children.indexOf(this);
+                oldParent._children.splice(i, 1);
+            }
+
+            this._parent = newParent;
+
+            if (newParent) {
+                newParent._children.push(this);
+            }
+
+            return this;
+        }
+    }, {
         key: 'dead',
         get: function get$$1() {
             return this._dead;
@@ -1719,16 +1795,17 @@ function _wireFrames(frame1, frame2) {
 
 var Nyan = {};
 
-// across = applies to all words in a phrase
-//
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'NEED', sym: '!', react: true, follow: true, need: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'RUN', sym: '*', across: true }, { name: 'READ', sym: '~', with_react: true, read: true }, { name: 'ATTR', sym: '#' }, { name: 'AND', sym: '&', across: true }, { name: 'STYLE', sym: '$' }, { name: 'WRITE', sym: '=' }, { name: 'MUST', sym: '_', with_react: true, read: true, need: true }, // must have data on read
-{ name: 'FILTER', sym: '-', across: true }, { name: 'WATCH', sym: '%', react: true, follow: true } // default
+// then = applies to all words in a phrase
+// watch: ^ = action, need, event, watch | read, must
+// then:  run, read, attr, and, style, write, blast, filter
 
-];
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'NEED', sym: '!', react: true, follow: true, need: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'MUST', sym: '_', then: true, with_react: true, read: true, need: true }, // must have data on read
+{ name: 'ATTR', sym: '#', then: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true }, { name: 'WRITE', sym: '=', then: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
 
-// {name: 'BEGIN',  sym: '{'},
-// {name: 'END',    sym: '}'},
-// {name: 'PIPE',   sym: '|'},
+// {name: 'BEGIN',  sym: '{'}, -- fork
+// {name: 'END',    sym: '}'}, -- join
+// {name: 'PIPE',   sym: '|'}, -- phrase delimiter
+// read = SPACE
 
 var operationsBySymbol = {};
 var operationsByName = {};
@@ -1736,21 +1813,27 @@ var symbolsByName = {};
 var namesBySymbol = {};
 var reactionsByName = {};
 var withReactionsByName = {};
-var acrossByName = {};
+var thenByName = {};
 
 for (var i = 0; i < operationDefs.length; i++) {
 
     var op = operationDefs[i];
     var name = op.name;
     var sym = op.sym;
-    operationsBySymbol[sym] = op;
+
+    if (sym) {
+        operationsBySymbol[sym] = op;
+        namesBySymbol[sym] = name;
+    }
+
     operationsByName[name] = op;
     symbolsByName[name] = sym;
-    namesBySymbol[sym] = name;
 
-    if (op.across) {
-        acrossByName[name] = true;
-    } else if (op.react) {
+    if (op.then) {
+        thenByName[name] = true;
+    }
+
+    if (op.react) {
         reactionsByName[name] = true;
         withReactionsByName[name] = true;
     } else if (op.with_react) {
@@ -1770,9 +1853,9 @@ var NyanWord = function NyanWord(name, operation, maybe, topic, alias, monitor) 
     this.monitor = monitor || false;
 };
 
-function parse(str) {
+function parse(str, isProcess) {
 
-    var result = [];
+    var sentences = [];
 
     // split on parentheses and remove empty chunks (todo optimize for speed)
     var chunks = str.split(/([{}])/).map(function (d) {
@@ -1784,18 +1867,17 @@ function parse(str) {
     for (var _i = 0; _i < chunks.length; _i++) {
 
         var chunk = chunks[_i];
-        var sentence = chunk === ')' || chunk === '(' ? chunk : parseSentence(chunk);
+        var sentence = chunk === '}' || chunk === '{' ? chunk : parseSentence(chunk);
 
-        if (typeof sentence === 'string' || sentence.length > 0) result.push(sentence);
+        if (typeof sentence === 'string' || sentence.length > 0) sentences.push(sentence);
     }
 
-    validate(result);
-
-    return result;
+    return validate(sentences, isProcess);
 }
 
-function validate(sentences) {
+function validate(sentences, isProcess) {
 
+    var cmdList = [];
     var firstPhrase = true;
 
     for (var _i2 = 0; _i2 < sentences.length; _i2++) {
@@ -1803,18 +1885,26 @@ function validate(sentences) {
         if (typeof s !== 'string') {
             for (var j = 0; j < s.length; j++) {
                 var phrase = s[j];
-                if (firstPhrase) {
-                    validateReactivePhrase(phrase);
+                if (firstPhrase && !isProcess) {
+                    validateReactPhrase(phrase);
                     firstPhrase = false;
+                    cmdList.push({ name: 'REACT', phrase: phrase });
                 } else {
-                    validateStandardPhrase(phrase);
+                    validateProcessPhrase(phrase);
+                    cmdList.push({ name: 'PROCESS', phrase: phrase });
                 }
             }
+        } else if (s === '{') {
+            cmdList.push({ name: 'FORK' });
+        } else if (s === '}') {
+            cmdList.push({ name: 'JOIN' });
         }
     }
+
+    return cmdList;
 }
 
-function validateReactivePhrase(phrase) {
+function validateReactPhrase(phrase) {
 
     var usingAction = false;
     for (var _i3 = 0; _i3 < phrase.length; _i3++) {
@@ -1835,28 +1925,23 @@ function validateReactivePhrase(phrase) {
         if (!withReactionsByName[operation]) throw new Error('This Nyan command cannot be in a reaction!');
     }
 
-    if (!hasReaction) throw new Error('Nyan commands must begin with a reaction!');
+    if (!hasReaction) throw new Error('Nyan commands must begin with an observation!');
 }
 
-function validateStandardPhrase(phrase) {
+function validateProcessPhrase(phrase) {
 
-    var firstOperation = phrase[0].operation;
-    var defaultOperation = acrossByName[firstOperation] && firstOperation;
+    var firstPhrase = phrase[0];
+    var firstOperation = firstPhrase.operation || 'READ';
+
+    if (!thenByName[firstOperation]) throw new Error('Illegal operation in phrase!'); // unknown or reactive
 
     for (var _i5 = 0; _i5 < phrase.length; _i5++) {
+
         var nw = phrase[_i5];
-        nw.operation = nw.operation || defaultOperation || 'READ';
-
-        if (defaultOperation && nw.operation !== defaultOperation) {
-            throw new Error('Incompatible Nyan commands in phrase!');
-        }
-
-        if (!defaultOperation && acrossByName[nw.operation]) {
-            throw new Error('Later incompatible in phrase!');
-        }
-
-        if (!defaultOperation && reactionsByName[nw.operation]) {
-            throw new Error('Reactions in later phrase!');
+        nw.operation = nw.operation || firstOperation;
+        if (nw.operation !== firstOperation) {
+            console.log('mult', nw.operation, firstOperation);
+            throw new Error('Multiple operation types in phrase (only one allowed)!');
         }
     }
 }
@@ -1956,6 +2041,30 @@ function _destroyEach(arr) {
     }
 }
 
+function _applyNyan(scope, bus, str, context, node) {
+
+    var nyan = Nyan.parse(str);
+
+    for (var i = 0; i < nyan.length; i++) {
+
+        var cmd = nyan[i];
+        var name = cmd.name;
+        var phrase = cmd.phrase;
+
+        if (name === 'FORK') {
+            bus = bus.fork();
+        } else if (name === 'JOIN') {
+            bus = bus.join();
+        } else {
+
+            if (name === 'PROCESS') addProcess(scope, bus, phrase, context, node);else // name === 'REACT'
+                addReaction(scope, bus, phrase, context, node);
+        }
+    }
+
+    return bus;
+}
+
 var Scope = function () {
     function Scope(name) {
         classCallCheck(this, Scope);
@@ -1973,114 +2082,26 @@ var Scope = function () {
     }
 
     createClass(Scope, [{
-        key: 'bus',
-        value: function bus(str, context, node) {
-            // string is Nyan
+        key: 'process',
+        value: function process(str, context, node) {
+
+            // todo this should be on Bus
+            if (!str) throw new Error('Need a Nyan phrase!');
 
             var b = new Bus(this);
 
-            if (!str) return b;
+            return _applyNyan(this, b, str, context, node);
+        }
+    }, {
+        key: 'react',
+        value: function react(str, context, node) {
+            // string is Nyan
 
-            var nyan = Nyan.parse(str);
+            if (!str) throw new Error('Need a Nyan phrase!');
 
-            var stack = [b];
-            var busList = [];
+            var b = new Bus(this);
 
-            for (var i = 0; i < nyan.length; i++) {
-                var sentence = nyan[i];
-                if (sentence === '(') {
-                    var bus = stack[stack.length - 1];
-                    stack.push(bus.fork());
-                } else if (sentence === ')') {
-                    stack.pop();
-                } else {
-                    for (var j = 0; j < sentence.length; j++) {
-                        var phrase = sentence[j];
-                        var _bus = stack[stack.length - 1];
-                        if (i === 0 && j === 0) {
-                            addReaction(this, _bus, phrase);
-                        } else {
-                            addProcess(this, _bus, phrase);
-                        }
-                    }
-                }
-            }
-
-            function addReaction(scope, bus, phrase) {
-
-                var subscribe = [];
-                var follow = [];
-                var read = [];
-                var need = [];
-
-                for (var _i = 0; _i < phrase.length; _i++) {
-
-                    var word = phrase[_i];
-                    var operation = word.operation;
-
-                    if (operation.subscribe) subscribe.push(word);
-                    if (operation.read) read.push(word);
-                    if (operation.follow) follow.push(word);
-                    if (operation.need) need.push(word);
-                }
-
-                // convert nyan words to streams
-
-                for (var _i2 = 0; _i2 < subscribe.length; _i2++) {
-                    var _word = subscribe[_i2];
-                    var data = scope.find(_word.name, !_word.maybe);
-                    if (_word.monitor) {
-                        subscribe[_i2] = Stream.fromMonitor(data, _word.alias);
-                    } else {
-                        subscribe[_i2] = Stream.fromSubscribe(data, _word.topic, _word.alias);
-                    }
-                }
-
-                for (var _i3 = 0; _i3 < follow.length; _i3++) {
-                    var _word2 = follow[_i3];
-                    var _data = scope.find(_word2.name, !_word2.maybe);
-                    follow[_i3] = Stream.fromFollow(_data);
-                }
-
-                var reactions = subscribe.concat(follow);
-
-                bus.addFrame(reactions).merge().group().batch();
-                bus.msg(getMsg(scope, read));
-                bus.whenKeys(need.map(function (d) {
-                    return d.name;
-                }));
-            }
-
-            function getMsg(scope, read) {
-
-                var f = function f(msg) {
-
-                    for (var _i4 = 0; _i4 < read.length; _i4++) {
-                        var word = read[_i4];
-                        var data = scope.find(word.name, !word.maybe);
-                        if (data.peek()) msg[word.name] = data.read();
-                    }
-
-                    return msg;
-                };
-
-                return f;
-            }
-
-            function addProcess(bus) {}
-
-            // first phrase ->
-
-            // Stream.fromEvent(target, eventName, useCapture);
-            // Stream.fromSubscribe = function(data, topic, name){
-            // Stream.fromFollow = function(data, topic, name){
-            // needs/musts -> list
-            // read list
-
-            // get all watch streams | & read list | filter needs list
-            // first char in nyan can't be ()
-
-            // then do later phrases
+            return _applyNyan(this, b, str, context, node);
         }
     }, {
         key: 'clear',
@@ -2088,22 +2109,9 @@ var Scope = function () {
 
             if (this._dead) return;
 
-            // console.log('clearing:', this._id, 'has:', this.children.length);
-
             _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
             _destroyEach(this._busList);
             _destroyEach(this._dataList.values());
-
-            // console.log('done:', this._id, 'has:', this.children.length);
-
-            // for(const data of this._dataList.values()){
-            //     data.destroy();
-            // }
-
-            // this._destroyEach(this._children);
-            // this._destroyEach(this._busList);
-            // this._destroyEach(this._dataList.values());
-
 
             this._children = [];
             this._busList = [];
@@ -2692,7 +2700,7 @@ Catbus$1.enqueue = function (pool) {
 Catbus$1.scope = function (name) {
 
     console.log('NYAN');
-    var k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | -kitten, moo, dog' + '                       {*toMuffin?, toBunny | =order {=raw}} meow {you} woo');
+    var k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | %kitten' + '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
 
     var _iteratorNormalCompletion = true;
     var _didIteratorError = false;
@@ -2700,43 +2708,20 @@ Catbus$1.scope = function (name) {
 
     try {
         for (var _iterator = k[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-            var sentence = _step.value;
+            var cmd = _step.value;
 
-            if (typeof sentence === 'string') {
-                console.log(sentence);
-                continue;
-            }
+            console.log('CMD: ', cmd.name);
+            var phrase = cmd.phrase;
+            if (!phrase) continue;
             var _iteratorNormalCompletion2 = true;
             var _didIteratorError2 = false;
             var _iteratorError2 = undefined;
 
             try {
-                for (var _iterator2 = sentence[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var phrase = _step2.value;
-                    var _iteratorNormalCompletion3 = true;
-                    var _didIteratorError3 = false;
-                    var _iteratorError3 = undefined;
+                for (var _iterator2 = phrase[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+                    var word = _step2.value;
 
-                    try {
-                        for (var _iterator3 = phrase[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-                            var word = _step3.value;
-
-                            console.log(word.name, word.operation, word.maybe);
-                        }
-                    } catch (err) {
-                        _didIteratorError3 = true;
-                        _iteratorError3 = err;
-                    } finally {
-                        try {
-                            if (!_iteratorNormalCompletion3 && _iterator3.return) {
-                                _iterator3.return();
-                            }
-                        } finally {
-                            if (_didIteratorError3) {
-                                throw _iteratorError3;
-                            }
-                        }
-                    }
+                    console.log(word.name, word.operation, word.maybe);
                 }
             } catch (err) {
                 _didIteratorError2 = true;

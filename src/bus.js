@@ -10,12 +10,46 @@ class Bus {
 
         this._frames = [];
         this._dead = false;
-        this._scope = scope;
+        this._scope = scope; // data scope
+        this._children = []; // from forks
+        this._parent = null;
+
         if(scope)
             scope._busList.push(this);
+
         const f = new Frame(this, streams || []);
         this._frames.push(f);
         this._currentFrame = f;
+
+    };
+
+    get children(){
+
+        return this._children.map((d) => d);
+
+    };
+
+    get parent() { return this._parent; };
+
+    set parent(newParent){
+
+        const oldParent = this.parent;
+
+        if(oldParent === newParent)
+            return;
+
+        if(oldParent) {
+            const i = oldParent._children.indexOf(this);
+            oldParent._children.splice(i, 1);
+        }
+
+        this._parent = newParent;
+
+        if(newParent) {
+            newParent._children.push(this);
+        }
+
+        return this;
 
     };
 
@@ -45,8 +79,6 @@ class Bus {
     };
 
 
-
-
     // create stream
     spawn(){
 
@@ -64,9 +96,19 @@ class Bus {
 
         F.ASSERT_NOT_HOLDING(this);
         const fork = new Bus(this.scope);
+        fork.parent = this;
         _wireFrames(this._currentFrame, fork._currentFrame);
 
         return fork;
+    };
+
+    join() {
+
+        if(!this._parent)
+            throw new Error('Cannot join fork, parent does not exist!');
+
+        return this.parent;
+
     };
 
     add(bus) {
@@ -101,6 +143,38 @@ class Bus {
 
     };
 
+    event(name, target, eventName, useCapture) {
+
+        eventName = eventName || name;
+        F.ASSERT_NOT_HOLDING(this);
+        const stream = Stream.fromEvent(target, eventName, useCapture);
+        stream.name = name;
+        this.addFrame([stream]);
+        return this;
+
+    };
+
+    eventList(list) {
+
+        F.ASSERT_NOT_HOLDING(this);
+
+        const len = list.length;
+        const streams = [];
+
+        for(let i = 0; i < len; i++){
+            const e = list[i];
+            const eventName = e.eventName || e.name;
+            const name = e.name || e.eventName;
+            const s = Stream.fromEvent(e.target, eventName, e.useCapture);
+            s.name = name;
+            streams.push(s);
+        }
+
+        this.addFrame(streams);
+        return this;
+
+    };
+
     scan(func, seed){
         return this.reduce(F.getScan, func, seed);
     };
@@ -122,7 +196,6 @@ class Bus {
     }
 
     whenKeys(keys) {
-        F.ASSERT_IS_HOLDING(this);
         return this.when(F.getWhenKeys, keys);
     };
 
