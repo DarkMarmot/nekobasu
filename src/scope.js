@@ -129,9 +129,9 @@ function _applyNyan(scope, bus, str, context, node){
         } else {
 
            if(name === 'PROCESS')
-               addProcess(scope, bus, phrase, context, node);
+               _applyProcess(scope, bus, phrase, context, node);
            else // name === 'REACT'
-               addReaction(scope, bus, phrase, context, node);
+               _applyReaction(scope, bus, phrase, context, node);
 
         }
     }
@@ -516,14 +516,14 @@ class Scope{
 
         for(const w of writeArray){
             const d = this.find(w.name);
-            d.silentWrite(w.value, w.topic || null);
+            d.silentWrite(w.value, w.topic);
             list.push(d);
         }
 
         let i = 0;
         for(const d of list){
             const w = writeArray[i];
-            d.refresh(w.topic || null);
+            d.refresh(w.topic);
         }
 
         return this;

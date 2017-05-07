@@ -15,6 +15,7 @@ function Watcher(name){
 
 }
 
+
 Watcher.prototype.tell = function(msg, packet){
 
     callback(msg, packet, this);
@@ -241,6 +242,7 @@ describe('RootScope', function(){
         assert.equal(d.peek('character').topic, 'character');
         assert.equal(d.peek().topic, null);
 
+
     });
 
         it('can monitor all topics', function(){
@@ -423,7 +425,9 @@ describe('RootScope', function(){
     });
 
 
-
 });
 
 
+// todo add packets() test
+// todo add silent transaction assertion
+// todo add

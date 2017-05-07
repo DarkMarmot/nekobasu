@@ -654,7 +654,6 @@ var Data = function () {
         this._type = type;
         this._dead = false;
 
-        this._noTopicSubscriberList = new SubscriberList(null, this);
         this._wildcardSubscriberList = new SubscriberList(null, this);
         this._subscriberListsByTopic = new Map();
     }
@@ -732,8 +731,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
-            var subscriberList = !topic ? this._noTopicSubscriberList : this._demandSubscriberList(topic);
-            subscriberList.add(watcher);
+            this._demandSubscriberList(topic).add(watcher);
 
             return this;
         }
@@ -753,15 +751,52 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
-            if (typeof topic !== 'string') {
-                this._noTopicSubscriberList.remove(watcher);
-            } else {
-                var subscriberList = this._demandSubscriberList(topic);
-                subscriberList.remove(watcher);
-            }
+            this._demandSubscriberList(topic).remove(watcher);
             this._wildcardSubscriberList.remove(watcher);
 
             return this;
+        }
+    }, {
+        key: 'topics',
+        value: function topics() {
+
+            return this._subscriberListsByTopic.keys();
+        }
+    }, {
+        key: 'survey',
+        value: function survey() {
+            // get entire key/value store by topic:lastPacket
+
+            var entries = this._subscriberListsByTopic.entries();
+            var m = new Map();
+            var _iteratorNormalCompletion2 = true;
+            var _didIteratorError2 = false;
+            var _iteratorError2 = undefined;
+
+            try {
+                for (var _iterator2 = entries[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+                    var _step2$value = slicedToArray(_step2.value, 2),
+                        key = _step2$value[0],
+                        value = _step2$value[1];
+
+                    m.set(key, value.lastPacket);
+                }
+            } catch (err) {
+                _didIteratorError2 = true;
+                _iteratorError2 = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
+                        _iterator2.return();
+                    }
+                } finally {
+                    if (_didIteratorError2) {
+                        throw _iteratorError2;
+                    }
+                }
+            }
+
+            return m;
         }
     }, {
         key: 'peek',
@@ -769,9 +804,8 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
-            var subscriberList = topic ? this._subscriberListsByTopic.get(topic) : this._noTopicSubscriberList;
-            if (!subscriberList) return null;
-            return subscriberList.lastPacket;
+            var subscriberList = this._subscriberListsByTopic.get(topic);
+            return subscriberList ? subscriberList.lastPacket : null;
         }
     }, {
         key: 'read',
@@ -798,13 +832,7 @@ var Data = function () {
 
             if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
-            if (topic) {
-                var list = this._demandSubscriberList(topic);
-                list.tell(msg);
-            } else {
-                this._noTopicSubscriberList.tell(msg, null, silently);
-            }
-
+            this._demandSubscriberList(topic).tell(msg, topic, silently);
             this._wildcardSubscriberList.tell(msg, topic, silently);
         }
     }, {
@@ -2041,6 +2069,83 @@ function _destroyEach(arr) {
     }
 }
 
+function _getMsg(scope, read) {
+
+    var f = function f(msg) {
+
+        for (var i = 0; i < read.length; i++) {
+            var word = read[i];
+            var data = scope.find(word.name, !word.maybe);
+            if (data.peek()) msg[word.name] = data.read();
+        }
+
+        return msg;
+    };
+
+    return f;
+}
+
+function _applyReaction(scope, bus, phrase, context, node) {
+
+    var subscribe = [];
+    var follow = [];
+    var read = [];
+    var need = [];
+    var must = [];
+
+    for (var i = 0; i < phrase.length; i++) {
+
+        var word = phrase[i];
+        var operation = word.operation;
+
+        if (operation.subscribe) subscribe.push(word);
+        if (operation.read) read.push(word);
+        if (operation.follow) follow.push(word);
+        if (operation.name === 'NEED') need.push(word);
+        if (operation.name === 'MUST') must.push(word);
+    }
+
+    // convert nyan words to streams
+
+    for (var _i = 0; _i < subscribe.length; _i++) {
+        var _word = subscribe[_i];
+        var data = scope.find(_word.name, !_word.maybe);
+        if (_word.monitor) {
+            subscribe[_i] = Stream.fromMonitor(data, _word.alias);
+        } else {
+            subscribe[_i] = Stream.fromSubscribe(data, _word.topic, _word.alias);
+        }
+    }
+
+    for (var _i2 = 0; _i2 < follow.length; _i2++) {
+
+        // todo, follow/monitor, blast all topics?
+        var _word2 = follow[_i2];
+        var _data = scope.find(_word2.name, !_word2.maybe);
+        follow[_i2] = Stream.fromFollow(_data);
+    }
+
+    var reactions = subscribe.concat(follow);
+
+    bus.addFrame(reactions);
+
+    if (reactions.length) bus.merge().group();
+
+    if (need.length) bus.whenKeys(need.map(function (d) {
+        return d.name;
+    }));
+
+    if (reactions.length) bus.batch();
+
+    if (read.length) bus.msg(_getMsg(scope, read));
+
+    if (must.length) bus.whenKeys(must.map(function (d) {
+        return d.name;
+    }));
+}
+
+function _applyProcess(scope, bus, phrase, context, node) {}
+
 function _applyNyan(scope, bus, str, context, node) {
 
     var nyan = Nyan.parse(str);
@@ -2057,8 +2162,8 @@ function _applyNyan(scope, bus, str, context, node) {
             bus = bus.join();
         } else {
 
-            if (name === 'PROCESS') addProcess(scope, bus, phrase, context, node);else // name === 'REACT'
-                addReaction(scope, bus, phrase, context, node);
+            if (name === 'PROCESS') _applyProcess(scope, bus, phrase, context, node);else // name === 'REACT'
+                _applyReaction(scope, bus, phrase, context, node);
         }
     }
 
@@ -2507,7 +2612,7 @@ var Scope = function () {
                     var w = _step7.value;
 
                     var d = this.find(w.name);
-                    d.silentWrite(w.value, w.topic || null);
+                    d.silentWrite(w.value, w.topic);
                     list.push(d);
                 }
             } catch (err) {
@@ -2535,7 +2640,7 @@ var Scope = function () {
                     var _d = _step8.value;
 
                     var _w = writeArray[i];
-                    _d.refresh(_w.topic || null);
+                    _d.refresh(_w.topic);
                 }
             } catch (err) {
                 _didIteratorError8 = true;

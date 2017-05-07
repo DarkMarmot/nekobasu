@@ -17,7 +17,6 @@ class Data {
         this._type       = type;
         this._dead       = false;
 
-        this._noTopicSubscriberList = new SubscriberList(null, this);
         this._wildcardSubscriberList = new SubscriberList(null, this);
         this._subscriberListsByTopic = new Map();
 
@@ -84,8 +83,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
-        const subscriberList = (!topic) ? this._noTopicSubscriberList : this._demandSubscriberList(topic);
-        subscriberList.add(watcher);
+        this._demandSubscriberList(topic).add(watcher);
 
         return this;
 
@@ -107,18 +105,29 @@ class Data {
         if(this.dead)
             this._throwDead();
 
-        if(typeof topic !== 'string'){
-            this._noTopicSubscriberList.remove(watcher);
-        } else {
-            let subscriberList = this._demandSubscriberList(topic);
-            subscriberList.remove(watcher);
-        }
+        this._demandSubscriberList(topic).remove(watcher);
         this._wildcardSubscriberList.remove(watcher);
 
         return this;
 
     };
 
+    topics(){
+
+        return this._subscriberListsByTopic.keys();
+
+    };
+
+    survey(){ // get entire key/value store by topic:lastPacket
+
+        const entries = this._subscriberListsByTopic.entries();
+        const m = new Map();
+        for (const [key, value] of entries) {
+            m.set(key, value.lastPacket);
+        }
+
+        return m;
+    };
 
 
     peek(topic){
@@ -126,10 +135,8 @@ class Data {
         if(this.dead)
             this._throwDead();
 
-        let subscriberList = topic ? this._subscriberListsByTopic.get(topic) : this._noTopicSubscriberList;
-        if(!subscriberList)
-            return null;
-        return subscriberList.lastPacket;
+        const subscriberList = this._subscriberListsByTopic.get(topic);
+        return subscriberList ? subscriberList.lastPacket : null;
 
     };
 
@@ -163,14 +170,7 @@ class Data {
         if(this.type === DATA_TYPES.MIRROR)
             throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
-        if(topic) {
-            let list = this._demandSubscriberList(topic);
-            list.tell(msg);
-        }
-        else {
-            this._noTopicSubscriberList.tell(msg, null, silently);
-        }
-
+        this._demandSubscriberList(topic).tell(msg, topic, silently);
         this._wildcardSubscriberList.tell(msg, topic, silently);
 
     };
