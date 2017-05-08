@@ -5,47 +5,87 @@ import Nyan from './nyan.js';
 function getPacketFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-
-    if(!data)
-        return null;
-
-    return data.peek(word.topic);
+    return data && data.peek(word.topic);
 
 }
 
-function getMsgFromDataWord(scope, word){
+function getSurveyFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
+    return data && data.survey();
 
-    if(data) {
-        const topic = word.topic;
-        const packet = data.peek(topic);
-        if (packet)
-            return packet.msg;
+}
+
+
+function getDoRead(scope, phrase){
+
+    const len = phrase.length;
+    const firstWord = phrase[0];
+
+    if(len > 1 || firstWord.monitor) { // if only reading word is a wildcard subscription then hash as well
+        return getDoReadMultiple(scope, phrase);
+    } else {
+        return getDoReadSingle(scope, firstWord);
     }
 
-    return undefined;
+}
+
+function getDoAnd(scope, phrase) {
+
+    return getDoReadMultiple(scope, phrase, true);
 
 }
 
 
-function getMsgTransform(scope, read){ // todo add monitor?
+function getDoReadSingle(scope, word) {
 
-    const len = read.length;
+    return function doReadSingle() {
 
-    const f = function(msg) {
+        const packet = getPacketFromDataWord(scope, word);
+        return packet && packet.msg;
 
-        for (let i = 0; i < len; i++) {
-            const word = read[i];
-            msg[word.alias || word.name] = getMsgFromDataWord(scope, read);
-        }
-
-        return msg;
     };
 
-    return f;
+}
+
+
+function getDoReadMultiple(scope, phrase, isAndOperation){
+
+
+        const len = phrase.length;
+
+        return function doReadMultiple(msg) {
+
+            msg = (isAndOperation && msg) || {};
+
+            for (let i = 0; i < len; i++) {
+                const word = phrase[i];
+
+                if(word.monitor){
+
+                    const survey = getSurveyFromDataWord(scope, word);
+                    for(const [key, value] of survey){
+                        msg[key] = value;
+                    }
+
+                } else {
+
+                    const packet = getPacketFromDataWord(scope, word);
+                    const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
+                    if (packet)
+                        msg[prop] = packet.msg;
+
+                }
+
+            }
+
+            return msg;
+
+        };
 
 }
+
+
 
 
 function applyReaction(scope, bus, phrase, context, node) {
@@ -117,45 +157,27 @@ function applyReaction(scope, bus, phrase, context, node) {
 
 }
 
-
 function applyProcess(scope, bus, phrase, context, node) {
 
-    const operation = phrase[0].operation; // same for all words in a process phrase
+    const operation = phrase[0].operation.name; // same for all words in a process phrase
 
-    for(let i = 0; i < phrase.length; i++) {
+    if(operation === 'READ') {
+        // todo get ! needs, whenKeys
+        bus.msg(getDoRead(scope, phrase));
+    } else if (operation === 'AND') {
+        // todo get ! needs, whenKeys
+        bus.msg(getDoAnd(scope, phrase));
+    } else if (operation === 'FILTER') {
+        applyFilterProcess(bus, phrase, context);
+    } else if (operation === 'RUN') {
+        applyRunProcess(scope, phrase, context);
+    } else if (operation === 'WRITE') {
 
-        const word = phrase[i];
-
-
+    } else if (operation === 'SPRAY') {
+        // alias to target data points of different names, i.e. < cat(dog), meow(bunny)
     }
 
-    // {name: 'READ',   sym: null, then: true, with_react: true, read: true},
-    // {name: 'MUST',   sym: '_',  then: true, with_react: true, read: true, need: true}, // must have data on read
-    // {name: 'ATTR',   sym: '#',  then: true},
-    // {name: 'AND',    sym: '&',  then: true},
-    // {name: 'STYLE',  sym: '$',  then: true},
-    // {name: 'WRITE',  sym: '=',  then: true},
-    // {name: 'RUN',    sym: '*',  then: true},
-    // {name: 'FILTER', sym: '%',  then: true}
-
 }
-
-// transform to read hash or single value
-
-function applyReadProcess(scope, bus, phrase){
-    bus.msg(getMsg(scope, phrase));
-}
-
-function applyAndProcess(scope, bus, phrase){
-
-    const f = function(msg, source, topic){
-
-    };
-
-    bus.msg(getMsg(scope, phrase));
-}
-
-
 
 
 function applyRunProcess(bus, phrase, context){
@@ -169,7 +191,7 @@ function applyRunProcess(bus, phrase, context){
         const method = context[name];
 
         const f = function (msg, source, topic) {
-            method.call(context, msg, source, topic);
+            return method.call(context, msg, source, topic);
         };
 
         bus.run(f);
@@ -190,7 +212,7 @@ function applyFilterProcess(bus, phrase, context){
         const method = context[name];
 
         const f = function (msg, source, topic) {
-            method.call(context, msg, source, topic);
+            return method.call(context, msg, source, topic);
         };
 
         bus.filter(f);
@@ -213,8 +235,8 @@ function applyNyan(scope, bus, str, context, node){
 
         if(name === 'FORK'){
             bus = bus.fork();
-        } else if (name === 'JOIN'){
-            bus = bus.join();
+        } else if (name === 'BACK'){
+            bus = bus.back();
         } else {
 
             if(name === 'PROCESS')

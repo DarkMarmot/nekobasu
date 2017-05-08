@@ -124,8 +124,8 @@ function _applyNyan(scope, bus, str, context, node){
 
         if(name === 'FORK'){
             bus = bus.fork();
-        } else if (name === 'JOIN'){
-            bus = bus.join();
+        } else if (name === 'BACK'){
+            bus = bus.back();
         } else {
 
            if(name === 'PROCESS')

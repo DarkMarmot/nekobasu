@@ -36,7 +36,7 @@ Catbus.enqueue = function(pool){
 Catbus.scope = function(name){
 
     console.log('NYAN');
-    const k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | %kitten' +
+    const k = Nyan.parse('^bunny?:error(badbunny), cow:(huh), moo2?(meow) | %kitten' +
         '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
 
     for(const cmd of k){

@@ -10,21 +10,21 @@ const operationDefs = [
 
     {name: 'ACTION', sym: '^',  react: true, subscribe: true},
     {name: 'WATCH',  sym: null, react: true, follow: true},
-    {name: 'NEED',   sym: '!',  react: true, follow: true, need: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
     {name: 'READ',   sym: null, then: true, with_react: true, read: true},
-    {name: 'MUST',   sym: '_',  then: true, with_react: true, read: true, need: true}, // must have data on read
-    {name: 'ATTR',   sym: '#',  then: true},
-    {name: 'AND',    sym: '&',  then: true},
-    {name: 'STYLE',  sym: '$',  then: true},
-    {name: 'WRITE',  sym: '=',  then: true},
-    {name: 'RUN',    sym: '*',  then: true},
-    {name: 'FILTER', sym: '%',  then: true}
+    {name: 'ATTR',   sym: '#',  then: true, solo: true},
+    {name: 'AND',    sym: '&',  then: true },
+    {name: 'STYLE',  sym: '$',  then: true,  solo: true },
+    {name: 'WRITE',  sym: '=',  then: true,  solo: true },
+    {name: 'RUN',    sym: '*',  then: true },
+    {name: 'FILTER', sym: '%',  then: true }
 
 ];
 
+// todo make ! a trailing thingie, must goes away
+// trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
 // {name: 'BEGIN',  sym: '{'}, -- fork
-// {name: 'END',    sym: '}'}, -- join
+// {name: 'END',    sym: '}'}, -- back
 // {name: 'PIPE',   sym: '|'}, -- phrase delimiter
 // read = SPACE
 
@@ -126,7 +126,7 @@ function validate(sentences, isProcess){
         } else if (s === '{') {
             cmdList.push({name: 'FORK'});
         } else if (s === '}') {
-            cmdList.push({name: 'JOIN'});
+            cmdList.push({name: 'BACK'});
         }
     }
 

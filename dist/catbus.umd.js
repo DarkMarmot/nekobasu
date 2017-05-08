@@ -1440,10 +1440,10 @@ var Bus = function () {
             return fork;
         }
     }, {
-        key: 'join',
-        value: function join() {
+        key: 'back',
+        value: function back() {
 
-            if (!this._parent) throw new Error('Cannot join fork, parent does not exist!');
+            if (!this._parent) throw new Error('Cannot exit fork, parent does not exist!');
 
             return this.parent;
         }
@@ -1827,11 +1827,12 @@ var Nyan = {};
 // watch: ^ = action, need, event, watch | read, must
 // then:  run, read, attr, and, style, write, blast, filter
 
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'NEED', sym: '!', react: true, follow: true, need: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'MUST', sym: '_', then: true, with_react: true, read: true, need: true }, // must have data on read
-{ name: 'ATTR', sym: '#', then: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true }, { name: 'WRITE', sym: '=', then: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
 
+// todo make ! a trailing thingie, must goes away
+// trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
 // {name: 'BEGIN',  sym: '{'}, -- fork
-// {name: 'END',    sym: '}'}, -- join
+// {name: 'END',    sym: '}'}, -- back
 // {name: 'PIPE',   sym: '|'}, -- phrase delimiter
 // read = SPACE
 
@@ -1925,7 +1926,7 @@ function validate(sentences, isProcess) {
         } else if (s === '{') {
             cmdList.push({ name: 'FORK' });
         } else if (s === '}') {
-            cmdList.push({ name: 'JOIN' });
+            cmdList.push({ name: 'BACK' });
         }
     }
 
@@ -2158,8 +2159,8 @@ function _applyNyan(scope, bus, str, context, node) {
 
         if (name === 'FORK') {
             bus = bus.fork();
-        } else if (name === 'JOIN') {
-            bus = bus.join();
+        } else if (name === 'BACK') {
+            bus = bus.back();
         } else {
 
             if (name === 'PROCESS') _applyProcess(scope, bus, phrase, context, node);else // name === 'REACT'
@@ -2805,7 +2806,7 @@ Catbus$1.enqueue = function (pool) {
 Catbus$1.scope = function (name) {
 
     console.log('NYAN');
-    var k = Nyan.parse('^bunny?:error(badbunny), !cow:(huh), _moo2?(meow) | %kitten' + '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
+    var k = Nyan.parse('^bunny?:error(badbunny), cow:(huh), moo2?(meow) | %kitten' + '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
 
     var _iteratorNormalCompletion = true;
     var _didIteratorError = false;

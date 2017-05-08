@@ -102,10 +102,10 @@ class Bus {
         return fork;
     };
 
-    join() {
+    back() {
 
         if(!this._parent)
-            throw new Error('Cannot join fork, parent does not exist!');
+            throw new Error('Cannot exit fork, parent does not exist!');
 
         return this.parent;
 

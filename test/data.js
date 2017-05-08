@@ -366,7 +366,6 @@ describe('RootScope', function(){
 
         world.clear();
 
-
         var city1 = world.createChild();
         var city2 = world.createChild();
 
@@ -428,6 +427,6 @@ describe('RootScope', function(){
 });
 
 
-// todo add packets() test
+// todo add survey() test
 // todo add silent transaction assertion
 // todo add
