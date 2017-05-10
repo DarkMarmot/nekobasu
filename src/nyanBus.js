@@ -86,73 +86,72 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 }
 
 
+function getFollowStream(scope, word) {
+
+    const data = scope.find(word.name, !word.maybe);
+    return Stream.fromFollow(data, word.topic, word.alias);
+
+}
+
+function getSubscribeStream(scope, word) {
+
+    const data = scope.find(word.name, !word.maybe);
+    if(word.monitor){
+        return Stream.fromMonitor(data, word.alias);
+    } else {
+        return Stream.fromSubscribe(data, word.topic, word.alias);
+    }
+
+}
+
+function getEventStream(scope, word, node){
+
+    return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
+
+}
+
+function getNeedsArray(phrase){
+    return phrase.filter(word => word.operation.need).map(word => word.alias);
+}
 
 
 function applyReaction(scope, bus, phrase, context, node) {
 
-    const subscribe = [];
-    const follow = [];
-    const read = [];
     const need = [];
-    const must = [];
+    const streams = [];
+
+
+    if(phrase.length === 1 && phrase[0].operation.name === 'ACTION'){
+        bus.addFrame(getSubscribeStream(scope, phrase[0]));
+        return;
+    }
 
     for(let i = 0; i < phrase.length; i++){
 
         const word = phrase[i];
-        const operation = word.operation;
+        const operation = word.operation.name;
 
-        if(operation.subscribe)
-            subscribe.push(word);
-        if(operation.read)
-            read.push(word);
-        if(operation.follow)
-            follow.push(word);
-        if(operation.name === 'NEED')
+        if(operation === 'WATCH')
+            streams.push(getFollowStream(scope, word));
+        else if(operation === 'EVENT')
+            streams.push(getEventStream(scope, word));
+
+        if(word.need)
             need.push(word);
-        if(operation.name === 'MUST')
-            must.push(word);
 
     }
 
-    // convert nyan words to streams
 
-    for(let i = 0; i < subscribe.length; i++){
-        const word = subscribe[i];
-        const data = scope.find(word.name, !word.maybe);
-        if(word.monitor){
-            subscribe[i] = Stream.fromMonitor(data, word.alias);
-        } else {
-            subscribe[i] = Stream.fromSubscribe(data, word.topic, word.alias);
-        }
-    }
+    bus.addFrame(streams);
 
-    for(let i = 0; i < follow.length; i++){
+    if(streams.length > 1) {
 
-        // todo, follow/monitor, blast all topics?
-        const word = follow[i];
-        const data = scope.find(word.name, !word.maybe);
-        follow[i] = Stream.fromFollow(data);
+        bus.merge().group().batch();
+
+        if(need.length)
+            bus.whenKeys(need.map(d => d.name)); // todo is alias here?
 
     }
-
-    const reactions = subscribe.concat(follow);
-
-    bus.addFrame(reactions);
-
-    if(reactions.length)
-        bus.merge().group();
-
-    if(need.length)
-        bus.whenKeys(need.map(d => d.name));
-
-    if(reactions.length)
-        bus.batch();
-
-    if(read.length)
-        bus.msg(getMsg(scope, read)); // and mix
-
-    if(must.length)
-        bus.whenKeys(must.map(d => d.name));
 
 
 }
@@ -162,11 +161,11 @@ function applyProcess(scope, bus, phrase, context, node) {
     const operation = phrase[0].operation.name; // same for all words in a process phrase
 
     if(operation === 'READ') {
-        // todo get ! needs, whenKeys
         bus.msg(getDoRead(scope, phrase));
+        bus.whenKeys(getNeedsArray(phrase));
     } else if (operation === 'AND') {
-        // todo get ! needs, whenKeys
         bus.msg(getDoAnd(scope, phrase));
+        bus.whenKeys(getNeedsArray(phrase));
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {

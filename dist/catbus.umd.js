@@ -1827,7 +1827,7 @@ var Nyan = {};
 // watch: ^ = action, need, event, watch | read, must
 // then:  run, read, attr, and, style, write, blast, filter
 
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
@@ -1870,16 +1870,18 @@ for (var i = 0; i < operationDefs.length; i++) {
     }
 }
 
-var NyanWord = function NyanWord(name, operation, maybe, topic, alias, monitor) {
+var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, monitor) {
     classCallCheck(this, NyanWord);
 
 
     this.name = name;
     this.operation = operation;
     this.maybe = maybe || false;
+    this.need = need || false;
     this.topic = topic || null;
     this.alias = alias || null;
     this.monitor = monitor || false;
+    // this.useCapture =
 };
 
 function parse(str, isProcess) {
@@ -1935,21 +1937,11 @@ function validate(sentences, isProcess) {
 
 function validateReactPhrase(phrase) {
 
-    var usingAction = false;
-    for (var _i3 = 0; _i3 < phrase.length; _i3++) {
-        var nw = phrase[_i3];
-        if (nw.operation === 'ACTION') {
-            usingAction = true;
-            break;
-        }
-    }
-
     var hasReaction = false;
-    for (var _i4 = 0; _i4 < phrase.length; _i4++) {
+    for (var _i3 = 0; _i3 < phrase.length; _i3++) {
 
-        var _nw = phrase[_i4];
-        var blankMeaning = usingAction ? 'READ' : 'WATCH';
-        var operation = _nw.operation = _nw.operation || blankMeaning;
+        var nw = phrase[_i3];
+        var operation = nw.operation = nw.operation || 'WATCH';
         hasReaction = hasReaction || reactionsByName[operation];
         if (!withReactionsByName[operation]) throw new Error('This Nyan command cannot be in a reaction!');
     }
@@ -1964,9 +1956,9 @@ function validateProcessPhrase(phrase) {
 
     if (!thenByName[firstOperation]) throw new Error('Illegal operation in phrase!'); // unknown or reactive
 
-    for (var _i5 = 0; _i5 < phrase.length; _i5++) {
+    for (var _i4 = 0; _i4 < phrase.length; _i4++) {
 
-        var nw = phrase[_i5];
+        var nw = phrase[_i4];
         nw.operation = nw.operation || firstOperation;
         if (nw.operation !== firstOperation) {
             console.log('mult', nw.operation, firstOperation);
@@ -1984,9 +1976,9 @@ function parseSentence(str) {
         return d;
     });
 
-    for (var _i6 = 0; _i6 < chunks.length; _i6++) {
+    for (var _i5 = 0; _i5 < chunks.length; _i5++) {
 
-        var chunk = chunks[_i6];
+        var chunk = chunks[_i5];
         var phrase = parsePhrase(chunk);
         result.push(phrase);
     }
@@ -2005,14 +1997,16 @@ function parsePhrase(str) {
 
     var len = rawWords.length;
 
-    for (var _i7 = 0; _i7 < len; _i7++) {
+    for (var _i6 = 0; _i6 < len; _i6++) {
 
-        var rawWord = rawWords[_i7];
-        var chunks = rawWord.split(/([(?:)])/).map(function (d) {
+        var rawWord = rawWords[_i6];
+        console.log('word=', rawWord);
+        var chunks = rawWord.split(/([(?!:)])/).map(function (d) {
             return d.trim();
         }).filter(function (d) {
             return d;
         });
+        console.log('to:', chunks);
         var nameAndOperation = chunks.shift();
         var firstChar = rawWord[0];
         var operation = namesBySymbol[firstChar];
@@ -2022,12 +2016,18 @@ function parsePhrase(str) {
         var monitor = false;
         var topic = null;
         var alias = null;
+        var need = false;
 
         while (chunks.length) {
             var c = chunks.shift();
 
             if (c === '?') {
                 maybe = true;
+                continue;
+            }
+
+            if (c === '!') {
+                need = true;
                 continue;
             }
 
@@ -2050,7 +2050,7 @@ function parsePhrase(str) {
             }
         }
 
-        var nw = new NyanWord(_name, operation, maybe, topic, alias, monitor);
+        var nw = new NyanWord(_name, operation, maybe, need, topic, alias, monitor);
         words.push(nw);
     }
 

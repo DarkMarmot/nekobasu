@@ -8,7 +8,7 @@ const Nyan = {};
 
 const operationDefs = [
 
-    {name: 'ACTION', sym: '^',  react: true, subscribe: true},
+    {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
     {name: 'WATCH',  sym: null, react: true, follow: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
     {name: 'READ',   sym: null, then: true, with_react: true, read: true},
@@ -67,15 +67,16 @@ for(let i = 0; i < operationDefs.length; i++){
 
 class NyanWord {
 
-    constructor(name, operation, maybe, topic, alias, monitor){
+    constructor(name, operation, maybe, need, topic, alias, monitor){
 
         this.name = name;
         this.operation = operation;
         this.maybe = maybe || false;
+        this.need = need || false;
         this.topic = topic || null;
         this.alias = alias || null;
         this.monitor = monitor || false;
-
+        // this.useCapture =
     }
 
 }
@@ -116,11 +117,11 @@ function validate(sentences, isProcess){
                 if(firstPhrase && !isProcess) {
                     validateReactPhrase(phrase);
                     firstPhrase = false;
-                    cmdList.push({name: 'REACT', phrase: phrase})
+                    cmdList.push({name: 'REACT', phrase: phrase});
                 }
                 else {
                     validateProcessPhrase(phrase);
-                    cmdList.push({name: 'PROCESS', phrase: phrase})
+                    cmdList.push({name: 'PROCESS', phrase: phrase});
                 }
             }
         } else if (s === '{') {
@@ -136,21 +137,11 @@ function validate(sentences, isProcess){
 
 function validateReactPhrase(phrase){
 
-    let usingAction = false;
-    for(let i = 0; i < phrase.length; i++){
-        const nw = phrase[i];
-        if(nw.operation === 'ACTION') {
-            usingAction = true;
-            break;
-        }
-    }
-
     let hasReaction = false;
     for(let i = 0; i < phrase.length; i++){
 
         const nw = phrase[i];
-        const blankMeaning = (usingAction ? 'READ' : 'WATCH');
-        const operation = nw.operation = nw.operation || blankMeaning;
+        const operation = nw.operation = nw.operation || 'WATCH';
         hasReaction = hasReaction || reactionsByName[operation];
         if(!withReactionsByName[operation])
             throw new Error('This Nyan command cannot be in a reaction!');
@@ -214,7 +205,9 @@ function parsePhrase(str) {
     for (let i = 0; i < len; i++) {
 
         const rawWord = rawWords[i];
-        const chunks = rawWord.split(/([(?:)])/).map(d => d.trim()).filter(d => d);
+        console.log('word=', rawWord);
+        const chunks = rawWord.split(/([(?!:)])/).map(d => d.trim()).filter(d => d);
+        console.log('to:', chunks);
         const nameAndOperation = chunks.shift();
         const firstChar = rawWord[0];
         const operation = namesBySymbol[firstChar];
@@ -224,12 +217,18 @@ function parsePhrase(str) {
         let monitor = false;
         let topic = null;
         let alias = null;
+        let need = false;
 
         while(chunks.length){
             const c = chunks.shift();
 
             if(c === '?'){
                 maybe = true;
+                continue;
+            }
+
+            if(c === '!'){
+                need = true;
                 continue;
             }
 
@@ -253,7 +252,7 @@ function parsePhrase(str) {
 
         }
 
-        const nw = new NyanWord(name, operation, maybe, topic, alias, monitor);
+        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor);
         words.push(nw);
 
     }
