@@ -21,7 +21,7 @@ class SubscriberList {
     get dead() { return this._dead; };
     get topic() { return this._topic; };
 
-    tell(msg, topic, silently){
+    handle(msg, topic, silently){
 
         if(this.dead)
             return;
@@ -39,7 +39,7 @@ class SubscriberList {
         if(!silently) {
             for (let i = 0; i < len; i++) {
                 let s = subscribers[i];
-                typeof s === 'function' ? s.call(s, msg, currentPacket) : s.tell(msg, currentPacket);
+                typeof s === 'function' ? s.call(s, msg, currentPacket) : s.handle(msg, currentPacket);
             }
         }
 

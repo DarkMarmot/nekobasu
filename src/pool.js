@@ -17,7 +17,7 @@ class Pool {
 
     };
 
-    tell(msg, source) {
+    handle(msg, source) {
 
         this.keep(msg, source);
         if(!this.isPrimed){

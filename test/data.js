@@ -16,7 +16,7 @@ function Watcher(name){
 }
 
 
-Watcher.prototype.tell = function(msg, packet){
+Watcher.prototype.handle = function(msg, packet){
 
     callback(msg, packet, this);
 

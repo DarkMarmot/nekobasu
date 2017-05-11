@@ -16,12 +16,12 @@ class Stream {
 
     };
 
-    tell(msg, source) {
+    handle(msg, source) {
 
         if(this.dead) // true if canceled or disposed midstream
             return this;
 
-        this.processMethod(msg, source); // tell method = doDelay, doGroup, doHold, , doFilter
+        this.processMethod(msg, source); // handle method = doDelay, doGroup, doHold, , doFilter
 
         return this;
 
@@ -50,7 +50,7 @@ class Stream {
 
         for(let i = 0; i < len; i++){
             const c = children[i];
-            c.tell(msg, source, topic);
+            c.handle(msg, source, topic);
         }
 
     };
@@ -111,7 +111,7 @@ class Stream {
 
     doPool(msg, source, topic) {
 
-        this.pool.tell(msg, source, topic);
+        this.pool.handle(msg, source, topic);
 
     };
 
@@ -135,7 +135,7 @@ Stream.fromMonitor = function(data, name){
     stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.tell(msg, streamName || source, topic);
+        stream.handle(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function(){
@@ -157,7 +157,7 @@ Stream.fromSubscribe = function(data, topic, name){
     stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.tell(msg, streamName || source, topic);
+        stream.handle(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function(){
@@ -177,8 +177,8 @@ Stream.fromFollow = function(data, topic, name){
     const streamName = name || topic || data.name;
     stream.name = streamName;
 
-    const toStream = function(msg, source, topic){
-        stream.tell(msg, streamName || source, topic);
+    const toStream = function(msg, packet){
+        stream.handle(msg, streamName || packet._source, packet._topic);
     };
 
     stream.cleanupMethod = function(){
@@ -203,7 +203,7 @@ Stream.fromEvent = function(target, eventName, useCapture){
     const off = target.removeEventListener || target.removeListener || target.off;
 
     const toStream = function(msg){
-        stream.tell(msg, eventName);
+        stream.handle(msg, eventName);
     };
 
     stream.cleanupMethod = function(){

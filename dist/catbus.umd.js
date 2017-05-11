@@ -565,8 +565,8 @@ var SubscriberList = function () {
     }
 
     createClass(SubscriberList, [{
-        key: 'tell',
-        value: function tell(msg, topic, silently) {
+        key: 'handle',
+        value: function handle(msg, topic, silently) {
 
             if (this.dead) return;
 
@@ -583,7 +583,7 @@ var SubscriberList = function () {
             if (!silently) {
                 for (var i = 0; i < len; i++) {
                     var s = subscribers[i];
-                    typeof s === 'function' ? s.call(s, msg, currentPacket) : s.tell(msg, currentPacket);
+                    typeof s === 'function' ? s.call(s, msg, currentPacket) : s.handle(msg, currentPacket);
                 }
             }
         }
@@ -695,6 +695,7 @@ var Data = function () {
         key: '_demandSubscriberList',
         value: function _demandSubscriberList(topic) {
 
+            topic = topic || undefined;
             var list = this._subscriberListsByTopic.get(topic);
 
             if (list) return list;
@@ -721,7 +722,7 @@ var Data = function () {
             this.subscribe(watcher, topic);
             var packet = this.peek();
 
-            if (packet) typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.tell(packet.msg, packet);
+            if (packet) typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.handle(packet.msg, packet);
 
             return this;
         }
@@ -832,8 +833,9 @@ var Data = function () {
 
             if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
-            this._demandSubscriberList(topic).tell(msg, topic, silently);
-            this._wildcardSubscriberList.tell(msg, topic, silently);
+            var list = this._demandSubscriberList(topic);
+            list.handle(msg, topic, silently);
+            this._wildcardSubscriberList.handle(msg, topic, silently);
         }
     }, {
         key: 'refresh',
@@ -841,7 +843,9 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
-            this.write(this.read(topic), topic);
+            var lastPacket = this.peek(topic);
+
+            if (lastPacket) this.write(lastPacket._msg, topic);
 
             return this;
         }
@@ -1132,8 +1136,8 @@ var Pool = function () {
     }
 
     createClass(Pool, [{
-        key: 'tell',
-        value: function tell(msg, source) {
+        key: 'handle',
+        value: function handle(msg, source) {
 
             this.keep(msg, source);
             if (!this.isPrimed) {
@@ -1190,13 +1194,13 @@ var Stream = function () {
     }
 
     createClass(Stream, [{
-        key: 'tell',
-        value: function tell(msg, source) {
+        key: 'handle',
+        value: function handle(msg, source) {
 
             if (this.dead) // true if canceled or disposed midstream
                 return this;
 
-            this.processMethod(msg, source); // tell method = doDelay, doGroup, doHold, , doFilter
+            this.processMethod(msg, source); // handle method = doDelay, doGroup, doHold, , doFilter
 
             return this;
         }
@@ -1225,7 +1229,7 @@ var Stream = function () {
 
             for (var i = 0; i < len; i++) {
                 var c = children[i];
-                c.tell(msg, source, topic);
+                c.handle(msg, source, topic);
             }
         }
     }, {
@@ -1283,7 +1287,7 @@ var Stream = function () {
         key: 'doPool',
         value: function doPool(msg, source, topic) {
 
-            this.pool.tell(msg, source, topic);
+            this.pool.handle(msg, source, topic);
         }
     }, {
         key: 'destroy',
@@ -1305,7 +1309,7 @@ Stream.fromMonitor = function (data, name) {
     stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.tell(msg, streamName || source, topic);
+        stream.handle(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1325,7 +1329,7 @@ Stream.fromSubscribe = function (data, topic, name) {
     stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.tell(msg, streamName || source, topic);
+        stream.handle(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1343,8 +1347,8 @@ Stream.fromFollow = function (data, topic, name) {
     var streamName = name || topic || data.name;
     stream.name = streamName;
 
-    var toStream = function toStream(msg, source, topic) {
-        stream.tell(msg, streamName || source, topic);
+    var toStream = function toStream(msg, packet) {
+        stream.handle(msg, streamName || packet._source, packet._topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1367,7 +1371,7 @@ Stream.fromEvent = function (target, eventName, useCapture) {
     var off = target.removeEventListener || target.removeListener || target.off;
 
     var toStream = function toStream(msg) {
-        stream.tell(msg, eventName);
+        stream.handle(msg, eventName);
     };
 
     stream.cleanupMethod = function () {
@@ -1827,7 +1831,7 @@ var Nyan = {};
 // watch: ^ = action, need, event, watch | read, must
 // then:  run, read, attr, and, style, write, blast, filter
 
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, with_react: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
@@ -2050,6 +2054,7 @@ function parsePhrase(str) {
             }
         }
 
+        alias = alias || topic || _name;
         var nw = new NyanWord(_name, operation, maybe, need, topic, alias, monitor);
         words.push(nw);
     }
@@ -2059,99 +2064,259 @@ function parsePhrase(str) {
 
 Nyan.parse = parse;
 
-var idCounter = 0;
+function getPacketFromDataWord(scope, word) {
 
-function _destroyEach(arr) {
+    var data = scope.find(word.name, !word.maybe);
+    return data && data.peek(word.topic);
+}
 
-    var len = arr.length;
-    for (var i = 0; i < len; i++) {
-        var item = arr[i];
-        item.destroy();
+function getSurveyFromDataWord(scope, word) {
+
+    var data = scope.find(word.name, !word.maybe);
+    return data && data.survey();
+}
+
+function getDoSkipNamedDupes(names) {
+
+    var lastMsg = {};
+    var len = names.length;
+
+    return function doSkipNamedDupes(msg) {
+
+        var diff = false;
+        for (var i = 0; i < len; i++) {
+            var name = names[i];
+            if (!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name]) diff = true;
+            lastMsg[name] = msg[name];
+        }
+
+        return diff;
+    };
+}
+
+function getDoRead(scope, phrase) {
+
+    var len = phrase.length;
+    var firstWord = phrase[0];
+
+    if (len > 1 || firstWord.monitor) {
+        // if only reading word is a wildcard subscription then hash as well
+        return getDoReadMultiple(scope, phrase);
+    } else {
+        return getDoReadSingle(scope, firstWord);
     }
 }
 
-function _getMsg(scope, read) {
+function getDoAnd(scope, phrase) {
 
-    var f = function f(msg) {
+    return getDoReadMultiple(scope, phrase, true);
+}
 
-        for (var i = 0; i < read.length; i++) {
-            var word = read[i];
-            var data = scope.find(word.name, !word.maybe);
-            if (data.peek()) msg[word.name] = data.read();
+function getDoReadSingle(scope, word) {
+
+    return function doReadSingle() {
+
+        var packet = getPacketFromDataWord(scope, word);
+        return packet && packet.msg;
+    };
+}
+
+function getDoReadMultiple(scope, phrase, isAndOperation) {
+
+    var len = phrase.length;
+
+    return function doReadMultiple(msg) {
+
+        msg = isAndOperation && msg || {};
+
+        for (var i = 0; i < len; i++) {
+            var word = phrase[i];
+
+            if (word.monitor) {
+
+                var survey = getSurveyFromDataWord(scope, word);
+                var _iteratorNormalCompletion = true;
+                var _didIteratorError = false;
+                var _iteratorError = undefined;
+
+                try {
+                    for (var _iterator = survey[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                        var _step$value = slicedToArray(_step.value, 2),
+                            key = _step$value[0],
+                            value = _step$value[1];
+
+                        msg[key] = value;
+                    }
+                } catch (err) {
+                    _didIteratorError = true;
+                    _iteratorError = err;
+                } finally {
+                    try {
+                        if (!_iteratorNormalCompletion && _iterator.return) {
+                            _iterator.return();
+                        }
+                    } finally {
+                        if (_didIteratorError) {
+                            throw _iteratorError;
+                        }
+                    }
+                }
+            } else {
+
+                var packet = getPacketFromDataWord(scope, word);
+                var prop = word.monitor ? word.alias || word.topic : word.alias || word.name;
+                if (packet) msg[prop] = packet.msg;
+            }
         }
 
         return msg;
     };
-
-    return f;
 }
 
-function _applyReaction(scope, bus, phrase, context, node) {
+function getFollowStream(scope, word) {
 
-    var subscribe = [];
-    var follow = [];
-    var read = [];
+    var data = scope.find(word.alias, !word.maybe);
+    return Stream.fromFollow(data, word.topic, word.alias);
+}
+
+function getSubscribeStream(scope, word) {
+
+    var data = scope.find(word.name, !word.maybe);
+    if (word.monitor) {
+        return Stream.fromMonitor(data, word.alias);
+    } else {
+        return Stream.fromSubscribe(data, word.topic, word.alias);
+    }
+}
+
+function getEventStream(scope, word, node) {
+
+    return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
+}
+
+function getNeedsArray(phrase) {
+    return phrase.filter(function (word) {
+        return word.operation.need;
+    }).map(function (word) {
+        return word.alias;
+    });
+}
+
+function applyReaction(scope, bus, phrase, target) {
+    // target is some event emitter
+
     var need = [];
-    var must = [];
+    var skipDupes = [];
+    var streams = [];
+
+    if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
+        bus.addFrame(getSubscribeStream(scope, phrase[0]));
+        return;
+    }
 
     for (var i = 0; i < phrase.length; i++) {
 
         var word = phrase[i];
         var operation = word.operation;
 
-        if (operation.subscribe) subscribe.push(word);
-        if (operation.read) read.push(word);
-        if (operation.follow) follow.push(word);
-        if (operation.name === 'NEED') need.push(word);
-        if (operation.name === 'MUST') must.push(word);
-    }
-
-    // convert nyan words to streams
-
-    for (var _i = 0; _i < subscribe.length; _i++) {
-        var _word = subscribe[_i];
-        var data = scope.find(_word.name, !_word.maybe);
-        if (_word.monitor) {
-            subscribe[_i] = Stream.fromMonitor(data, _word.alias);
-        } else {
-            subscribe[_i] = Stream.fromSubscribe(data, _word.topic, _word.alias);
+        if (operation === 'WATCH') {
+            streams.push(getFollowStream(scope, word));
+            skipDupes.push(word.alias);
+        } else if (operation === 'WIRE') {
+            streams.push(getFollowStream(scope, word));
+        } else if (operation === 'EVENT') {
+            streams.push(getEventStream(scope, word));
         }
+
+        if (word.need) need.push(word.alias);
     }
 
-    for (var _i2 = 0; _i2 < follow.length; _i2++) {
+    bus.addFrame(streams);
 
-        // todo, follow/monitor, blast all topics?
-        var _word2 = follow[_i2];
-        var _data = scope.find(_word2.name, !_word2.maybe);
-        follow[_i2] = Stream.fromFollow(_data);
+    if (streams.length > 1) {
+
+        bus.merge().group().batch();
+
+        if (need.length) bus.whenKeys(need); // todo is alias here?
+
+        if (skipDupes.length) {
+            bus.filter(getDoSkipNamedDupes(skipDupes));
+        }
+    } else if (skipDupes.length) {
+
+        bus.skipDupes();
     }
-
-    var reactions = subscribe.concat(follow);
-
-    bus.addFrame(reactions);
-
-    if (reactions.length) bus.merge().group();
-
-    if (need.length) bus.whenKeys(need.map(function (d) {
-        return d.name;
-    }));
-
-    if (reactions.length) bus.batch();
-
-    if (read.length) bus.msg(_getMsg(scope, read));
-
-    if (must.length) bus.whenKeys(must.map(function (d) {
-        return d.name;
-    }));
 }
 
-function _applyProcess(scope, bus, phrase, context, node) {}
+function applyProcess(scope, bus, phrase, context, node) {
 
-function _applyNyan(scope, bus, str, context, node) {
+    var operation = phrase[0].operation; // same for all words in a process phrase
+
+    if (operation === 'READ') {
+        bus.msg(getDoRead(scope, phrase));
+        bus.whenKeys(getNeedsArray(phrase));
+    } else if (operation === 'AND') {
+        bus.msg(getDoAnd(scope, phrase));
+        bus.whenKeys(getNeedsArray(phrase));
+    } else if (operation === 'FILTER') {
+        applyFilterProcess(bus, phrase, context);
+    } else if (operation === 'RUN') {
+        applyRunProcess(bus, phrase, context);
+    } else if (operation === 'WRITE') {} else if (operation === 'SPRAY') {
+        // alias to target data points of different names, i.e. < cat(dog), meow(bunny)
+    }
+}
+
+function applyRunProcess(bus, phrase, context) {
+
+    var len = phrase.length;
+
+    var _loop = function _loop(i) {
+
+        var word = phrase[i];
+        var name = word.name;
+        var method = context[name];
+
+        var f = function f(msg, source, topic) {
+            return method.call(context, msg, source, topic);
+        };
+
+        bus.run(f);
+    };
+
+    for (var i = 0; i < len; i++) {
+        _loop(i);
+    }
+}
+
+function applyFilterProcess(bus, phrase, context) {
+
+    var len = phrase.length;
+
+    var _loop2 = function _loop2(i) {
+
+        var word = phrase[i];
+        var name = word.name;
+        var method = context[name];
+
+        var f = function f(msg, source, topic) {
+            return method.call(context, msg, source, topic);
+        };
+
+        bus.filter(f);
+    };
+
+    for (var i = 0; i < len; i++) {
+        _loop2(i);
+    }
+}
+
+function nyanToBus(scope, bus, str, context, target) {
 
     var nyan = Nyan.parse(str);
+    var len = nyan.length;
 
-    for (var i = 0; i < nyan.length; i++) {
+    for (var i = 0; i < len; i++) {
 
         var cmd = nyan[i];
         var name = cmd.name;
@@ -2163,12 +2328,23 @@ function _applyNyan(scope, bus, str, context, node) {
             bus = bus.back();
         } else {
 
-            if (name === 'PROCESS') _applyProcess(scope, bus, phrase, context, node);else // name === 'REACT'
-                _applyReaction(scope, bus, phrase, context, node);
+            if (name === 'PROCESS') applyProcess(scope, bus, phrase, context, target);else // name === 'REACT'
+                applyReaction(scope, bus, phrase, target);
         }
     }
 
     return bus;
+}
+
+var idCounter = 0;
+
+function _destroyEach(arr) {
+
+    var len = arr.length;
+    for (var i = 0; i < len; i++) {
+        var item = arr[i];
+        item.destroy();
+    }
 }
 
 var Scope = function () {
@@ -2188,17 +2364,6 @@ var Scope = function () {
     }
 
     createClass(Scope, [{
-        key: 'process',
-        value: function process(str, context, node) {
-
-            // todo this should be on Bus
-            if (!str) throw new Error('Need a Nyan phrase!');
-
-            var b = new Bus(this);
-
-            return _applyNyan(this, b, str, context, node);
-        }
-    }, {
         key: 'react',
         value: function react(str, context, node) {
             // string is Nyan
@@ -2207,7 +2372,7 @@ var Scope = function () {
 
             var b = new Bus(this);
 
-            return _applyNyan(this, b, str, context, node);
+            return nyanToBus(this, b, str, context, node);
         }
     }, {
         key: 'clear',

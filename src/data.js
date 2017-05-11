@@ -2,6 +2,7 @@
 import SubscriberList from './subscriberList.js';
 import {isValid, DATA_TYPES} from './dataTypes.js';
 
+const NO_TOPIC = '___NO_TOPIC___';
 
 class Data {
 
@@ -42,6 +43,7 @@ class Data {
     
     _demandSubscriberList(topic){
 
+        topic = topic || undefined;
         let list = this._subscriberListsByTopic.get(topic);
 
         if(list)
@@ -72,7 +74,7 @@ class Data {
         let packet = this.peek();
 
         if(packet)
-            typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.tell(packet.msg, packet);
+            typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.handle(packet.msg, packet);
 
         return this;
 
@@ -170,8 +172,9 @@ class Data {
         if(this.type === DATA_TYPES.MIRROR)
             throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
-        this._demandSubscriberList(topic).tell(msg, topic, silently);
-        this._wildcardSubscriberList.tell(msg, topic, silently);
+        const list = this._demandSubscriberList(topic);
+        list.handle(msg, topic, silently);
+        this._wildcardSubscriberList.handle(msg, topic, silently);
 
     };
 
@@ -181,7 +184,10 @@ class Data {
         if(this.dead)
             this._throwDead();
 
-        this.write(this.read(topic), topic);
+        const lastPacket = this.peek(topic);
+
+        if(lastPacket)
+            this.write(lastPacket._msg, topic);
 
         return this;
 

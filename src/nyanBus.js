@@ -9,11 +9,33 @@ function getPacketFromDataWord(scope, word){
 
 }
 
+
 function getSurveyFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
     return data && data.survey();
 
+}
+
+
+function getDoSkipNamedDupes(names){
+
+    let lastMsg = {};
+    const len = names.length;
+
+    return function doSkipNamedDupes(msg) {
+
+        let diff = false;
+        for(let i = 0; i < len; i++){
+            const name = names[i];
+            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name])
+                diff = true;
+            lastMsg[name] = msg[name];
+        }
+
+        return diff;
+
+    };
 }
 
 
@@ -29,6 +51,7 @@ function getDoRead(scope, phrase){
     }
 
 }
+
 
 function getDoAnd(scope, phrase) {
 
@@ -88,7 +111,7 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
 function getFollowStream(scope, word) {
 
-    const data = scope.find(word.name, !word.maybe);
+    const data = scope.find(word.alias, !word.maybe);
     return Stream.fromFollow(data, word.topic, word.alias);
 
 }
@@ -115,13 +138,13 @@ function getNeedsArray(phrase){
 }
 
 
-function applyReaction(scope, bus, phrase, context, node) {
+function applyReaction(scope, bus, phrase, target) { // target is some event emitter
 
     const need = [];
+    const skipDupes = [];
     const streams = [];
 
-
-    if(phrase.length === 1 && phrase[0].operation.name === 'ACTION'){
+    if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
         bus.addFrame(getSubscribeStream(scope, phrase[0]));
         return;
     }
@@ -129,18 +152,23 @@ function applyReaction(scope, bus, phrase, context, node) {
     for(let i = 0; i < phrase.length; i++){
 
         const word = phrase[i];
-        const operation = word.operation.name;
+        const operation = word.operation;
 
-        if(operation === 'WATCH')
+        if(operation === 'WATCH') {
             streams.push(getFollowStream(scope, word));
-        else if(operation === 'EVENT')
+            skipDupes.push(word.alias)
+        }
+        else if(operation === 'WIRE'){
+            streams.push(getFollowStream(scope, word));
+        }
+        else if(operation === 'EVENT') {
             streams.push(getEventStream(scope, word));
+        }
 
         if(word.need)
-            need.push(word);
+            need.push(word.alias);
 
     }
-
 
     bus.addFrame(streams);
 
@@ -149,7 +177,15 @@ function applyReaction(scope, bus, phrase, context, node) {
         bus.merge().group().batch();
 
         if(need.length)
-            bus.whenKeys(need.map(d => d.name)); // todo is alias here?
+            bus.whenKeys(need); // todo is alias here?
+
+        if(skipDupes.length){
+            bus.filter(getDoSkipNamedDupes(skipDupes));
+        }
+
+    } else if(skipDupes.length) {
+
+        bus.skipDupes();
 
     }
 
@@ -158,7 +194,7 @@ function applyReaction(scope, bus, phrase, context, node) {
 
 function applyProcess(scope, bus, phrase, context, node) {
 
-    const operation = phrase[0].operation.name; // same for all words in a process phrase
+    const operation = phrase[0].operation; // same for all words in a process phrase
 
     if(operation === 'READ') {
         bus.msg(getDoRead(scope, phrase));
@@ -169,7 +205,7 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
-        applyRunProcess(scope, phrase, context);
+        applyRunProcess(bus, phrase, context);
     } else if (operation === 'WRITE') {
 
     } else if (operation === 'SPRAY') {
@@ -221,7 +257,7 @@ function applyFilterProcess(bus, phrase, context){
 }
 
 
-function applyNyan(scope, bus, str, context, node){
+function nyanToBus(scope, bus, str, context, target){
 
     const nyan = Nyan.parse(str);
     const len = nyan.length;
@@ -239,9 +275,9 @@ function applyNyan(scope, bus, str, context, node){
         } else {
 
             if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, node);
+                applyProcess(scope, bus, phrase, context, target);
             else // name === 'REACT'
-                applyReaction(scope, bus, phrase, context, node);
+                applyReaction(scope, bus, phrase, target);
 
         }
     }
@@ -249,3 +285,5 @@ function applyNyan(scope, bus, str, context, node){
     return bus;
 
 }
+
+export default nyanToBus;

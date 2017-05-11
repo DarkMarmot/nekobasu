@@ -5,6 +5,7 @@ import { DATA_TYPES, isValid } from './dataTypes.js';
 import Bus from './bus.js';
 import Nyan from './nyan.js';
 import Stream from './stream.js';
+import nyanToBus from './nyanBus.js';
 
 let idCounter = 0;
 
@@ -15,128 +16,6 @@ function _destroyEach(arr){
         const item = arr[i];
         item.destroy();
     }
-
-}
-
-function _getMsg(scope, read){
-
-    const f = function(msg) {
-
-        for (let i = 0; i < read.length; i++) {
-            const word = read[i];
-            const data = scope.find(word.name, !word.maybe);
-            if(data.peek())
-                msg[word.name] = data.read();
-        }
-
-        return msg;
-    };
-
-    return f;
-
-}
-
-function _applyReaction(scope, bus, phrase, context, node) {
-
-    const subscribe = [];
-    const follow = [];
-    const read = [];
-    const need = [];
-    const must = [];
-
-    for(let i = 0; i < phrase.length; i++){
-
-        const word = phrase[i];
-        const operation = word.operation;
-
-        if(operation.subscribe)
-            subscribe.push(word);
-        if(operation.read)
-            read.push(word);
-        if(operation.follow)
-            follow.push(word);
-        if(operation.name === 'NEED')
-            need.push(word);
-        if(operation.name === 'MUST')
-            must.push(word);
-
-    }
-
-    // convert nyan words to streams
-
-    for(let i = 0; i < subscribe.length; i++){
-        const word = subscribe[i];
-        const data = scope.find(word.name, !word.maybe);
-        if(word.monitor){
-            subscribe[i] = Stream.fromMonitor(data, word.alias);
-        } else {
-            subscribe[i] = Stream.fromSubscribe(data, word.topic, word.alias);
-        }
-    }
-
-    for(let i = 0; i < follow.length; i++){
-
-        // todo, follow/monitor, blast all topics?
-        const word = follow[i];
-        const data = scope.find(word.name, !word.maybe);
-        follow[i] = Stream.fromFollow(data);
-
-    }
-
-    const reactions = subscribe.concat(follow);
-
-    bus.addFrame(reactions);
-
-    if(reactions.length)
-        bus.merge().group();
-
-    if(need.length)
-        bus.whenKeys(need.map(d => d.name));
-
-    if(reactions.length)
-        bus.batch();
-
-    if(read.length)
-        bus.msg(_getMsg(scope, read));
-
-    if(must.length)
-        bus.whenKeys(must.map(d => d.name));
-
-
-}
-
-
-function _applyProcess(scope, bus, phrase, context, node) {
-
-
-
-}
-
-function _applyNyan(scope, bus, str, context, node){
-
-    const nyan = Nyan.parse(str);
-
-    for(let i = 0; i < nyan.length; i++){
-
-        const cmd = nyan[i];
-        const name = cmd.name;
-        const phrase = cmd.phrase;
-
-        if(name === 'FORK'){
-            bus = bus.fork();
-        } else if (name === 'BACK'){
-            bus = bus.back();
-        } else {
-
-           if(name === 'PROCESS')
-               _applyProcess(scope, bus, phrase, context, node);
-           else // name === 'REACT'
-               _applyReaction(scope, bus, phrase, context, node);
-
-        }
-    }
-
-    return bus;
 
 }
 
@@ -167,20 +46,6 @@ class Scope{
     };
 
 
-
-    process(str, context, node) {
-
-        // todo this should be on Bus
-        if(!str)
-            throw new Error('Need a Nyan phrase!');
-
-        let b = new Bus(this);
-
-        return _applyNyan(this, b, str, context, node);
-
-
-    };
-
     react(str, context, node){ // string is Nyan
 
         if(!str)
@@ -188,7 +53,7 @@ class Scope{
 
         let b = new Bus(this);
 
-        return _applyNyan(this, b, str, context, node);
+        return nyanToBus(this, b, str, context, node);
 
     };
 
