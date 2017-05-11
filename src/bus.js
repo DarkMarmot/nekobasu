@@ -143,6 +143,24 @@ class Bus {
 
     };
 
+    poll() {
+
+        const frame1 = this._frames[0];
+
+        if(frame1._streams.length > 0){
+            frame1.poll();
+            return this;
+        }
+
+        if(this._frames.length !== 1){
+            const frame2 = this._frames[1];
+            frame2.poll();
+        }
+
+        return this;
+
+    };
+
     event(name, target, eventName, useCapture) {
 
         eventName = eventName || name;

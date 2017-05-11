@@ -109,23 +109,20 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 }
 
 
-function getFollowStream(scope, word) {
+// get data stream -- store data in bus, emit into stream on poll()
 
-    const data = scope.find(word.alias, !word.maybe);
-    return Stream.fromFollow(data, word.topic, word.alias);
 
-}
-
-function getSubscribeStream(scope, word) {
+function getDataStream(scope, word, canPoll) {
 
     const data = scope.find(word.name, !word.maybe);
     if(word.monitor){
-        return Stream.fromMonitor(data, word.alias);
+        return Stream.fromMonitor(data, word.alias, canPoll);
     } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias);
+        return Stream.fromSubscribe(data, word.topic, word.alias, canPoll);
     }
 
 }
+
 
 function getEventStream(scope, word, node){
 
@@ -145,7 +142,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
     const streams = [];
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
-        bus.addFrame(getSubscribeStream(scope, phrase[0]));
+        bus.addFrame(getDataStream(scope, phrase[0], true));
         return;
     }
 
@@ -155,11 +152,11 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         const operation = word.operation;
 
         if(operation === 'WATCH') {
-            streams.push(getFollowStream(scope, word));
+            streams.push(getDataStream(scope, word, true));
             skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
-            streams.push(getFollowStream(scope, word));
+            streams.push(getDataStream(scope, word, true));
         }
         else if(operation === 'EVENT') {
             streams.push(getEventStream(scope, word));
@@ -188,7 +185,6 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         bus.skipDupes();
 
     }
-
 
 }
 

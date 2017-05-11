@@ -977,6 +977,18 @@ var Frame = function () {
             return this;
         }
     }, {
+        key: 'poll',
+        value: function poll() {
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.poll();
+            }
+        }
+    }, {
         key: 'run',
         value: function run(func, stateful) {
             return this.applySyncProcess('doRun', func, stateful);
@@ -1189,6 +1201,7 @@ var Stream = function () {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
+        this.poll = Func.NOOP; // to retrieve and emit stored values from a source
         this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
     }
@@ -1301,7 +1314,7 @@ var Stream = function () {
     return Stream;
 }();
 
-Stream.fromMonitor = function (data, name) {
+Stream.fromMonitor = function (data, name, canPoll) {
 
     var stream = new Stream();
     var streamName = name || data.name;
@@ -1309,19 +1322,31 @@ Stream.fromMonitor = function (data, name) {
     stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.handle(msg, streamName || source, topic);
+        stream.emit(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function () {
         data.unsubscribe(toStream);
     };
 
+    if (canPoll) {
+        stream.poll = function () {
+            var packet = data.survey();
+            if (packet) {
+                var msg = packet._msg;
+                var source = streamName || packet._source;
+                var topic = packet._topic;
+                stream.emit(msg, source, topic, stream);
+            }
+        };
+    }
+
     data.monitor(toStream);
 
     return stream;
 };
 
-Stream.fromSubscribe = function (data, topic, name) {
+Stream.fromSubscribe = function (data, topic, name, canPoll) {
 
     var stream = new Stream();
     var streamName = name || topic || data.name;
@@ -1329,33 +1354,26 @@ Stream.fromSubscribe = function (data, topic, name) {
     stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.handle(msg, streamName || source, topic);
+        stream.emit(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function () {
         data.unsubscribe(toStream, topic);
     };
+
+    if (canPoll) {
+        stream.poll = function () {
+            var packet = data.peek();
+            if (packet) {
+                var msg = packet._msg;
+                var source = streamName || packet._source;
+                var _topic = packet._topic;
+                stream.emit(msg, source, _topic, stream);
+            }
+        };
+    }
 
     data.subscribe(toStream, topic);
-
-    return stream;
-};
-
-Stream.fromFollow = function (data, topic, name) {
-
-    var stream = new Stream();
-    var streamName = name || topic || data.name;
-    stream.name = streamName;
-
-    var toStream = function toStream(msg, packet) {
-        stream.handle(msg, streamName || packet._source, packet._topic);
-    };
-
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream, topic);
-    };
-
-    data.follow(toStream, topic);
 
     return stream;
 };
@@ -1485,6 +1503,24 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
             this.addFrame().hold();
+            return this;
+        }
+    }, {
+        key: 'poll',
+        value: function poll() {
+
+            var frame1 = this._frames[0];
+
+            if (frame1._streams.length > 0) {
+                frame1.poll();
+                return this;
+            }
+
+            if (this._frames.length !== 1) {
+                var frame2 = this._frames[1];
+                frame2.poll();
+            }
+
             return this;
         }
     }, {
@@ -1831,7 +1867,8 @@ var Nyan = {};
 // watch: ^ = action, need, event, watch | read, must
 // then:  run, read, attr, and, style, write, blast, filter
 
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
+var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
+{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
@@ -2173,19 +2210,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
     };
 }
 
-function getFollowStream(scope, word) {
+// get data stream -- store data in bus, emit into stream on poll()
 
-    var data = scope.find(word.alias, !word.maybe);
-    return Stream.fromFollow(data, word.topic, word.alias);
-}
 
-function getSubscribeStream(scope, word) {
+function getDataStream(scope, word, canPoll) {
 
     var data = scope.find(word.name, !word.maybe);
     if (word.monitor) {
-        return Stream.fromMonitor(data, word.alias);
+        return Stream.fromMonitor(data, word.alias, canPoll);
     } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias);
+        return Stream.fromSubscribe(data, word.topic, word.alias, canPoll);
     }
 }
 
@@ -2210,7 +2244,7 @@ function applyReaction(scope, bus, phrase, target) {
     var streams = [];
 
     if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
-        bus.addFrame(getSubscribeStream(scope, phrase[0]));
+        bus.addFrame(getDataStream(scope, phrase[0], true));
         return;
     }
 
@@ -2220,10 +2254,10 @@ function applyReaction(scope, bus, phrase, target) {
         var operation = word.operation;
 
         if (operation === 'WATCH') {
-            streams.push(getFollowStream(scope, word));
+            streams.push(getDataStream(scope, word, true));
             skipDupes.push(word.alias);
         } else if (operation === 'WIRE') {
-            streams.push(getFollowStream(scope, word));
+            streams.push(getDataStream(scope, word, true));
         } else if (operation === 'EVENT') {
             streams.push(getEventStream(scope, word));
         }

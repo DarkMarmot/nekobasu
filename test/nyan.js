@@ -66,10 +66,11 @@ describe('RootScope', function(){
 
             var d = world.data('ergo');
 
-            const bus = world.react('ergo | *handle', watcher);
+            d.write('meow');
+            const bus = world.react('ergo | *handle', watcher).poll();
             //bus.run(watcher.handle);
 
-            d.write('meow');
+
 
 
 

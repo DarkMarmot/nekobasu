@@ -9,7 +9,7 @@ const Nyan = {};
 const operationDefs = [
 
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
-    {name: 'WIRE',   sym: '~',  react: true, follow: true},
+    {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
     {name: 'WATCH',  sym: null, react: true, follow: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
     {name: 'READ',   sym: null, then: true, read: true},

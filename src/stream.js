@@ -11,6 +11,7 @@ class Stream {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
+        this.poll = F.NOOP; // to retrieve and emit stored values from a source
         this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
 
@@ -127,7 +128,7 @@ class Stream {
 }
 
 
-Stream.fromMonitor = function(data, name){
+Stream.fromMonitor = function(data, name, canPoll){
 
     const stream = new Stream();
     const streamName = name || data.name;
@@ -135,12 +136,24 @@ Stream.fromMonitor = function(data, name){
     stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.handle(msg, streamName || source, topic);
+        stream.emit(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function(){
         data.unsubscribe(toStream);
     };
+
+    if(canPoll){
+        stream.poll = function(){
+            const packet = data.survey();
+            if(packet) {
+                const msg = packet._msg;
+                const source = streamName || packet._source;
+                const topic = packet._topic;
+                stream.emit(msg, source, topic, stream);
+            }
+        }
+    }
 
     data.monitor(toStream);
 
@@ -149,7 +162,7 @@ Stream.fromMonitor = function(data, name){
 };
 
 
-Stream.fromSubscribe = function(data, topic, name){
+Stream.fromSubscribe = function(data, topic, name, canPoll){
 
     const stream = new Stream();
     const streamName = name || topic || data.name;
@@ -157,12 +170,24 @@ Stream.fromSubscribe = function(data, topic, name){
     stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.handle(msg, streamName || source, topic);
+        stream.emit(msg, streamName || source, topic);
     };
 
     stream.cleanupMethod = function(){
         data.unsubscribe(toStream, topic);
     };
+
+    if(canPoll){
+        stream.poll = function(){
+            const packet = data.peek();
+            if(packet) {
+                const msg = packet._msg;
+                const source = streamName || packet._source;
+                const topic = packet._topic;
+                stream.emit(msg, source, topic, stream);
+            }
+        }
+    }
 
     data.subscribe(toStream, topic);
 
@@ -170,26 +195,6 @@ Stream.fromSubscribe = function(data, topic, name){
 
 };
 
-
-Stream.fromFollow = function(data, topic, name){
-
-    const stream = new Stream();
-    const streamName = name || topic || data.name;
-    stream.name = streamName;
-
-    const toStream = function(msg, packet){
-        stream.handle(msg, streamName || packet._source, packet._topic);
-    };
-
-    stream.cleanupMethod = function(){
-        data.unsubscribe(toStream, topic);
-    };
-
-    data.follow(toStream, topic);
-
-    return stream;
-
-};
 
 
 Stream.fromEvent = function(target, eventName, useCapture){
