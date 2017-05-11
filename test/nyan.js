@@ -68,6 +68,8 @@ describe('RootScope', function(){
 
             d.write('meow');
             const bus = world.react('ergo | *handle', watcher).poll();
+
+
             //bus.run(watcher.handle);
 
 
@@ -78,6 +80,47 @@ describe('RootScope', function(){
             assert.equal(name, 'ergo');
 
         });
+
+
+    it('can react2', function(){
+
+
+        var d = world.data('ergo');
+
+        d.write('fish');
+        d.write('cow');
+        const bus = world.react('ergo | *handle', watcher).poll();
+        d.write('bunny');
+
+        //bus.run(watcher.handle);
+
+
+
+
+
+        var name = d.name;
+        assert.equal(name, 'ergo');
+
+    });
+
+    it('can react2', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+
+        d1.write('fish');
+        d2.write('cow');
+        const bus = world.react('village(grey), forest(green) | *handle', watcher).poll();
+        d2.write('bunny');
+
+        //bus.run(watcher.handle);
+
+
+        var name = d1.name;
+        assert.equal(name, 'village');
+
+    });
 
     //     it('can write data', function(){
     //

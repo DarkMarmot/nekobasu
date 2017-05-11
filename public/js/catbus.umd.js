@@ -1868,7 +1868,7 @@ var Nyan = {};
 // then:  run, read, attr, and, style, write, blast, filter
 
 var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
-{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true }, { name: 'FILTER', sym: '%', then: true }];
+{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '%', then: true }];
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
@@ -2990,6 +2990,8 @@ Catbus$1.fromEvent = function (target, eventName, useCapture) {
     var stream = Stream.fromEvent(target, eventName, useCapture);
     return new Bus(null, [stream]);
 };
+
+// todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
 Catbus$1.enqueue = function (pool) {
 

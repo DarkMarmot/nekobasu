@@ -19,6 +19,7 @@ Catbus.fromEvent = function(target, eventName, useCapture){
 
 };
 
+// todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
 Catbus.enqueue = function(pool){
 

@@ -13,14 +13,16 @@ const operationDefs = [
     {name: 'WATCH',  sym: null, react: true, follow: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
     {name: 'READ',   sym: null, then: true, read: true},
-    {name: 'ATTR',   sym: '#',  then: true, solo: true},
+    {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
-    {name: 'STYLE',  sym: '$',  then: true,  solo: true },
+    {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
     {name: 'WRITE',  sym: '=',  then: true,  solo: true },
-    {name: 'RUN',    sym: '*',  then: true },
+    {name: 'RUN',    sym: '*',  then: true, output: true },
     {name: 'FILTER', sym: '%',  then: true }
 
 ];
+// cat, dog | & meow, kitten {*log} | =puppy
+
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
