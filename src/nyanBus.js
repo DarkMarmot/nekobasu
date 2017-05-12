@@ -302,6 +302,8 @@ function applyProcess(scope, bus, phrase, context, node) {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
         applyRunProcess(bus, phrase, context);
+    } else if (operation === 'ALIAS') {
+        applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
 
     } else if (operation === 'SPRAY') {
@@ -328,6 +330,12 @@ function applyRunProcess(bus, phrase, context){
         bus.run(f);
 
     }
+
+}
+
+function applySourceProcess(bus, word){
+
+    bus.source(word.alias);
 
 }
 

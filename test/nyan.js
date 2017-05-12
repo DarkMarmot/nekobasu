@@ -18,7 +18,7 @@ function Watcher(name){
 
 Watcher.prototype.handle = function(msg, source, topic){
 
-    console.log('gotL:', msg);
+    console.log('gotL:', msg, source);
     callback(msg, source, topic);
 
 };
@@ -136,7 +136,7 @@ describe('RootScope', function(){
         d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave)  | *handle', watcher).poll();
+        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | *handle', watcher).poll();
         d2.write({moo: {spot: 5}});
         // d2.write('sunset');
         //bus.run(watcher.handle);

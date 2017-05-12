@@ -12,6 +12,7 @@ const operationDefs = [
     {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
     {name: 'WATCH',  sym: null, react: true, follow: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
+    {name: 'ALIAS',  sym: '(',  then: true, solo: true},
     {name: 'READ',   sym: null, then: true, read: true},
     {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
@@ -32,6 +33,7 @@ const operationDefs = [
 // read = SPACE
 // - is data maybe (data point might not be present)
 // ? is object maybe (object might not be there)
+// () is rename
 
 const operationsBySymbol = {};
 const operationsByName = {};
@@ -104,6 +106,8 @@ function parse(str, isProcess) {
 
     }
 
+    if(str.indexOf('poo') !== -1)
+        console.log(str, sentences);
     return validate(sentences, isProcess);
 
 
@@ -173,8 +177,10 @@ function validateProcessPhrase(phrase){
         const nw = phrase[i];
         nw.operation = nw.operation || firstOperation;
         if(nw.operation !== firstOperation){
+
             console.log('mult', nw.operation, firstOperation);
             throw new Error('Multiple operation types in phrase (only one allowed)!');
+
         }
 
     }
@@ -220,11 +226,17 @@ function parsePhrase(str) {
         const name = nameAndOperation.slice(start);
         const extracts = [];
 
+        // todo hack (rename)
+
         let maybe = false;
         let monitor = false;
         let topic = null;
         let alias = null;
         let need = false;
+
+        if(operation === 'ALIAS'){
+            alias = chunks.shift();
+        }
 
         while(chunks.length){
 

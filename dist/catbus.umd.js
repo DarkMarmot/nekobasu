@@ -1877,7 +1877,7 @@ var Nyan = {};
 // then:  run, read, attr, and, style, write, blast, filter
 
 var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
-{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '%', then: true }];
+{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '%', then: true }];
 // cat, dog | & meow, kitten {*log} | =puppy
 
 
@@ -1889,6 +1889,7 @@ var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, n
 // read = SPACE
 // - is data maybe (data point might not be present)
 // ? is object maybe (object might not be there)
+// () is rename
 
 var operationsBySymbol = {};
 var operationsByName = {};
@@ -1956,6 +1957,7 @@ function parse(str, isProcess) {
         if (typeof sentence === 'string' || sentence.length > 0) sentences.push(sentence);
     }
 
+    if (str.indexOf('poo') !== -1) console.log(str, sentences);
     return validate(sentences, isProcess);
 }
 
@@ -2014,6 +2016,7 @@ function validateProcessPhrase(phrase) {
         var nw = phrase[_i4];
         nw.operation = nw.operation || firstOperation;
         if (nw.operation !== firstOperation) {
+
             console.log('mult', nw.operation, firstOperation);
             throw new Error('Multiple operation types in phrase (only one allowed)!');
         }
@@ -2067,11 +2070,17 @@ function parsePhrase(str) {
         var _name = nameAndOperation.slice(start);
         var extracts = [];
 
+        // todo hack (rename)
+
         var maybe = false;
         var monitor = false;
         var topic = null;
         var alias = null;
         var need = false;
+
+        if (operation === 'ALIAS') {
+            alias = chunks.shift();
+        }
 
         while (chunks.length) {
 
@@ -2419,6 +2428,8 @@ function applyProcess(scope, bus, phrase, context, node) {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
         applyRunProcess(bus, phrase, context);
+    } else if (operation === 'ALIAS') {
+        applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {} else if (operation === 'SPRAY') {
         // alias to target data points of different names, i.e. < cat(dog), meow(bunny)
     }
@@ -2444,6 +2455,11 @@ function applyRunProcess(bus, phrase, context) {
     for (var i = 0; i < len; i++) {
         _loop(i);
     }
+}
+
+function applySourceProcess(bus, word) {
+
+    bus.source(word.alias);
 }
 
 function applyFilterProcess(bus, phrase, context) {
