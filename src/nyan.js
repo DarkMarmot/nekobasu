@@ -30,6 +30,8 @@ const operationDefs = [
 // {name: 'END',    sym: '}'}, -- back
 // {name: 'PIPE',   sym: '|'}, -- phrase delimiter
 // read = SPACE
+// - is data maybe (data point might not be present)
+// ? is object maybe (object might not be there)
 
 const operationsBySymbol = {};
 const operationsByName = {};
@@ -60,8 +62,6 @@ for(let i = 0; i < operationDefs.length; i++){
     if(op.react) {
         reactionsByName[name] = true;
         withReactionsByName[name] = true;
-    } else if(op.with_react) {
-        withReactionsByName[name] = true;
     }
 
 }
@@ -70,7 +70,7 @@ for(let i = 0; i < operationDefs.length; i++){
 
 class NyanWord {
 
-    constructor(name, operation, maybe, need, topic, alias, monitor){
+    constructor(name, operation, maybe, need, topic, alias, monitor, extracts){
 
         this.name = name;
         this.operation = operation;
@@ -79,7 +79,9 @@ class NyanWord {
         this.topic = topic || null;
         this.alias = alias || null;
         this.monitor = monitor || false;
+        this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
         // this.useCapture =
+
     }
 
 }
@@ -209,13 +211,15 @@ function parsePhrase(str) {
 
         const rawWord = rawWords[i];
         console.log('word=', rawWord);
-        const chunks = rawWord.split(/([(?!:)])/).map(d => d.trim()).filter(d => d);
+        const chunks = rawWord.split(/([(?!:.)])/).map(d => d.trim()).filter(d => d);
         console.log('to:', chunks);
         const nameAndOperation = chunks.shift();
         const firstChar = rawWord[0];
         const operation = namesBySymbol[firstChar];
         const start = operation ? 1 : 0;
         const name = nameAndOperation.slice(start);
+        const extracts = [];
+
         let maybe = false;
         let monitor = false;
         let topic = null;
@@ -223,40 +227,65 @@ function parsePhrase(str) {
         let need = false;
 
         while(chunks.length){
+
             const c = chunks.shift();
 
-            if(c === '?'){
-                maybe = true;
-                continue;
-            }
+            switch(c){
 
-            if(c === '!'){
-                need = true;
-                continue;
-            }
+                case '.':
 
-            if(c === ':'){
-                if(chunks.length){
-                    const next = chunks[0];
-                    if(next === '('){
-                        monitor = true;
-                    } else {
-                        topic = next;
+                    const prop = chunks.length && chunks[0]; // todo assert not operation
+                    const silentFail = chunks.length > 1 && (chunks[1] === '?');
+
+                    if(prop) {
+                        extracts.push({name: prop, silentFail: silentFail});
+                        chunks.shift(); // remove word from queue
+                        if(silentFail)
+                            chunks.shift(); // remove ? from queue
                     }
-                } else {
-                    monitor = true;
-                }
-                continue;
-            }
 
-            if(c === '(' && chunks.length){
-                alias = chunks[0];
+                    break;
+
+                case '?':
+
+                    maybe = true;
+                    break;
+
+                case '!':
+
+                    need = true;
+                    break;
+
+                case ':':
+
+                    if(chunks.length){
+                        const next = chunks[0];
+                        if(next === '('){
+                            monitor = true;
+                        } else {
+                            topic = next;
+                            chunks.shift(); // remove topic from queue
+                        }
+                    } else {
+                        monitor = true;
+                    }
+
+                    break;
+
+                case '(':
+
+                    if(chunks.length){
+                        alias = chunks.shift(); // todo assert not operation
+                    }
+
+                    break;
+
             }
 
         }
 
         alias = alias || topic || name;
-        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor);
+        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts);
         words.push(nw);
 
     }

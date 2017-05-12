@@ -70,6 +70,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         this.subscribe(watcher, topic);
         let packet = this.peek();
 
@@ -85,6 +86,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         this._demandSubscriberList(topic).add(watcher);
 
         return this;
@@ -107,6 +109,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         this._demandSubscriberList(topic).remove(watcher);
         this._wildcardSubscriberList.remove(watcher);
 
@@ -137,6 +140,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         const subscriberList = this._subscriberListsByTopic.get(topic);
         return subscriberList ? subscriberList.lastPacket : null;
 
@@ -148,6 +152,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         let packet = this.peek(topic);
         return (packet) ? packet.msg : undefined;
 
@@ -159,6 +164,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         this.write(msg, topic, true);
 
     };
@@ -172,6 +178,7 @@ class Data {
         if(this.type === DATA_TYPES.MIRROR)
             throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
+        topic = topic || undefined;
         const list = this._demandSubscriberList(topic);
         list.handle(msg, topic, silently);
         this._wildcardSubscriberList.handle(msg, topic, silently);
@@ -184,6 +191,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         const lastPacket = this.peek(topic);
 
         if(lastPacket)
@@ -199,6 +207,7 @@ class Data {
         if(this.dead)
             this._throwDead();
 
+        topic = topic || undefined;
         this.write(!this.read(topic), topic);
 
         return this;

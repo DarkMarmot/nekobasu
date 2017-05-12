@@ -103,6 +103,7 @@ describe('RootScope', function(){
 
     });
 
+
     it('can react2', function(){
 
 
@@ -121,6 +122,31 @@ describe('RootScope', function(){
         assert.equal(name, 'village');
 
     });
+
+    it('can react3', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+        var d3 = world.data('sea');
+        var d4 = world.data('grove');
+
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        d3.write('dog');
+        d4.write('mushroom');
+
+        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave)  | *handle', watcher).poll();
+        d2.write({moo: {spot: 5}});
+        // d2.write('sunset');
+        //bus.run(watcher.handle);
+
+
+        var name = d1.name;
+        assert.equal(name, 'village');
+
+    });
+
 
     //     it('can write data', function(){
     //

@@ -5,7 +5,8 @@ import Nyan from './nyan.js';
 function getPacketFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    return data && data.peek(word.topic);
+    const peek = data && data.peek(word.topic);
+    return peek;
 
 }
 
@@ -17,6 +18,12 @@ function getSurveyFromDataWord(scope, word){
 
 }
 
+function throwError(msg){
+    console.log('throwing ', msg);
+    const e = new Error(msg);
+    console.log(this, e);
+    throw e;
+}
 
 function getDoSkipNamedDupes(names){
 
@@ -77,9 +84,21 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
         const len = phrase.length;
 
-        return function doReadMultiple(msg) {
 
-            msg = (isAndOperation && msg) || {};
+        return function doReadMultiple(msg, source) {
+
+            const result = {};
+
+            if(isAndOperation){
+
+                if(!isObject(msg)){
+                    result[source] = msg;
+                } else {
+                    for (const p in msg) {
+                        result[p] = msg[p];
+                    }
+                }
+            }
 
             for (let i = 0; i < len; i++) {
                 const word = phrase[i];
@@ -88,7 +107,7 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
                     const survey = getSurveyFromDataWord(scope, word);
                     for(const [key, value] of survey){
-                        msg[key] = value;
+                        result[key] = value;
                     }
 
                 } else {
@@ -96,13 +115,13 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
                     const packet = getPacketFromDataWord(scope, word);
                     const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
                     if (packet)
-                        msg[prop] = packet.msg;
+                        result[prop] = packet.msg;
 
                 }
 
             }
 
-            return msg;
+            return result;
 
         };
 
@@ -123,6 +142,12 @@ function getDataStream(scope, word, canPoll) {
 
 }
 
+function isObject(v) {
+    if (v === null)
+        return false;
+    return (typeof v === 'function') || (typeof v === 'object');
+}
+
 
 function getEventStream(scope, word, node){
 
@@ -130,8 +155,68 @@ function getEventStream(scope, word, node){
 
 }
 
+function doExtracts(value, extracts) {
+
+    let result = value;
+    const len = extracts.length;
+
+    for (let i = 0; i < len; i++) {
+        const extract = extracts[i];
+        if(!isObject(result)) {
+            if(extract.silentFail)
+                return undefined;
+
+            throwError('Cannot access property \'' + extract.name + '\' of ' + result);
+
+        }
+        result = result[extract.name];
+    }
+
+
+    return result;
+
+}
+
 function getNeedsArray(phrase){
     return phrase.filter(word => word.operation.need).map(word => word.alias);
+}
+
+function getDoMsgHashExtract(words) {
+
+    const len = words.length;
+    const extractsByAlias = {};
+
+    for (let i = 0; i < len; i++) {
+
+        const word = words[i];
+        extractsByAlias[word.alias] = word.extracts;
+
+    }
+
+    return function(msg) {
+
+        const result = {};
+        for(const alias in extractsByAlias){
+            const hasProp = msg.hasOwnProperty(alias);
+            if(hasProp){
+                result[alias] = doExtracts(msg[alias], extractsByAlias[alias]);
+            }
+        }
+
+        return result;
+
+    };
+
+}
+
+function getDoMsgExtract(word) {
+
+    const extracts = word.extracts;
+
+    return function(msg){
+        return doExtracts(msg, extracts);
+    }
+
 }
 
 
@@ -140,9 +225,10 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
     const need = [];
     const skipDupes = [];
     const streams = [];
+    const extracts = [];
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
-        bus.addFrame(getDataStream(scope, phrase[0], true));
+        bus.addFrame(getDataStream(scope, phrase[0], false));
         return;
     }
 
@@ -162,6 +248,9 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
             streams.push(getEventStream(scope, word));
         }
 
+        if(word.extracts)
+            extracts.push(word);
+
         if(word.need)
             need.push(word.alias);
 
@@ -173,16 +262,23 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
         bus.merge().group().batch();
 
+        if(extracts.length)
+            bus.msg(getDoMsgHashExtract(extracts));
+
         if(need.length)
-            bus.whenKeys(need); // todo is alias here?
+            bus.whenKeys(need);
 
         if(skipDupes.length){
             bus.filter(getDoSkipNamedDupes(skipDupes));
         }
 
-    } else if(skipDupes.length) {
+    } else {
 
-        bus.skipDupes();
+        if(extracts.length)
+            bus.msg(getDoMsgExtract(extracts[0]));
+
+        if(skipDupes.length)
+            bus.skipDupes();
 
     }
 
@@ -194,10 +290,14 @@ function applyProcess(scope, bus, phrase, context, node) {
 
     if(operation === 'READ') {
         bus.msg(getDoRead(scope, phrase));
-        bus.whenKeys(getNeedsArray(phrase));
+        const needs = getNeedsArray(phrase);
+        if(needs.length)
+            bus.whenKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
-        bus.whenKeys(getNeedsArray(phrase));
+        const needs = getNeedsArray(phrase);
+        if(needs.length)
+            bus.whenKeys(needs);
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {

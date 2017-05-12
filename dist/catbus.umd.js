@@ -719,6 +719,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             this.subscribe(watcher, topic);
             var packet = this.peek();
 
@@ -732,6 +733,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             this._demandSubscriberList(topic).add(watcher);
 
             return this;
@@ -752,6 +754,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             this._demandSubscriberList(topic).remove(watcher);
             this._wildcardSubscriberList.remove(watcher);
 
@@ -805,6 +808,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             var subscriberList = this._subscriberListsByTopic.get(topic);
             return subscriberList ? subscriberList.lastPacket : null;
         }
@@ -814,6 +818,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             var packet = this.peek(topic);
             return packet ? packet.msg : undefined;
         }
@@ -823,6 +828,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             this.write(msg, topic, true);
         }
     }, {
@@ -833,6 +839,7 @@ var Data = function () {
 
             if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
+            topic = topic || undefined;
             var list = this._demandSubscriberList(topic);
             list.handle(msg, topic, silently);
             this._wildcardSubscriberList.handle(msg, topic, silently);
@@ -843,6 +850,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             var lastPacket = this.peek(topic);
 
             if (lastPacket) this.write(lastPacket._msg, topic);
@@ -855,6 +863,7 @@ var Data = function () {
 
             if (this.dead) this._throwDead();
 
+            topic = topic || undefined;
             this.write(!this.read(topic), topic);
 
             return this;
@@ -1869,6 +1878,8 @@ var Nyan = {};
 
 var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
 { name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '%', then: true }];
+// cat, dog | & meow, kitten {*log} | =puppy
+
 
 // todo make ! a trailing thingie, must goes away
 // trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
@@ -1876,6 +1887,8 @@ var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, n
 // {name: 'END',    sym: '}'}, -- back
 // {name: 'PIPE',   sym: '|'}, -- phrase delimiter
 // read = SPACE
+// - is data maybe (data point might not be present)
+// ? is object maybe (object might not be there)
 
 var operationsBySymbol = {};
 var operationsByName = {};
@@ -1906,12 +1919,10 @@ for (var i = 0; i < operationDefs.length; i++) {
     if (op.react) {
         reactionsByName[name] = true;
         withReactionsByName[name] = true;
-    } else if (op.with_react) {
-        withReactionsByName[name] = true;
     }
 }
 
-var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, monitor) {
+var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts) {
     classCallCheck(this, NyanWord);
 
 
@@ -1922,6 +1933,7 @@ var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, mon
     this.topic = topic || null;
     this.alias = alias || null;
     this.monitor = monitor || false;
+    this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
     // this.useCapture =
 };
 
@@ -2042,7 +2054,7 @@ function parsePhrase(str) {
 
         var rawWord = rawWords[_i6];
         console.log('word=', rawWord);
-        var chunks = rawWord.split(/([(?!:)])/).map(function (d) {
+        var chunks = rawWord.split(/([(?!:.)])/).map(function (d) {
             return d.trim();
         }).filter(function (d) {
             return d;
@@ -2053,6 +2065,8 @@ function parsePhrase(str) {
         var operation = namesBySymbol[firstChar];
         var start = operation ? 1 : 0;
         var _name = nameAndOperation.slice(start);
+        var extracts = [];
+
         var maybe = false;
         var monitor = false;
         var topic = null;
@@ -2060,39 +2074,63 @@ function parsePhrase(str) {
         var need = false;
 
         while (chunks.length) {
+
             var c = chunks.shift();
 
-            if (c === '?') {
-                maybe = true;
-                continue;
-            }
+            switch (c) {
 
-            if (c === '!') {
-                need = true;
-                continue;
-            }
+                case '.':
 
-            if (c === ':') {
-                if (chunks.length) {
-                    var next = chunks[0];
-                    if (next === '(') {
-                        monitor = true;
-                    } else {
-                        topic = next;
+                    var prop = chunks.length && chunks[0]; // todo assert not operation
+                    var silentFail = chunks.length > 1 && chunks[1] === '?';
+
+                    if (prop) {
+                        extracts.push({ name: prop, silentFail: silentFail });
+                        chunks.shift(); // remove word from queue
+                        if (silentFail) chunks.shift(); // remove ? from queue
                     }
-                } else {
-                    monitor = true;
-                }
-                continue;
-            }
 
-            if (c === '(' && chunks.length) {
-                alias = chunks[0];
+                    break;
+
+                case '?':
+
+                    maybe = true;
+                    break;
+
+                case '!':
+
+                    need = true;
+                    break;
+
+                case ':':
+
+                    if (chunks.length) {
+                        var next = chunks[0];
+                        if (next === '(') {
+                            monitor = true;
+                        } else {
+                            topic = next;
+                            chunks.shift(); // remove topic from queue
+                        }
+                    } else {
+                        monitor = true;
+                    }
+
+                    break;
+
+                case '(':
+
+                    if (chunks.length) {
+                        alias = chunks.shift(); // todo assert not operation
+                    }
+
+                    break;
+
             }
         }
 
         alias = alias || topic || _name;
-        var nw = new NyanWord(_name, operation, maybe, need, topic, alias, monitor);
+        var nw = new NyanWord(_name, operation, maybe, need, topic, alias, monitor, extracts);
         words.push(nw);
     }
 
@@ -2104,13 +2142,21 @@ Nyan.parse = parse;
 function getPacketFromDataWord(scope, word) {
 
     var data = scope.find(word.name, !word.maybe);
-    return data && data.peek(word.topic);
+    var peek = data && data.peek(word.topic);
+    return peek;
 }
 
 function getSurveyFromDataWord(scope, word) {
 
     var data = scope.find(word.name, !word.maybe);
     return data && data.survey();
+}
+
+function throwError(msg) {
+    console.log('throwing ', msg);
+    var e = new Error(msg);
+    console.log(this, e);
+    throw e;
 }
 
 function getDoSkipNamedDupes(names) {
@@ -2162,9 +2208,20 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
 
     var len = phrase.length;
 
-    return function doReadMultiple(msg) {
+    return function doReadMultiple(msg, source) {
 
-        msg = isAndOperation && msg || {};
+        var result = {};
+
+        if (isAndOperation) {
+
+            if (!isObject(msg)) {
+                result[source] = msg;
+            } else {
+                for (var p in msg) {
+                    result[p] = msg[p];
+                }
+            }
+        }
 
         for (var i = 0; i < len; i++) {
             var word = phrase[i];
@@ -2182,7 +2239,7 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
                             key = _step$value[0],
                             value = _step$value[1];
 
-                        msg[key] = value;
+                        result[key] = value;
                     }
                 } catch (err) {
                     _didIteratorError = true;
@@ -2202,11 +2259,11 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
 
                 var packet = getPacketFromDataWord(scope, word);
                 var prop = word.monitor ? word.alias || word.topic : word.alias || word.name;
-                if (packet) msg[prop] = packet.msg;
+                if (packet) result[prop] = packet.msg;
             }
         }
 
-        return msg;
+        return result;
     };
 }
 
@@ -2223,9 +2280,32 @@ function getDataStream(scope, word, canPoll) {
     }
 }
 
+function isObject(v) {
+    if (v === null) return false;
+    return typeof v === 'function' || (typeof v === 'undefined' ? 'undefined' : _typeof(v)) === 'object';
+}
+
 function getEventStream(scope, word, node) {
 
     return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
+}
+
+function doExtracts(value, extracts) {
+
+    var result = value;
+    var len = extracts.length;
+
+    for (var i = 0; i < len; i++) {
+        var extract = extracts[i];
+        if (!isObject(result)) {
+            if (extract.silentFail) return undefined;
+
+            throwError('Cannot access property \'' + extract.name + '\' of ' + result);
+        }
+        result = result[extract.name];
+    }
+
+    return result;
 }
 
 function getNeedsArray(phrase) {
@@ -2236,15 +2316,50 @@ function getNeedsArray(phrase) {
     });
 }
 
+function getDoMsgHashExtract(words) {
+
+    var len = words.length;
+    var extractsByAlias = {};
+
+    for (var i = 0; i < len; i++) {
+
+        var word = words[i];
+        extractsByAlias[word.alias] = word.extracts;
+    }
+
+    return function (msg) {
+
+        var result = {};
+        for (var alias in extractsByAlias) {
+            var hasProp = msg.hasOwnProperty(alias);
+            if (hasProp) {
+                result[alias] = doExtracts(msg[alias], extractsByAlias[alias]);
+            }
+        }
+
+        return result;
+    };
+}
+
+function getDoMsgExtract(word) {
+
+    var extracts = word.extracts;
+
+    return function (msg) {
+        return doExtracts(msg, extracts);
+    };
+}
+
 function applyReaction(scope, bus, phrase, target) {
     // target is some event emitter
 
     var need = [];
     var skipDupes = [];
     var streams = [];
+    var extracts = [];
 
     if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
-        bus.addFrame(getDataStream(scope, phrase[0], true));
+        bus.addFrame(getDataStream(scope, phrase[0], false));
         return;
     }
 
@@ -2262,6 +2377,8 @@ function applyReaction(scope, bus, phrase, target) {
             streams.push(getEventStream(scope, word));
         }
 
+        if (word.extracts) extracts.push(word);
+
         if (word.need) need.push(word.alias);
     }
 
@@ -2271,14 +2388,18 @@ function applyReaction(scope, bus, phrase, target) {
 
         bus.merge().group().batch();
 
-        if (need.length) bus.whenKeys(need); // todo is alias here?
+        if (extracts.length) bus.msg(getDoMsgHashExtract(extracts));
+
+        if (need.length) bus.whenKeys(need);
 
         if (skipDupes.length) {
             bus.filter(getDoSkipNamedDupes(skipDupes));
         }
-    } else if (skipDupes.length) {
+    } else {
 
-        bus.skipDupes();
+        if (extracts.length) bus.msg(getDoMsgExtract(extracts[0]));
+
+        if (skipDupes.length) bus.skipDupes();
     }
 }
 
@@ -2288,10 +2409,12 @@ function applyProcess(scope, bus, phrase, context, node) {
 
     if (operation === 'READ') {
         bus.msg(getDoRead(scope, phrase));
-        bus.whenKeys(getNeedsArray(phrase));
+        var needs = getNeedsArray(phrase);
+        if (needs.length) bus.whenKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
-        bus.whenKeys(getNeedsArray(phrase));
+        var _needs = getNeedsArray(phrase);
+        if (_needs.length) bus.whenKeys(_needs);
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
