@@ -986,15 +986,15 @@ var Frame = function () {
             return this;
         }
     }, {
-        key: 'poll',
-        value: function poll() {
+        key: 'pull',
+        value: function pull() {
 
             var streams = this._streams;
             var len = streams.length;
 
             for (var i = 0; i < len; i++) {
                 var s = streams[i];
-                s.poll();
+                s.pull();
             }
         }
     }, {
@@ -1210,7 +1210,7 @@ var Stream = function () {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.poll = Func.NOOP; // to retrieve and emit stored values from a source
+        this.pull = Func.NOOP; // to retrieve and emit stored values from a source
         this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
     }
@@ -1323,7 +1323,7 @@ var Stream = function () {
     return Stream;
 }();
 
-Stream.fromMonitor = function (data, name, canPoll) {
+Stream.fromMonitor = function (data, name, canPull) {
 
     var stream = new Stream();
     var streamName = name || data.name;
@@ -1338,8 +1338,8 @@ Stream.fromMonitor = function (data, name, canPoll) {
         data.unsubscribe(toStream);
     };
 
-    if (canPoll) {
-        stream.poll = function () {
+    if (canPull) {
+        stream.pull = function () {
             var packet = data.survey();
             if (packet) {
                 var msg = packet._msg;
@@ -1355,7 +1355,7 @@ Stream.fromMonitor = function (data, name, canPoll) {
     return stream;
 };
 
-Stream.fromSubscribe = function (data, topic, name, canPoll) {
+Stream.fromSubscribe = function (data, topic, name, canPull) {
 
     var stream = new Stream();
     var streamName = name || topic || data.name;
@@ -1370,8 +1370,8 @@ Stream.fromSubscribe = function (data, topic, name, canPoll) {
         data.unsubscribe(toStream, topic);
     };
 
-    if (canPoll) {
-        stream.poll = function () {
+    if (canPull) {
+        stream.pull = function () {
             var packet = data.peek();
             if (packet) {
                 var msg = packet._msg;
@@ -1515,19 +1515,19 @@ var Bus = function () {
             return this;
         }
     }, {
-        key: 'poll',
-        value: function poll() {
+        key: 'pull',
+        value: function pull() {
 
             var frame1 = this._frames[0];
 
             if (frame1._streams.length > 0) {
-                frame1.poll();
+                frame1.pull();
                 return this;
             }
 
             if (this._frames.length !== 1) {
                 var frame2 = this._frames[1];
-                frame2.poll();
+                frame2.pull();
             }
 
             return this;
@@ -1877,7 +1877,8 @@ var Nyan = {};
 // then:  run, read, attr, and, style, write, blast, filter
 
 var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
-{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '%', then: true }];
+{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'SPRAY', sym: '<', then: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '>', then: true }];
+
 // cat, dog | & meow, kitten {*log} | =puppy
 
 
@@ -2186,6 +2187,57 @@ function getDoSkipNamedDupes(names) {
     };
 }
 
+function getDoWrite(scope, word) {
+
+    var data = scope.find(word.name, !word.maybe);
+
+    return function doWrite(msg, source, topic) {
+        data.write(msg, topic);
+    };
+}
+
+function getDoSpray(scope, phrase) {
+
+    var wordByAlias = {};
+    var dataByAlias = {};
+
+    var len = phrase.length;
+
+    for (var i = 0; i < len; i++) {
+        // todo, validate no dupe alias in word validator for spray
+
+        var word = phrase[i];
+        var data = scope.find(word.name, !word.maybe);
+        if (data) {
+            // might not exist if optional
+            wordByAlias[word.alias] = word;
+            dataByAlias[word.alias] = data;
+        }
+    }
+
+    return function doWrite(msg) {
+
+        for (var alias in msg) {
+
+            var _data = dataByAlias[alias];
+            if (_data) {
+                var _word = wordByAlias[alias];
+                var msgPart = msg[alias];
+                _data.silentWrite(msgPart, _word.topic);
+            }
+        }
+
+        for (var _alias in msg) {
+
+            var _data2 = dataByAlias[_alias];
+            if (_data2) {
+                var _word2 = wordByAlias[_alias];
+                _data2.refresh(_word2.topic);
+            }
+        }
+    };
+}
+
 function getDoRead(scope, phrase) {
 
     var len = phrase.length;
@@ -2276,16 +2328,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
     };
 }
 
-// get data stream -- store data in bus, emit into stream on poll()
+// get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPoll) {
+function getDataStream(scope, word, canPull) {
 
     var data = scope.find(word.name, !word.maybe);
     if (word.monitor) {
-        return Stream.fromMonitor(data, word.alias, canPoll);
+        return Stream.fromMonitor(data, word.alias, canPull);
     } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias, canPoll);
+        return Stream.fromSubscribe(data, word.topic, word.alias, canPull);
     }
 }
 
@@ -2430,8 +2482,10 @@ function applyProcess(scope, bus, phrase, context, node) {
         applyRunProcess(bus, phrase, context);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
-    } else if (operation === 'WRITE') {} else if (operation === 'SPRAY') {
-        // alias to target data points of different names, i.e. < cat(dog), meow(bunny)
+    } else if (operation === 'WRITE') {
+        bus.run(getDoWrite(scope, phrase[0]));
+    } else if (operation === 'SPRAY') {
+        bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
     }
 }
 
@@ -2938,7 +2992,7 @@ var Scope = function () {
 
 
         // write {name, topic, value} objects as a transaction
-        value: function _multiWriteArray(writeArray, dimension) {
+        value: function _multiWriteArray(writeArray) {
 
             var list = [];
 
