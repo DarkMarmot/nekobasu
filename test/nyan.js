@@ -67,7 +67,7 @@ describe('RootScope', function(){
             var d = world.data('ergo');
 
             d.write('meow');
-            const bus = world.react('ergo | *handle', watcher).poll();
+            const bus = world.react('ergo | *handle', watcher).pull();
 
 
             //bus.run(watcher.handle);
@@ -89,7 +89,7 @@ describe('RootScope', function(){
 
         d.write('fish');
         d.write('cow');
-        const bus = world.react('ergo | *handle', watcher).poll();
+        const bus = world.react('ergo | *handle', watcher).pull();
         d.write('bunny');
 
         //bus.run(watcher.handle);
@@ -112,7 +112,7 @@ describe('RootScope', function(){
 
         d1.write('fish');
         d2.write('cow');
-        const bus = world.react('village(grey), forest(green) | *handle', watcher).poll();
+        const bus = world.react('village(grey), forest(green) | *handle', watcher).pull();
         d2.write('bunny');
 
         //bus.run(watcher.handle);
@@ -136,7 +136,7 @@ describe('RootScope', function(){
         d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | *handle', watcher).poll();
+        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | *handle', watcher).pull();
         d2.write({moo: {spot: 5}});
         // d2.write('sunset');
         //bus.run(watcher.handle);
@@ -147,6 +147,53 @@ describe('RootScope', function(){
 
     });
 
+    it('can write to data', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+        var d3 = world.data('sea');
+        var d4 = world.data('grove');
+
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        d3.write('dog');
+        d4.write('mushroom');
+
+        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | =village', watcher).pull();
+        d2.write({moo: {spot: 5}});
+        // d2.write('sunset');
+        //bus.run(watcher.handle);
+
+        console.log('is', d1.read());
+        var name = d1.name;
+        assert.equal(name, 'village');
+
+    });
+
+    it('can write to data', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+        var d3 = world.data('sea');
+        var d4 = world.data('grove');
+
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        d3.write('dog');
+        d4.write('mushroom');
+
+        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | <village(green),grove:bunny(cave) ', watcher).pull();
+        d2.write({moo: {spot: 5}});
+        // d2.write('sunset');
+        //bus.run(watcher.handle);
+
+        console.log('is', d4.read('bunny'));
+        var name = d1.name;
+        assert.equal(name, 'village');
+
+    });
 
     //     it('can write data', function(){
     //

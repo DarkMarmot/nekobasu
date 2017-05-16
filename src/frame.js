@@ -86,14 +86,14 @@ class Frame {
 
     };
 
-    poll(){
+    pull(){
 
         const streams = this._streams;
         const len = streams.length;
 
         for(let i = 0; i < len; i++){
             const s = streams[i];
-            s.poll();
+            s.pull();
         }
 
     };

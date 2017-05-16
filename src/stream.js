@@ -11,7 +11,7 @@ class Stream {
         this.name = null;
         this.pool = null;
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
-        this.poll = F.NOOP; // to retrieve and emit stored values from a source
+        this.pull = F.NOOP; // to retrieve and emit stored values from a source
         this.processMethod = this.emit;
         this.actionMethod = null; // for run, transform, filter, name, delay
 
@@ -128,7 +128,7 @@ class Stream {
 }
 
 
-Stream.fromMonitor = function(data, name, canPoll){
+Stream.fromMonitor = function(data, name, canPull){
 
     const stream = new Stream();
     const streamName = name || data.name;
@@ -143,8 +143,8 @@ Stream.fromMonitor = function(data, name, canPoll){
         data.unsubscribe(toStream);
     };
 
-    if(canPoll){
-        stream.poll = function(){
+    if(canPull){
+        stream.pull = function(){
             const packet = data.survey();
             if(packet) {
                 const msg = packet._msg;
@@ -162,7 +162,7 @@ Stream.fromMonitor = function(data, name, canPoll){
 };
 
 
-Stream.fromSubscribe = function(data, topic, name, canPoll){
+Stream.fromSubscribe = function(data, topic, name, canPull){
 
     const stream = new Stream();
     const streamName = name || topic || data.name;
@@ -177,8 +177,8 @@ Stream.fromSubscribe = function(data, topic, name, canPoll){
         data.unsubscribe(toStream, topic);
     };
 
-    if(canPoll){
-        stream.poll = function(){
+    if(canPull){
+        stream.pull = function(){
             const packet = data.peek();
             if(packet) {
                 const msg = packet._msg;

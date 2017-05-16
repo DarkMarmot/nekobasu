@@ -143,18 +143,18 @@ class Bus {
 
     };
 
-    poll() {
+    pull() {
 
         const frame1 = this._frames[0];
 
         if(frame1._streams.length > 0){
-            frame1.poll();
+            frame1.pull();
             return this;
         }
 
         if(this._frames.length !== 1){
             const frame2 = this._frames[1];
-            frame2.poll();
+            frame2.pull();
         }
 
         return this;

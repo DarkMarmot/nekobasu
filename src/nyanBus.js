@@ -46,6 +46,65 @@ function getDoSkipNamedDupes(names){
 }
 
 
+function getDoWrite(scope, word){
+
+    const data = scope.find(word.name, !word.maybe);
+
+    return function doWrite(msg, source, topic) {
+        data.write(msg, topic);
+    };
+
+}
+
+
+function getDoSpray(scope, phrase){
+
+    const wordByAlias = {};
+    const dataByAlias = {};
+
+    const len = phrase.length;
+
+    for(let i = 0; i < len; i++){ // todo, validate no dupe alias in word validator for spray
+
+        const word = phrase[i];
+        const data = scope.find(word.name, !word.maybe);
+        if(data) { // might not exist if optional
+            wordByAlias[word.alias] = word;
+            dataByAlias[word.alias] = data;
+        }
+
+    }
+
+    return function doWrite(msg) {
+
+        for(const alias in msg){
+
+            const data = dataByAlias[alias];
+            if(data) {
+                const word = wordByAlias[alias];
+                const msgPart = msg[alias];
+                data.silentWrite(msgPart, word.topic);
+            }
+
+        }
+
+        for(const alias in msg){
+
+            const data = dataByAlias[alias];
+            if(data) {
+                const word = wordByAlias[alias];
+                data.refresh(word.topic);
+            }
+
+        }
+
+
+    };
+
+
+}
+
+
 function getDoRead(scope, phrase){
 
     const len = phrase.length;
@@ -128,16 +187,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 }
 
 
-// get data stream -- store data in bus, emit into stream on poll()
+// get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPoll) {
+function getDataStream(scope, word, canPull) {
 
     const data = scope.find(word.name, !word.maybe);
     if(word.monitor){
-        return Stream.fromMonitor(data, word.alias, canPoll);
+        return Stream.fromMonitor(data, word.alias, canPull);
     } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias, canPoll);
+        return Stream.fromSubscribe(data, word.topic, word.alias, canPull);
     }
 
 }
@@ -305,12 +364,16 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
-
+        bus.run(getDoWrite(scope, phrase[0]));
     } else if (operation === 'SPRAY') {
-        // alias to target data points of different names, i.e. < cat(dog), meow(bunny)
+        bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
+
     }
 
 }
+
+
+
 
 
 function applyRunProcess(bus, phrase, context){

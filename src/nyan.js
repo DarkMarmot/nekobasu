@@ -18,10 +18,12 @@ const operationDefs = [
     {name: 'AND',    sym: '&',  then: true },
     {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
     {name: 'WRITE',  sym: '=',  then: true,  solo: true },
+    {name: 'SPRAY',  sym: '<',  then: true },
     {name: 'RUN',    sym: '*',  then: true, output: true },
-    {name: 'FILTER', sym: '%',  then: true }
+    {name: 'FILTER', sym: '>',  then: true }
 
 ];
+
 // cat, dog | & meow, kitten {*log} | =puppy
 
 

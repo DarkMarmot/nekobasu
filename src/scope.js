@@ -375,7 +375,7 @@ class Scope{
     };
 
     // write {name, topic, value} objects as a transaction
-    _multiWriteArray(writeArray, dimension){
+    _multiWriteArray(writeArray){
 
         const list = [];
 
