@@ -41,7 +41,7 @@ class Frame {
         return [].concat(this._streams);
     }
 
-    applySyncProcess(name, action, isFactory){ // generate means action function must be called to generate stateful action
+    applySyncProcess(name, action, isFactory, ...args){ // generate means action function must be called to generate stateful action
 
         this._process = name;
         this._action = action;
@@ -53,7 +53,7 @@ class Frame {
         if(isFactory) {
             for (let i = 0; i < len; i++) {
                 const s = streams[i];
-                s.actionMethod = action();
+                s.actionMethod = action(...args);
                 s.processMethod = s[name];
             }
         } else {
@@ -98,6 +98,19 @@ class Frame {
 
     };
 
+    source(name) {
+
+        const streams = this._streams;
+        const len = streams.length;
+
+        for(let i = 0; i < len; i++){
+            const s = streams[i];
+            s.name = name;
+        }
+        return this;
+
+    }
+
     run(func, stateful){
         return this.applySyncProcess('doRun', func, stateful);
     };
@@ -111,10 +124,6 @@ class Frame {
         return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
     };
 
-    source(fStr, stateful){
-        return this.applySyncProcess('doSource', F.FUNCTOR(fStr), stateful);
-    };
-
     delay(fNum, stateful){
         return this.applySyncProcess('doDelay', F.FUNCTOR(fNum), stateful);
     };
@@ -125,6 +134,10 @@ class Frame {
 
     skipDupes() {
         return this.applySyncProcess('doFilter', F.getSkipDupes, true);
+    };
+
+    hasKeys(keys) {
+        return this.applySyncProcess('doFilter', F.getHasKeys, true, keys);
     };
 
     clear(factory, ...args){

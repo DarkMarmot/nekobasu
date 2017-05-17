@@ -22,7 +22,7 @@ class Stream {
         if(this.dead) // true if canceled or disposed midstream
             return this;
 
-        this.processMethod(msg, source); // handle method = doDelay, doGroup, doHold, , doFilter
+        this.processMethod(msg, this.name || source); // handle method = doDelay, doGroup, doHold, , doFilter
 
         return this;
 
@@ -45,6 +45,7 @@ class Stream {
     emit(msg, source, topic, thisStream){
 
         thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
+        source = thisStream.name || source;
 
         const children = thisStream.children;
         const len = children.length;
@@ -92,8 +93,10 @@ class Stream {
 
     doSource(msg, source, topic) {
 
-        source = this.actionMethod(msg, source, topic);
-        this.emit(msg, source, topic);
+        this.name = this.actionMethod(); // todo shoehorned -- this needs it's own setup
+        //source = this.actionMethod(msg, source, topic);
+        // this.name = function(){ return }
+        this.emit(msg, this.name || source, topic);
 
     };
 
@@ -112,7 +115,7 @@ class Stream {
 
     doPool(msg, source, topic) {
 
-        this.pool.handle(msg, source, topic);
+        this.pool.handle(msg, this.name || source, topic);
 
     };
 
@@ -136,7 +139,7 @@ Stream.fromMonitor = function(data, name, canPull){
     stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.emit(msg, streamName || source, topic);
+        stream.emit(msg, streamName, topic);
     };
 
     stream.cleanupMethod = function(){
@@ -167,10 +170,10 @@ Stream.fromSubscribe = function(data, topic, name, canPull){
     const stream = new Stream();
     const streamName = name || topic || data.name;
 
-    stream.name = streamName;
+    //stream.name = streamName;
 
     const toStream = function(msg, source, topic){
-        stream.emit(msg, streamName || source, topic);
+        stream.emit(msg, streamName, topic);
     };
 
     stream.cleanupMethod = function(){

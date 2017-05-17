@@ -150,7 +150,7 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
             if(isAndOperation){
 
-                if(!isObject(msg)){
+                if(source){
                     result[source] = msg;
                 } else {
                     for (const p in msg) {
@@ -325,7 +325,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
             bus.msg(getDoMsgHashExtract(extracts));
 
         if(need.length)
-            bus.whenKeys(need);
+            bus.hasKeys(need);
 
         if(skipDupes.length){
             bus.filter(getDoSkipNamedDupes(skipDupes));
@@ -360,7 +360,7 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
-        applyRunProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -374,6 +374,25 @@ function applyProcess(scope, bus, phrase, context, node) {
 
 
 
+function applyMsgProcess(bus, phrase, context){
+
+    const len = phrase.length;
+
+    for(let i = 0; i < len; i++) {
+
+        const word = phrase[i];
+        const name = word.name;
+        const method = context[name];
+
+        const f = function (msg, source, topic) {
+            return method.call(context, msg, source, topic);
+        };
+
+        bus.msg(f);
+
+    }
+
+}
 
 
 function applyRunProcess(bus, phrase, context){
@@ -435,7 +454,14 @@ function nyanToBus(scope, bus, str, context, target){
         const name = cmd.name;
         const phrase = cmd.phrase;
 
-        if(name === 'FORK'){
+        console.log('----', name, phrase);
+
+        if(name === 'JOIN') {
+            bus = bus.join();
+            bus.merge();
+            bus.group();
+            bus.sync();
+        } else if(name === 'FORK'){
             bus = bus.fork();
         } else if (name === 'BACK'){
             bus = bus.back();

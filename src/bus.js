@@ -97,7 +97,7 @@ class Bus {
         F.ASSERT_NOT_HOLDING(this);
         const fork = new Bus(this.scope);
         fork.parent = this;
-        _wireFrames(this._currentFrame, fork._currentFrame);
+        _wireFrames(this._currentFrame, fork._currentFrame, true);
 
         return fork;
     };
@@ -110,6 +110,14 @@ class Bus {
         return this.parent;
 
     };
+
+    join() {
+
+        const parent = this.back();
+        parent.add(this);
+        return parent;
+
+    }
 
     add(bus) {
 
@@ -260,7 +268,7 @@ class Bus {
 
         this.holding ?
             this._currentFrame.timer(factory, ...args) :
-            this.addFrame().hold().timer(factory, ...args);
+            this.addFrame().hold().reduce(F.getKeepLast).timer(factory, ...args);
         return this;
 
     };
@@ -269,7 +277,7 @@ class Bus {
 
         this.holding ?
             this._currentFrame.until(factory, ...args) :
-            this.addFrame().hold().until(factory, ...args).timer(F.getSyncTimer);
+            this.addFrame().hold().reduce(F.getKeepLast).until(factory, ...args).timer(F.getSyncTimer);
         return this;
 
     };
@@ -278,7 +286,7 @@ class Bus {
 
         this.holding ?
             this._currentFrame.when(factory, ...args) :
-            this.addFrame().hold().when(factory, ...args).timer(F.getSyncTimer);
+            this.addFrame().hold().reduce(F.getKeepLast).when(factory, ...args).timer(F.getSyncTimer);
         return this;
 
     };
@@ -351,6 +359,14 @@ class Bus {
 
     };
 
+    hasKeys(keys) {
+
+        F.ASSERT_NOT_HOLDING(this);
+        this.addFrame().hasKeys(keys);
+        return this;
+
+    };
+
     skipDupes() {
 
         F.ASSERT_NOT_HOLDING(this);
@@ -385,7 +401,7 @@ class Bus {
 // send messages from streams in one frame to new empty streams in another frame
 // injects new streams to frame 2
 
-function _wireFrames(frame1, frame2) {
+function _wireFrames(frame1, frame2, isForking) {
 
     const streams1 = frame1._streams;
     const streams2 = frame2._streams;
@@ -396,7 +412,10 @@ function _wireFrames(frame1, frame2) {
 
         const s1 = streams1[i];
         const s2 = new Stream(frame2);
-        s2.name = s1.name;
+
+        if(!isForking)
+            s2.name = s1.name;
+
         streams2.push(s2);
         s1.addTarget(s2);
 

@@ -181,6 +181,40 @@ var Func = {
         var f = function f(msg, source) {
 
             var g = groupBy(msg, source);
+            if (g) {
+                hash[g] = msg;
+            } else {
+                // no source, copy message props into hash to merge nameless streams of key data
+                for (var k in msg) {
+                    hash[k] = msg[k];
+                }
+            }
+
+            return hash;
+        };
+
+        f.reset = function () {
+            for (var k in hash) {
+                delete hash[k];
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return hash;
+        };
+
+        return f;
+    },
+
+    getHash: function getHash(groupBy) {
+
+        groupBy = groupBy || TO_SOURCE;
+        var hash = {};
+
+        var f = function f(msg, source) {
+
+            var g = groupBy(msg, source);
             hash[g] = msg;
             return hash;
         };
@@ -357,6 +391,27 @@ var Func = {
         };
 
         return f;
+    },
+
+    getHasKeys: function getHasKeys(keys, noLatch) {
+
+        var latched = false;
+        var len = keys.length;
+
+        return function (msg) {
+
+            if (latched || !len) return true;
+
+            for (var i = 0; i < len; i++) {
+
+                var k = keys[i];
+                if (!msg.hasOwnProperty(k)) return false;
+            }
+
+            if (!noLatch) latched = true;
+
+            return true;
+        };
     },
 
     getSkipDupes: function getSkipDupes() {
@@ -907,6 +962,7 @@ var PoolAspects = function PoolAspects() {
     this.when = null;
     this.clear = null;
     this.timer = null;
+    this.keep = null;
 };
 
 //
@@ -952,9 +1008,13 @@ var Frame = function () {
             var len = streams.length;
 
             if (isFactory) {
+                for (var _len = arguments.length, args = Array(_len > 3 ? _len - 3 : 0), _key = 3; _key < _len; _key++) {
+                    args[_key - 3] = arguments[_key];
+                }
+
                 for (var i = 0; i < len; i++) {
                     var s = streams[i];
-                    s.actionMethod = action();
+                    s.actionMethod = action.apply(undefined, args);
                     s.processMethod = s[name];
                 }
             } else {
@@ -998,6 +1058,19 @@ var Frame = function () {
             }
         }
     }, {
+        key: 'source',
+        value: function source(name) {
+
+            var streams = this._streams;
+            var len = streams.length;
+
+            for (var i = 0; i < len; i++) {
+                var s = streams[i];
+                s.name = name;
+            }
+            return this;
+        }
+    }, {
         key: 'run',
         value: function run(func, stateful) {
             return this.applySyncProcess('doRun', func, stateful);
@@ -1011,11 +1084,6 @@ var Frame = function () {
         key: 'transform',
         value: function transform(fAny, stateful) {
             return this.applySyncProcess('doTransform', Func.FUNCTOR(fAny), stateful);
-        }
-    }, {
-        key: 'source',
-        value: function source(fStr, stateful) {
-            return this.applySyncProcess('doSource', Func.FUNCTOR(fStr), stateful);
         }
     }, {
         key: 'delay',
@@ -1033,10 +1101,15 @@ var Frame = function () {
             return this.applySyncProcess('doFilter', Func.getSkipDupes, true);
         }
     }, {
+        key: 'hasKeys',
+        value: function hasKeys(keys) {
+            return this.applySyncProcess('doFilter', Func.getHasKeys, true, keys);
+        }
+    }, {
         key: 'clear',
         value: function clear(factory) {
-            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-                args[_key - 1] = arguments[_key];
+            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
             }
 
             return this.buildPoolAspect.apply(this, ['clear', factory].concat(args));
@@ -1048,8 +1121,8 @@ var Frame = function () {
         // factory should define content and reset methods have signature f(msg, source) return f.content()
 
         value: function reduce(factory) {
-            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-                args[_key2 - 1] = arguments[_key2];
+            for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
+                args[_key3 - 1] = arguments[_key3];
             }
 
             return this.buildPoolAspect.apply(this, ['keep', factory].concat(args));
@@ -1057,8 +1130,8 @@ var Frame = function () {
     }, {
         key: 'timer',
         value: function timer(factory) {
-            for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-                args[_key3 - 1] = arguments[_key3];
+            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
+                args[_key4 - 1] = arguments[_key4];
             }
 
             return this.buildPoolAspect.apply(this, ['timer', factory].concat(args));
@@ -1066,8 +1139,8 @@ var Frame = function () {
     }, {
         key: 'when',
         value: function when(factory) {
-            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
-                args[_key4 - 1] = arguments[_key4];
+            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
+                args[_key5 - 1] = arguments[_key5];
             }
 
             return this.buildPoolAspect.apply(this, ['when', factory].concat(args));
@@ -1075,8 +1148,8 @@ var Frame = function () {
     }, {
         key: 'until',
         value: function until(factory) {
-            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
-                args[_key5 - 1] = arguments[_key5];
+            for (var _len6 = arguments.length, args = Array(_len6 > 1 ? _len6 - 1 : 0), _key6 = 1; _key6 < _len6; _key6++) {
+                args[_key6 - 1] = arguments[_key6];
             }
 
             return this.buildPoolAspect.apply(this, ['until', factory].concat(args));
@@ -1087,8 +1160,8 @@ var Frame = function () {
 
             if (aspect === 'timer') this._holding = false;
 
-            for (var _len6 = arguments.length, args = Array(_len6 > 2 ? _len6 - 2 : 0), _key6 = 2; _key6 < _len6; _key6++) {
-                args[_key6 - 2] = arguments[_key6];
+            for (var _len7 = arguments.length, args = Array(_len7 > 2 ? _len7 - 2 : 0), _key7 = 2; _key7 < _len7; _key7++) {
+                args[_key7 - 2] = arguments[_key7];
             }
 
             this._poolAspects[aspect] = [factory].concat(args);
@@ -1222,7 +1295,7 @@ var Stream = function () {
             if (this.dead) // true if canceled or disposed midstream
                 return this;
 
-            this.processMethod(msg, source); // handle method = doDelay, doGroup, doHold, , doFilter
+            this.processMethod(msg, this.name || source); // handle method = doDelay, doGroup, doHold, , doFilter
 
             return this;
         }
@@ -1245,6 +1318,7 @@ var Stream = function () {
         value: function emit(msg, source, topic, thisStream) {
 
             thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
+            source = thisStream.name || source;
 
             var children = thisStream.children;
             var len = children.length;
@@ -1289,8 +1363,10 @@ var Stream = function () {
         key: 'doSource',
         value: function doSource(msg, source, topic) {
 
-            source = this.actionMethod(msg, source, topic);
-            this.emit(msg, source, topic);
+            this.name = this.actionMethod(); // todo shoehorned -- this needs it's own setup
+            //source = this.actionMethod(msg, source, topic);
+            // this.name = function(){ return }
+            this.emit(msg, this.name || source, topic);
         }
     }, {
         key: 'doRun',
@@ -1309,7 +1385,7 @@ var Stream = function () {
         key: 'doPool',
         value: function doPool(msg, source, topic) {
 
-            this.pool.handle(msg, source, topic);
+            this.pool.handle(msg, this.name || source, topic);
         }
     }, {
         key: 'destroy',
@@ -1331,7 +1407,7 @@ Stream.fromMonitor = function (data, name, canPull) {
     stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName || source, topic);
+        stream.emit(msg, streamName, topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1360,10 +1436,10 @@ Stream.fromSubscribe = function (data, topic, name, canPull) {
     var stream = new Stream();
     var streamName = name || topic || data.name;
 
-    stream.name = streamName;
+    //stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName || source, topic);
+        stream.emit(msg, streamName, topic);
     };
 
     stream.cleanupMethod = function () {
@@ -1466,7 +1542,7 @@ var Bus = function () {
             Func.ASSERT_NOT_HOLDING(this);
             var fork = new Bus(this.scope);
             fork.parent = this;
-            _wireFrames(this._currentFrame, fork._currentFrame);
+            _wireFrames(this._currentFrame, fork._currentFrame, true);
 
             return fork;
         }
@@ -1477,6 +1553,14 @@ var Bus = function () {
             if (!this._parent) throw new Error('Cannot exit fork, parent does not exist!');
 
             return this.parent;
+        }
+    }, {
+        key: 'join',
+        value: function join() {
+
+            var parent = this.back();
+            parent.add(this);
+            return parent;
         }
     }, {
         key: 'add',
@@ -1647,37 +1731,37 @@ var Bus = function () {
     }, {
         key: 'timer',
         value: function timer(factory) {
-            var _currentFrame3, _addFrame$hold2;
+            var _currentFrame3, _addFrame$hold$reduce;
 
             for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
                 args[_key3 - 1] = arguments[_key3];
             }
 
-            this.holding ? (_currentFrame3 = this._currentFrame).timer.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold2 = this.addFrame().hold()).timer.apply(_addFrame$hold2, [factory].concat(args));
+            this.holding ? (_currentFrame3 = this._currentFrame).timer.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold$reduce = this.addFrame().hold().reduce(Func.getKeepLast)).timer.apply(_addFrame$hold$reduce, [factory].concat(args));
             return this;
         }
     }, {
         key: 'until',
         value: function until(factory) {
-            var _currentFrame4, _addFrame$hold3;
+            var _currentFrame4, _addFrame$hold$reduce2;
 
             for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
                 args[_key4 - 1] = arguments[_key4];
             }
 
-            this.holding ? (_currentFrame4 = this._currentFrame).until.apply(_currentFrame4, [factory].concat(args)) : (_addFrame$hold3 = this.addFrame().hold()).until.apply(_addFrame$hold3, [factory].concat(args)).timer(Func.getSyncTimer);
+            this.holding ? (_currentFrame4 = this._currentFrame).until.apply(_currentFrame4, [factory].concat(args)) : (_addFrame$hold$reduce2 = this.addFrame().hold().reduce(Func.getKeepLast)).until.apply(_addFrame$hold$reduce2, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {
         key: 'when',
         value: function when(factory) {
-            var _currentFrame5, _addFrame$hold4;
+            var _currentFrame5, _addFrame$hold$reduce3;
 
             for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
                 args[_key5 - 1] = arguments[_key5];
             }
 
-            this.holding ? (_currentFrame5 = this._currentFrame).when.apply(_currentFrame5, [factory].concat(args)) : (_addFrame$hold4 = this.addFrame().hold()).when.apply(_addFrame$hold4, [factory].concat(args)).timer(Func.getSyncTimer);
+            this.holding ? (_currentFrame5 = this._currentFrame).when.apply(_currentFrame5, [factory].concat(args)) : (_addFrame$hold$reduce3 = this.addFrame().hold().reduce(Func.getKeepLast)).when.apply(_addFrame$hold$reduce3, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {
@@ -1747,6 +1831,14 @@ var Bus = function () {
             Func.ASSERT_NOT_HOLDING(this);
 
             this.addFrame().filter(func);
+            return this;
+        }
+    }, {
+        key: 'hasKeys',
+        value: function hasKeys(keys) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().hasKeys(keys);
             return this;
         }
     }, {
@@ -1853,7 +1945,7 @@ var Bus = function () {
 // send messages from streams in one frame to new empty streams in another frame
 // injects new streams to frame 2
 
-function _wireFrames(frame1, frame2) {
+function _wireFrames(frame1, frame2, isForking) {
 
     var streams1 = frame1._streams;
     var streams2 = frame2._streams;
@@ -1864,7 +1956,9 @@ function _wireFrames(frame1, frame2) {
 
         var s1 = streams1[i];
         var s2 = new Stream(frame2);
-        s2.name = s1.name;
+
+        if (!isForking) s2.name = s1.name;
+
         streams2.push(s2);
         s1.addTarget(s2);
     }
@@ -1943,8 +2037,8 @@ function parse(str, isProcess) {
 
     var sentences = [];
 
-    // split on parentheses and remove empty chunks (todo optimize for speed)
-    var chunks = str.split(/([{}])/).map(function (d) {
+    // split on curlies and remove empty chunks (todo optimize for parsing speed, batch loop operations?)
+    var chunks = str.split(/([{}]|-})/).map(function (d) {
         return d.trim();
     }).filter(function (d) {
         return d;
@@ -1953,12 +2047,11 @@ function parse(str, isProcess) {
     for (var _i = 0; _i < chunks.length; _i++) {
 
         var chunk = chunks[_i];
-        var sentence = chunk === '}' || chunk === '{' ? chunk : parseSentence(chunk);
+        var sentence = chunk === '}' || chunk === '{' || chunk === '-}' ? chunk : parseSentence(chunk);
 
         if (typeof sentence === 'string' || sentence.length > 0) sentences.push(sentence);
     }
 
-    if (str.indexOf('poo') !== -1) console.log(str, sentences);
     return validate(sentences, isProcess);
 }
 
@@ -1970,6 +2063,7 @@ function validate(sentences, isProcess) {
     for (var _i2 = 0; _i2 < sentences.length; _i2++) {
         var s = sentences[_i2];
         if (typeof s !== 'string') {
+
             for (var j = 0; j < s.length; j++) {
                 var phrase = s[j];
                 if (firstPhrase && !isProcess) {
@@ -1985,6 +2079,8 @@ function validate(sentences, isProcess) {
             cmdList.push({ name: 'FORK' });
         } else if (s === '}') {
             cmdList.push({ name: 'BACK' });
+        } else if (s === '-}') {
+            cmdList.push({ name: 'JOIN' });
         }
     }
 
@@ -2275,7 +2371,7 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
 
         if (isAndOperation) {
 
-            if (!isObject(msg)) {
+            if (source) {
                 result[source] = msg;
             } else {
                 for (var p in msg) {
@@ -2451,7 +2547,7 @@ function applyReaction(scope, bus, phrase, target) {
 
         if (extracts.length) bus.msg(getDoMsgHashExtract(extracts));
 
-        if (need.length) bus.whenKeys(need);
+        if (need.length) bus.hasKeys(need);
 
         if (skipDupes.length) {
             bus.filter(getDoSkipNamedDupes(skipDupes));
@@ -2479,7 +2575,7 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
-        applyRunProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -2489,7 +2585,7 @@ function applyProcess(scope, bus, phrase, context, node) {
     }
 }
 
-function applyRunProcess(bus, phrase, context) {
+function applyMsgProcess(bus, phrase, context) {
 
     var len = phrase.length;
 
@@ -2503,7 +2599,7 @@ function applyRunProcess(bus, phrase, context) {
             return method.call(context, msg, source, topic);
         };
 
-        bus.run(f);
+        bus.msg(f);
     };
 
     for (var i = 0; i < len; i++) {
@@ -2520,7 +2616,7 @@ function applyFilterProcess(bus, phrase, context) {
 
     var len = phrase.length;
 
-    var _loop2 = function _loop2(i) {
+    var _loop3 = function _loop3(i) {
 
         var word = phrase[i];
         var name = word.name;
@@ -2534,7 +2630,7 @@ function applyFilterProcess(bus, phrase, context) {
     };
 
     for (var i = 0; i < len; i++) {
-        _loop2(i);
+        _loop3(i);
     }
 }
 
@@ -2549,7 +2645,14 @@ function nyanToBus(scope, bus, str, context, target) {
         var name = cmd.name;
         var phrase = cmd.phrase;
 
-        if (name === 'FORK') {
+        console.log('----', name, phrase);
+
+        if (name === 'JOIN') {
+            bus = bus.join();
+            bus.merge();
+            bus.group();
+            bus.sync();
+        } else if (name === 'FORK') {
             bus = bus.fork();
         } else if (name === 'BACK') {
             bus = bus.back();

@@ -188,6 +188,41 @@ const Func = {
         const f = function(msg, source){
 
             const g = groupBy(msg, source);
+            if(g) {
+                hash[g] = msg;
+            } else { // no source, copy message props into hash to merge nameless streams of key data
+                for(const k in msg){
+                    hash[k] = msg[k];
+                }
+            }
+
+            return hash;
+
+        };
+
+        f.reset = function(){
+            for(const k in hash){
+                delete hash[k];
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function(){
+            return hash;
+        };
+
+        return f;
+
+    },
+
+    getHash: function(groupBy){
+
+        groupBy = groupBy || TO_SOURCE;
+        const hash = {};
+
+        const f = function(msg, source){
+
+            const g = groupBy(msg, source);
             hash[g] = msg;
             return hash;
 
@@ -207,6 +242,7 @@ const Func = {
         return f;
 
     },
+
 
     getKeepLast: function(n){
 
@@ -381,6 +417,33 @@ const Func = {
         return f;
 
     },
+
+    getHasKeys: function(keys, noLatch) {
+
+        let latched = false;
+        const len = keys.length;
+
+        return function (msg) {
+
+            if(latched || !len)
+                return true;
+
+            for(let i = 0; i < len; i++) {
+
+                const k = keys[i];
+                if(!msg.hasOwnProperty(k))
+                    return false;
+            }
+
+            if(!noLatch)
+                latched = true;
+
+            return true;
+
+        }
+
+    },
+
 
     getSkipDupes: function() {
 

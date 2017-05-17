@@ -95,21 +95,19 @@ function parse(str, isProcess) {
 
     const sentences = [];
 
-    // split on parentheses and remove empty chunks (todo optimize for speed)
-    let chunks = str.split(/([{}])/).map(d => d.trim()).filter(d => d);
+    // split on curlies and remove empty chunks (todo optimize for parsing speed, batch loop operations?)
+    let chunks = str.split(/([{}]|-})/).map(d => d.trim()).filter(d => d);
 
     for(let i = 0; i < chunks.length; i++){
 
         const chunk = chunks[i];
-        const sentence = (chunk === '}' || chunk === '{') ? chunk : parseSentence(chunk);
+        const sentence = (chunk === '}' || chunk === '{' || chunk === '-}') ? chunk : parseSentence(chunk);
 
         if(typeof sentence === 'string' || sentence.length > 0)
             sentences.push(sentence);
 
     }
 
-    if(str.indexOf('poo') !== -1)
-        console.log(str, sentences);
     return validate(sentences, isProcess);
 
 
@@ -123,6 +121,7 @@ function validate(sentences, isProcess){
     for(let i = 0; i < sentences.length; i++){
         const s = sentences[i];
         if(typeof s !== 'string') {
+
             for (let j = 0; j < s.length; j++) {
                 const phrase = s[j];
                 if(firstPhrase && !isProcess) {
@@ -135,10 +134,13 @@ function validate(sentences, isProcess){
                     cmdList.push({name: 'PROCESS', phrase: phrase});
                 }
             }
+
         } else if (s === '{') {
             cmdList.push({name: 'FORK'});
         } else if (s === '}') {
             cmdList.push({name: 'BACK'});
+        } else if (s === '-}') {
+            cmdList.push({name: 'JOIN'});
         }
     }
 

@@ -23,6 +23,14 @@ Watcher.prototype.handle = function(msg, source, topic){
 
 };
 
+Watcher.prototype.meow = function(msg, source, topic){
+
+    console.log('meow:', msg, source);
+    callback(msg, source, topic);
+    return 'meow done meow!';
+
+};
+
 var watcher = new Watcher('moo');
 
 
@@ -190,6 +198,37 @@ describe('RootScope', function(){
         //bus.run(watcher.handle);
 
         console.log('is', d4.read('bunny'));
+        var name = d1.name;
+        assert.equal(name, 'village');
+
+    });
+
+
+    it('can write to datab', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+        var d3 = world.data('sea');
+        var d4 = world.data('grove');
+
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+         // d3.write('dog');
+        d4.write('mushroom');
+
+        const bus = world.react('forest (green), sea!  { (tooth) | sea -} | &sea, grove(cave) | (poo) | =village', watcher).pull();
+        // const bus = world.react('forest!, sea | *handle', watcher).pull();
+
+        d3.write('dog');
+        Catbus.flush();
+        // Catbus.flush();
+
+        //d2.write({moo: {spot: 5}});
+        // d2.write('sunset');
+        //bus.run(watcher.handle);
+
+        console.log('is', d1.read(), msgLog);
         var name = d1.name;
         assert.equal(name, 'village');
 

@@ -402,10 +402,10 @@ describe('Catbus', function(){
             it('can group by source', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.msg(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2}); //.last(3).source('roll');
 
                 var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.msg(function(msg){ return -msg});
+                b2.msg(function(msg){ return -msg}); //.last(3).source('drop');
 
                 b1.add(b2);
                 b1.last(3);
@@ -480,13 +480,11 @@ describe('Catbus', function(){
             it('can need by source', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');
-                b1.msg(function(msg){ return msg * 2});
+                b1.msg(function(msg){ return msg * 2}).last(3).source('roll');
 
-                var b2 = Catbus.fromEvent(dice, 'drop');
-                b2.msg(function(msg){ return -msg});
+                var b2 = Catbus.fromEvent(dice, 'drop').msg(function(msg){ return -msg}).last(3).source('drop');
 
                 b1.add(b2);
-                b1.last(3);
                 b1.merge().group().whenKeys(['roll','drop']).batch();
 
                 b1.run(log);

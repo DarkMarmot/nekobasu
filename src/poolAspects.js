@@ -8,7 +8,7 @@ class PoolAspects {
         this.when       = null;
         this.clear      = null;
         this.timer      = null;
-
+        this.keep       = null;
     };
 
 }
