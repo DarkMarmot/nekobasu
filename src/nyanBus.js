@@ -50,8 +50,8 @@ function getDoWrite(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
 
-    return function doWrite(msg, source, topic) {
-        data.write(msg, topic);
+    return function doWrite(msg) {
+        data.write(msg, word.topic);
     };
 
 }
@@ -343,6 +343,54 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
 }
 
+function applyMethod(bus, word) {
+
+    const method = word.extracts[0];
+
+    switch(method){
+
+        case 'true':
+            bus.msg(true);
+            break;
+
+        case 'false':
+            bus.msg(false);
+            break;
+
+        case 'null':
+            bus.msg(null);
+            break;
+
+        case 'undefined':
+            bus.msg(undefined);
+            break;
+
+        case 'array':
+            bus.msg([]);
+            break;
+
+        case 'object':
+            bus.msg({});
+            break;
+
+        case 'truthy':
+            bus.filter(function(msg){ return !!msg; });
+            break;
+
+        case 'falsey':
+            bus.filter(function(msg){ return !msg;});
+            break;
+
+        case 'string':
+            bus.msg(function(){ return word.extracts[1];});
+            break;
+
+            // throttle x, debounce x, delay x, last x, first x, all
+
+    }
+
+}
+
 function applyProcess(scope, bus, phrase, context, node) {
 
     const operation = phrase[0].operation; // same for all words in a process phrase
@@ -355,8 +403,10 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
         const needs = getNeedsArray(phrase);
-        if(needs.length)
+        if (needs.length)
             bus.whenKeys(needs);
+    } else if (operation === 'METHOD') {
+        applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {

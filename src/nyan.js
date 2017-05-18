@@ -13,6 +13,7 @@ const operationDefs = [
     {name: 'WATCH',  sym: null, react: true, follow: true},
     {name: 'EVENT',  sym: '@',  react: true, event: true},
     {name: 'ALIAS',  sym: '(',  then: true, solo: true},
+    {name: 'METHOD', sym: '`',  then: true, solo: true},
     {name: 'READ',   sym: null, then: true, read: true},
     {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
@@ -90,8 +91,39 @@ class NyanWord {
 
 }
 
+let tickStack = [];
+
+function toTickStackString(str){
+
+
+    tickStack = [];
+    const chunks = str.split(/([`])/);
+    const strStack = [];
+
+    let ticking = false;
+    while(chunks.length){
+        const c = chunks.shift();
+        if(c === '`'){
+            ticking = !ticking;
+            strStack.push(c);
+        } else {
+            if(ticking) {
+                tickStack.push(c);
+            } else {
+                strStack.push(c);
+            }
+        }
+    }
+
+    const result = strStack.join('');
+    //console.log('stack res', result, tickStack);
+    return result;
+}
 
 function parse(str, isProcess) {
+
+
+    str = toTickStackString(str);
 
     const sentences = [];
 
@@ -221,7 +253,28 @@ function parsePhrase(str) {
 
         const rawWord = rawWords[i];
         console.log('word=', rawWord);
-        const chunks = rawWord.split(/([(?!:.)])/).map(d => d.trim()).filter(d => d);
+        const rawChunks = rawWord.split(/([(?!:.`)])/);
+        const chunks = [];
+        let inMethod = false;
+
+        // white space is only allowed between e.g. `throttle 200`, `string meow in the hat`
+
+        while(rawChunks.length){
+            const next = rawChunks.shift();
+            if(next === '`'){
+                inMethod = !inMethod;
+                chunks.push(next);
+            } else {
+                if(!inMethod){
+                    const trimmed = next.trim();
+                    if(trimmed)
+                        chunks.push(trimmed);
+                } else {
+                    chunks.push(next);
+                }
+            }
+        }
+
         console.log('to:', chunks);
         const nameAndOperation = chunks.shift();
         const firstChar = rawWord[0];
@@ -240,6 +293,21 @@ function parsePhrase(str) {
 
         if(operation === 'ALIAS'){
             alias = chunks.shift();
+        } else if (operation === 'METHOD'){
+                chunks.shift();
+                // const next = chunks.shift();
+                const next = tickStack.shift();
+                const i = next.indexOf(' ');
+                if(i === -1) {
+                    extracts.push(next);
+                } else {
+                    extracts.push(next.slice(0, i));
+                    if(next.length > i){
+                        extracts.push(next.slice(i + 1));
+                    }
+                }
+
+            while(chunks.length){ chunks.shift(); }
         }
 
         while(chunks.length){
@@ -295,6 +363,8 @@ function parsePhrase(str) {
                     }
 
                     break;
+
+
 
             }
 

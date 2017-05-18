@@ -224,13 +224,41 @@ describe('RootScope', function(){
         Catbus.flush();
         // Catbus.flush();
 
-        //d2.write({moo: {spot: 5}});
-        // d2.write('sunset');
-        //bus.run(watcher.handle);
 
         console.log('is', d1.read(), msgLog);
         var name = d1.name;
         assert.equal(name, 'village');
+
+    });
+
+
+    it('can write to datac', function(){
+
+
+        var d1 = world.data('village');
+        var d2 = world.data('forest');
+        var d3 = world.data('sea');
+        var d4 = world.data('grove');
+
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        // d3.write('dog');
+        d4.write('mushroom');
+
+        const bus = world.react('forest (green), sea!  { (tooth) | `string bunny be happy` -} | &sea, grove(cave) | (poo) | =village:grr', watcher).pull();
+        // const bus = world.react('forest!, sea | *handle', watcher).pull();
+
+        d3.write('dog');
+        Catbus.flush();
+        // Catbus.flush();
+
+        console.log('is', d1.read(), msgLog);
+
+        console.log('gr', d1.read('grr'), msgLog);
+
+        var name = d1.name;
+        assert.equal(name, 'village');
+
 
     });
 

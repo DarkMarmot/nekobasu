@@ -1971,7 +1971,7 @@ var Nyan = {};
 // then:  run, read, attr, and, style, write, blast, filter
 
 var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
-{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'SPRAY', sym: '<', then: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '>', then: true }];
+{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'METHOD', sym: '`', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'SPRAY', sym: '<', then: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '>', then: true }];
 
 // cat, dog | & meow, kitten {*log} | =puppy
 
@@ -2033,7 +2033,37 @@ var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, mon
     // this.useCapture =
 };
 
+var tickStack = [];
+
+function toTickStackString(str) {
+
+    tickStack = [];
+    var chunks = str.split(/([`])/);
+    var strStack = [];
+
+    var ticking = false;
+    while (chunks.length) {
+        var c = chunks.shift();
+        if (c === '`') {
+            ticking = !ticking;
+            strStack.push(c);
+        } else {
+            if (ticking) {
+                tickStack.push(c);
+            } else {
+                strStack.push(c);
+            }
+        }
+    }
+
+    var result = strStack.join('');
+    //console.log('stack res', result, tickStack);
+    return result;
+}
+
 function parse(str, isProcess) {
+
+    str = toTickStackString(str);
 
     var sentences = [];
 
@@ -2154,11 +2184,27 @@ function parsePhrase(str) {
 
         var rawWord = rawWords[_i6];
         console.log('word=', rawWord);
-        var chunks = rawWord.split(/([(?!:.)])/).map(function (d) {
-            return d.trim();
-        }).filter(function (d) {
-            return d;
-        });
+        var rawChunks = rawWord.split(/([(?!:.`)])/);
+        var chunks = [];
+        var inMethod = false;
+
+        // white space is only allowed between e.g. `throttle 200`, `string meow in the hat`
+
+        while (rawChunks.length) {
+            var next = rawChunks.shift();
+            if (next === '`') {
+                inMethod = !inMethod;
+                chunks.push(next);
+            } else {
+                if (!inMethod) {
+                    var trimmed = next.trim();
+                    if (trimmed) chunks.push(trimmed);
+                } else {
+                    chunks.push(next);
+                }
+            }
+        }
+
         console.log('to:', chunks);
         var nameAndOperation = chunks.shift();
         var firstChar = rawWord[0];
@@ -2177,6 +2223,23 @@ function parsePhrase(str) {
 
         if (operation === 'ALIAS') {
             alias = chunks.shift();
+        } else if (operation === 'METHOD') {
+            chunks.shift();
+            // const next = chunks.shift();
+            var _next = tickStack.shift();
+            var _i7 = _next.indexOf(' ');
+            if (_i7 === -1) {
+                extracts.push(_next);
+            } else {
+                extracts.push(_next.slice(0, _i7));
+                if (_next.length > _i7) {
+                    extracts.push(_next.slice(_i7 + 1));
+                }
+            }
+
+            while (chunks.length) {
+                chunks.shift();
+            }
         }
 
         while (chunks.length) {
@@ -2211,11 +2274,11 @@ function parsePhrase(str) {
                 case ':':
 
                     if (chunks.length) {
-                        var next = chunks[0];
-                        if (next === '(') {
+                        var _next2 = chunks[0];
+                        if (_next2 === '(') {
                             monitor = true;
                         } else {
-                            topic = next;
+                            topic = _next2;
                             chunks.shift(); // remove topic from queue
                         }
                     } else {
@@ -2288,7 +2351,7 @@ function getDoWrite(scope, word) {
     var data = scope.find(word.name, !word.maybe);
 
     return function doWrite(msg, source, topic) {
-        data.write(msg, topic);
+        data.write(msg, word.topic);
     };
 }
 
@@ -2560,6 +2623,59 @@ function applyReaction(scope, bus, phrase, target) {
     }
 }
 
+function applyMethod(bus, word) {
+
+    var method = word.extracts[0];
+
+    switch (method) {
+
+        case 'true':
+            bus.msg(true);
+            break;
+
+        case 'false':
+            bus.msg(false);
+            break;
+
+        case 'null':
+            bus.msg(null);
+            break;
+
+        case 'undefined':
+            bus.msg(undefined);
+            break;
+
+        case 'array':
+            bus.msg([]);
+            break;
+
+        case 'object':
+            bus.msg({});
+            break;
+
+        case 'truthy':
+            bus.filter(function (msg) {
+                return !!msg;
+            });
+            break;
+
+        case 'falsey':
+            bus.filter(function (msg) {
+                return !msg;
+            });
+            break;
+
+        case 'string':
+            bus.msg(function () {
+                return word.extracts[1];
+            });
+            break;
+
+        // throttle x, debounce x, delay x, last x, first x, all
+
+    }
+}
+
 function applyProcess(scope, bus, phrase, context, node) {
 
     var operation = phrase[0].operation; // same for all words in a process phrase
@@ -2572,6 +2688,8 @@ function applyProcess(scope, bus, phrase, context, node) {
         bus.msg(getDoAnd(scope, phrase));
         var _needs = getNeedsArray(phrase);
         if (_needs.length) bus.whenKeys(_needs);
+    } else if (operation === 'METHOD') {
+        applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
         applyFilterProcess(bus, phrase, context);
     } else if (operation === 'RUN') {
