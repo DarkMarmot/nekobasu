@@ -66,6 +66,7 @@ class Bus {
     }
 
     // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+    // todo private?
 
     addFrame(streams) {
 

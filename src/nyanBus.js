@@ -504,7 +504,7 @@ function nyanToBus(scope, bus, str, context, target){
         const name = cmd.name;
         const phrase = cmd.phrase;
 
-        console.log('----', name, phrase);
+      //  console.log('----', name, phrase);
 
         if(name === 'JOIN') {
             bus = bus.join();

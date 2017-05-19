@@ -46,6 +46,7 @@ class Scope{
     };
 
 
+    // todo react via nyan (so it can be precompiled and reused
     react(str, context, node){ // string is Nyan
 
         if(!str)

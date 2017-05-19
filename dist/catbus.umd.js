@@ -1509,6 +1509,7 @@ var Bus = function () {
 
 
         // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+        // todo private?
 
         value: function addFrame(streams) {
 
@@ -2144,7 +2145,7 @@ function validateProcessPhrase(phrase) {
         nw.operation = nw.operation || firstOperation;
         if (nw.operation !== firstOperation) {
 
-            console.log('mult', nw.operation, firstOperation);
+            // console.log('mult', nw.operation, firstOperation);
             throw new Error('Multiple operation types in phrase (only one allowed)!');
         }
     }
@@ -2183,7 +2184,7 @@ function parsePhrase(str) {
     for (var _i6 = 0; _i6 < len; _i6++) {
 
         var rawWord = rawWords[_i6];
-        console.log('word=', rawWord);
+        //console.log('word=', rawWord);
         var rawChunks = rawWord.split(/([(?!:.`)])/);
         var chunks = [];
         var inMethod = false;
@@ -2205,12 +2206,12 @@ function parsePhrase(str) {
             }
         }
 
-        console.log('to:', chunks);
+        //console.log('to:', chunks);
         var nameAndOperation = chunks.shift();
         var firstChar = rawWord[0];
         var operation = namesBySymbol[firstChar];
         var start = operation ? 1 : 0;
-        var _name = nameAndOperation.slice(start);
+        var _name = nameAndOperation.slice(start).trim();
         var extracts = [];
 
         // todo hack (rename)
@@ -2223,6 +2224,7 @@ function parsePhrase(str) {
 
         if (operation === 'ALIAS') {
             alias = chunks.shift();
+            chunks.shift(); // todo verify ')'
         } else if (operation === 'METHOD') {
             chunks.shift();
             // const next = chunks.shift();
@@ -2350,7 +2352,7 @@ function getDoWrite(scope, word) {
 
     var data = scope.find(word.name, !word.maybe);
 
-    return function doWrite(msg, source, topic) {
+    return function doWrite(msg) {
         data.write(msg, word.topic);
     };
 }
@@ -2763,7 +2765,7 @@ function nyanToBus(scope, bus, str, context, target) {
         var name = cmd.name;
         var phrase = cmd.phrase;
 
-        console.log('----', name, phrase);
+        //  console.log('----', name, phrase);
 
         if (name === 'JOIN') {
             bus = bus.join();
@@ -2813,6 +2815,9 @@ var Scope = function () {
 
     createClass(Scope, [{
         key: 'react',
+
+
+        // todo react via nyan (so it can be precompiled and reused
         value: function react(str, context, node) {
             // string is Nyan
 
@@ -3418,7 +3423,7 @@ Catbus$1.enqueue = function (pool) {
     }
 };
 
-Catbus$1.scope = function (name) {
+Catbus$1.createChild = Catbus$1.scope = function (name) {
 
     console.log('NYAN');
     var k = Nyan.parse('^bunny?:error(badbunny), cow:(huh), moo2?(meow) | %kitten' + '                       {*toMuffin | =order {=raw}} =meow {you} =woo');

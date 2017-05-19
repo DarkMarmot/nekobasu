@@ -214,7 +214,7 @@ function validateProcessPhrase(phrase){
         nw.operation = nw.operation || firstOperation;
         if(nw.operation !== firstOperation){
 
-            console.log('mult', nw.operation, firstOperation);
+           // console.log('mult', nw.operation, firstOperation);
             throw new Error('Multiple operation types in phrase (only one allowed)!');
 
         }
@@ -252,7 +252,7 @@ function parsePhrase(str) {
     for (let i = 0; i < len; i++) {
 
         const rawWord = rawWords[i];
-        console.log('word=', rawWord);
+        //console.log('word=', rawWord);
         const rawChunks = rawWord.split(/([(?!:.`)])/);
         const chunks = [];
         let inMethod = false;
@@ -275,12 +275,12 @@ function parsePhrase(str) {
             }
         }
 
-        console.log('to:', chunks);
+        //console.log('to:', chunks);
         const nameAndOperation = chunks.shift();
         const firstChar = rawWord[0];
         const operation = namesBySymbol[firstChar];
         const start = operation ? 1 : 0;
-        const name = nameAndOperation.slice(start);
+        const name = nameAndOperation.slice(start).trim();
         const extracts = [];
 
         // todo hack (rename)
@@ -293,6 +293,7 @@ function parsePhrase(str) {
 
         if(operation === 'ALIAS'){
             alias = chunks.shift();
+            chunks.shift(); // todo verify ')'
         } else if (operation === 'METHOD'){
                 chunks.shift();
                 // const next = chunks.shift();

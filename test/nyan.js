@@ -1,13 +1,13 @@
 //run mocha from project root
 
-var assert = require('assert');
-var Catbus = require('../dist/catbus.umd.js');
+const assert = require('assert');
+const Catbus = require('../dist/catbus.umd.js');
 
-var root = Catbus.scope();
+const root = Catbus.createChild();
 
-var sourceLog;
-var msgLog;
-var topicLog;
+let sourceLog;
+let msgLog;
+let topicLog;
 
 function Watcher(name){
 
@@ -69,20 +69,55 @@ describe('RootScope', function(){
 
         });
 
-        it('can react', function(){
+    it('can react to data', function(){
+
+        const d = world.data('castle');
+        const bus = world.react('castle | *handle', watcher);
+        d.write('knight');
+
+        assert.equal(msgLog[0], 'knight');
+
+    });
+
+    it('can react to multi batched data', function(){
+
+        const d1 = world.data('castle');
+        const d2 = world.data('palace');
+
+        const bus = world.react('castle, palace | *handle', watcher);
+        d1.write('knight');
+        d2.write('squire');
+
+        Catbus.flush();
+
+        assert.equal(msgLog[0].castle, 'knight');
+        assert.equal(msgLog[0].palace, 'squire');
+
+    });
+
+    it('can pull prior multi batched data', function(){
+
+        const d1 = world.data('castle');
+        const d2 = world.data('palace');
+
+        d1.write('wizard');
+        d2.write('mage');
+
+        const bus = world.react('castle, palace | *handle', watcher).pull();
+        Catbus.flush();
+
+        assert.equal(msgLog[0].castle, 'wizard');
+        assert.equal(msgLog[0].palace, 'mage');
+
+    });
+
+    it('can react', function(){
 
 
             var d = world.data('ergo');
 
             d.write('meow');
             const bus = world.react('ergo | *handle', watcher).pull();
-
-
-            //bus.run(watcher.handle);
-
-
-
-
 
             var name = d.name;
             assert.equal(name, 'ergo');
@@ -192,11 +227,11 @@ describe('RootScope', function(){
         d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.react('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | <village(green),grove:bunny(cave) ', watcher).pull();
+        const bus = world.react('forest.moo.spot?(green) | & sea, grove(cave) | (poo) | < village(green),grove:bunny(cave) ', watcher).pull();
         d2.write({moo: {spot: 5}});
         // d2.write('sunset');
         //bus.run(watcher.handle);
-
+        console.log('vis', d1.read());
         console.log('is', d4.read('bunny'));
         var name = d1.name;
         assert.equal(name, 'village');
@@ -245,7 +280,7 @@ describe('RootScope', function(){
         // d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.react('forest (green), sea!  { (tooth) | `string bunny be happy` -} | &sea, grove(cave) | (poo) | =village:grr', watcher).pull();
+        const bus = world.react('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy` -} | &sea, grove(cave) | (poo) | =village:grr', watcher).pull();
         // const bus = world.react('forest!, sea | *handle', watcher).pull();
 
         d3.write('dog');
