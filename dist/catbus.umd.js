@@ -1431,12 +1431,53 @@ Stream.fromMonitor = function (data, name, canPull) {
     return stream;
 };
 
+Stream.fromTopicData = function (data, topicData, name, canPull) {
+
+    var stream = new Stream();
+    var streamName = name || data.name;
+    stream.name = streamName;
+
+    var currentTopic = topicData.read();
+
+    var toTopicChange = function toTopicChange(msg) {
+        data.unsubscribe(toStream, currentTopic);
+        currentTopic = msg;
+        data.subscribe(toStream, currentTopic);
+    };
+
+    topicData.subscribe(toTopicChange);
+
+    var toStream = function toStream(msg, source, topic) {
+        stream.emit(msg, streamName, topic);
+    };
+
+    stream.cleanupMethod = function () {
+        topicData.unsubscribe(toTopicChange);
+        data.unsubscribe(toStream, currentTopic);
+    };
+
+    if (canPull) {
+        stream.pull = function () {
+            var packet = data.peek();
+            if (packet) {
+                var msg = packet._msg;
+                var source = streamName || packet._source;
+                var topic = packet._topic;
+                stream.emit(msg, source, topic, stream);
+            }
+        };
+    }
+
+    data.subscribe(toStream, currentTopic);
+
+    return stream;
+};
+
 Stream.fromSubscribe = function (data, topic, name, canPull) {
 
     var stream = new Stream();
     var streamName = name || topic || data.name;
-
-    //stream.name = streamName;
+    stream.name = streamName;
 
     var toStream = function toStream(msg, source, topic) {
         stream.emit(msg, streamName, topic);
@@ -2625,6 +2666,13 @@ function applyReaction(scope, bus, phrase, target) {
     }
 }
 
+function isTruthy(msg) {
+    return !!msg;
+}
+function isFalsey(msg) {
+    return !msg;
+}
+
 function applyMethod(bus, word) {
 
     var method = word.extracts[0];
@@ -2656,15 +2704,11 @@ function applyMethod(bus, word) {
             break;
 
         case 'truthy':
-            bus.filter(function (msg) {
-                return !!msg;
-            });
+            bus.filter(isTruthy);
             break;
 
         case 'falsey':
-            bus.filter(function (msg) {
-                return !msg;
-            });
+            bus.filter(isFalsey);
             break;
 
         case 'string':
@@ -3425,63 +3469,6 @@ Catbus$1.enqueue = function (pool) {
 
 Catbus$1.createChild = Catbus$1.scope = function (name) {
 
-    console.log('NYAN');
-    var k = Nyan.parse('^bunny?:error(badbunny), cow:(huh), moo2?(meow) | %kitten' + '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
-
-    var _iteratorNormalCompletion = true;
-    var _didIteratorError = false;
-    var _iteratorError = undefined;
-
-    try {
-        for (var _iterator = k[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-            var cmd = _step.value;
-
-            console.log('CMD: ', cmd.name);
-            var phrase = cmd.phrase;
-            if (!phrase) continue;
-            var _iteratorNormalCompletion2 = true;
-            var _didIteratorError2 = false;
-            var _iteratorError2 = undefined;
-
-            try {
-                for (var _iterator2 = phrase[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var word = _step2.value;
-
-                    console.log(word.name, word.operation, word.maybe);
-                }
-            } catch (err) {
-                _didIteratorError2 = true;
-                _iteratorError2 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                        _iterator2.return();
-                    }
-                } finally {
-                    if (_didIteratorError2) {
-                        throw _iteratorError2;
-                    }
-                }
-            }
-        }
-    } catch (err) {
-        _didIteratorError = true;
-        _iteratorError = err;
-    } finally {
-        try {
-            if (!_iteratorNormalCompletion && _iterator.return) {
-                _iterator.return();
-            }
-        } finally {
-            if (_didIteratorError) {
-                throw _iteratorError;
-            }
-        }
-    }
-
-    console.log(k);
-
-    console.log('root is ', name);
     return new Scope(name);
 };
 

@@ -79,6 +79,37 @@ describe('RootScope', function(){
 
     });
 
+    it('can react to data and rename it', function(){
+
+        const d = world.data('castle');
+        const bus = world.react('castle (tower) | *handle', watcher);
+        d.write('knight');
+
+        assert.equal(msgLog[0], 'knight');
+        assert.equal(sourceLog[0], 'tower');
+    });
+
+    it('can react to data on a topic', function(){
+
+        const d = world.data('cat');
+        const bus = world.react('cat:whisker | *handle', watcher);
+        d.write('wind', 'whisker');
+
+        assert.equal(msgLog[0], 'wind');
+
+    });
+
+    it('can react to data on a topic and rename it', function(){
+
+        const d = world.data('cat');
+        const bus = world.react('cat:whisker(grr) | *handle', watcher);
+        d.write('wind', 'whisker');
+
+        assert.equal(msgLog[0], 'wind');
+        assert.equal(sourceLog[0], 'grr');
+
+    });
+
     it('can react to multi batched data', function(){
 
         const d1 = world.data('castle');
@@ -95,6 +126,41 @@ describe('RootScope', function(){
 
     });
 
+    it('can react to multi batched data and rename it', function(){
+
+        const d1 = world.data('castle');
+        const d2 = world.data('palace');
+
+        const bus = world.react('castle (cat), palace (dog) | *handle', watcher);
+        d1.write('knight');
+        d2.write('squire');
+
+        Catbus.flush();
+
+        assert.equal(msgLog[0].cat, 'knight');
+        assert.equal(msgLog[0].dog, 'squire');
+
+
+    });
+
+    it('can react to multi batched data and rename the stream', function(){
+
+        const d1 = world.data('castle');
+        const d2 = world.data('palace');
+
+        const bus = world.react('castle (cat), palace (dog) | (together) | *handle', watcher);
+        d1.write('knight');
+        d2.write('squire');
+
+        Catbus.flush();
+
+        assert.equal(msgLog[0].cat, 'knight');
+        assert.equal(msgLog[0].dog, 'squire');
+        assert.equal(sourceLog[0], 'together');
+
+    });
+
+
     it('can pull prior multi batched data', function(){
 
         const d1 = world.data('castle');
@@ -104,6 +170,7 @@ describe('RootScope', function(){
         d2.write('mage');
 
         const bus = world.react('castle, palace | *handle', watcher).pull();
+
         Catbus.flush();
 
         assert.equal(msgLog[0].castle, 'wizard');
@@ -111,8 +178,27 @@ describe('RootScope', function(){
 
     });
 
-    it('can react', function(){
+    // it('can subscribe to dynamic topics', function(){
+    //
+    //     const d1 = world.data('books');
+    //     const d2 = world.data('category');
+    //
+    //     d1.write(7, 'castles');
+    //     d1.write(9, 'knights');
+    //     d1.write(4, 'bunnies');
+    //
+    //     Stream s = Stream.
+    //
+    //     const bus = world.react('castle, palace | *handle', watcher).pull();
+    //
+    //     Catbus.flush();
+    //
+    //     assert.equal(msgLog[0].castle, 'wizard');
+    //     assert.equal(msgLog[0].palace, 'mage');
+    //
+    // });
 
+    it('can react', function(){
 
             var d = world.data('ergo');
 

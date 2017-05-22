@@ -36,23 +36,6 @@ Catbus.enqueue = function(pool){
 
 Catbus.createChild = Catbus.scope = function(name){
 
-    console.log('NYAN');
-    const k = Nyan.parse('^bunny?:error(badbunny), cow:(huh), moo2?(meow) | %kitten' +
-        '                       {*toMuffin | =order {=raw}} =meow {you} =woo');
-
-    for(const cmd of k){
-        console.log('CMD: ', cmd.name);
-        const phrase = cmd.phrase;
-        if(!phrase)
-            continue;
-        for(const word of phrase){
-            console.log(word.name, word.operation, word.maybe);
-        }
-    }
-
-    console.log(k);
-
-    console.log('root is ', name);
     return new Scope(name);
 
 };

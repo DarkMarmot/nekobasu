@@ -343,6 +343,10 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
 }
 
+function isTruthy(msg){ return !!msg; };
+function isFalsey(msg){ return !msg; };
+
+
 function applyMethod(bus, word) {
 
     const method = word.extracts[0];
@@ -374,11 +378,11 @@ function applyMethod(bus, word) {
             break;
 
         case 'truthy':
-            bus.filter(function(msg){ return !!msg; });
+            bus.filter(isTruthy);
             break;
 
         case 'falsey':
-            bus.filter(function(msg){ return !msg;});
+            bus.filter(isFalsey);
             break;
 
         case 'string':
