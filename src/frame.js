@@ -1,6 +1,8 @@
 
 import Wave from './wave.js';
 import Pool from './pool.js';
+import PoolDef from './poolDef.js';
+import Wire from './wire.js';
 
 class Frame {
 
@@ -12,6 +14,7 @@ class Frame {
         this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
         this._processDef = null; // wave or poll definition
+        this._mergingWire = null;
 
     };
 
@@ -22,11 +25,24 @@ class Frame {
 
     };
 
+    merge() {
+
+        this._mergingWire = new Wire();
+        return this;
+
+    };
+
+
     handle(wire, msg, source, topic){
+
+        if(this._mergingWire){
+            this.emit(wire, msg, source, topic);
+            return;
+        }
 
         const hasWire = this._wireMap.has(wire);
         if(!hasWire)
-            this._wireMap.set(wire, this._createHandler());
+            this._wireMap.set(wire, this._createHandler(wire));
 
         const handler = this._wireMap.get(wire);
         handler.handle(this, wire, msg, wire.name || source, topic);
@@ -43,12 +59,10 @@ class Frame {
 
     };
 
-    _createHandler(){
+    _createHandler(wire){
 
-        const stream = this._holding ? new Pool() : new Wave();
-        if(this._processDef)
-            stream.define(this._processDef);
-        return stream;
+        const def = this._processDef;
+        return (def && def.name === 'pool') ? new Pool(this, wire, def) : new Wave(def);
 
     };
 
@@ -68,6 +82,7 @@ class Frame {
     hold(){
 
         this._holding = true;
+        this._processDef = new PoolDef();
         return this;
 
     };

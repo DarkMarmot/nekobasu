@@ -66,8 +66,6 @@ class Bus {
         return this._scope;
     }
 
-
-
     // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
     addFrame() {
@@ -208,11 +206,12 @@ class Bus {
         return this.reduce(F.getScan, func, seed);
     };
 
-    delay(num) {
+    delay(fNum) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().delay(num);
+
+        this.addFrame().define(new WaveDef('delay', F.FUNCTOR(fNum)));
         return this;
 
     };
@@ -260,18 +259,36 @@ class Bus {
 
     reduce(factory, ...args) {
 
-        this.holding ?
-            this._currentFrame.reduce(factory, ...args) :
-            this.addFrame().hold().reduce(factory, ...args).timer(F.getSyncTimer);
+        const holding = this.holding;
+
+        if(!holding){
+
+            const frame = this.addFrame();
+            const def = new WaveDef('msg', factory, true, ...args);
+            frame.define(def);
+
+        } else {
+
+            const frame = this._currentFrame;
+            const def = frame._processDef;
+            def.keep = [factory, true, ...args];
+
+            //this.addFrame().hold().reduce(factory, ...args).timer(F.getSyncTimer);
+        }
+
         return this;
 
     };
 
-    timer(factory, ...args) {
+    timer(factory, stateful, ...args) {
 
-        this.holding ?
-            this._currentFrame.timer(factory, ...args) :
-            this.addFrame().hold().reduce(F.getKeepLast).timer(factory, ...args);
+
+        const holding = this.holding;
+        const frame = holding ? this._currentFrame : this.addFrame().hold();
+        const def = frame._processDef;
+        def.timer = [factory, stateful, ...args];
+        this._currentFrame._holding = false; // timer ends hold
+
         return this;
 
     };

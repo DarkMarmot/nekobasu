@@ -48,23 +48,20 @@ const Func = {
        return function(){ return true;}
     },
 
-    getBatchTimer: function(){
-        const pool = this;
-        return function() {
+    getBatchTimer: function(pool){
+
             Catbus.enqueue(pool);
-        }
+
     },
 
     getSyncTimer: function(){
-        const pool = this;
-        return function() {
+        return function(pool) {
             pool.release(pool);
         }
     },
 
     getDeferTimer: function(){
-        const pool = this;
-        return function() {
+        return function(pool) {
             setTimeout(pool.release, 0, pool);
         }
     },

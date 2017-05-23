@@ -1,26 +1,22 @@
 
+function pass(frame, wire, msg, source, topic) {
+
+    frame.emit(wire, msg, source, topic);
+
+}
+
+
 class Wave {
 
-    constructor(){
+    constructor(def){
 
-        this.process = this.pass;
-        this.action = null;
+        this.process = (def && def.process) ? this[def.process] : pass;
+        this.action = def ? (def.stateful ? def.action(...def.args) : def.action) : null;
 
     };
-
-    define(def) {
-        this.process = this[def.process];
-        this.action = def.stateful ? def.action(...def.args) : def.action;
-    }
 
     handle(frame, wire, msg, source, topic) {
         this.process(frame, wire, msg, source, topic)
-    };
-
-    pass(frame, wire, msg, source, topic) {
-
-        frame.emit(wire, msg, source, topic);
-
     };
 
     run(frame, wire, msg, source, topic) {

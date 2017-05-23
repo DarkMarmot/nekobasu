@@ -3,23 +3,36 @@ import F from './flib.js';
 
 class Pool {
 
-    constructor(frame){
+    constructor(frame, wire, def){
 
-        this.stream = stream;
+        this.frame = frame;
+        this.wire = wire;
 
-        this.keep = null;
-        this.when = F.ALWAYS_TRUE;
-        this.until = F.ALWAYS_TRUE;
-        this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = F.ALWAYS_FALSE;
+        function fromDef(name){
+
+            if(!def[name])
+                return null;
+
+            const [factory, stateful, ...args] = def[name];
+
+            return stateful ? factory.call(this, ...args) : factory;
+
+        }
+
+        this.keep = fromDef('keep') || F.getKeepLast();
+        this.when = fromDef('when') || F.ALWAYS_TRUE;
+        this.until = fromDef('until') || F.ALWAYS_TRUE;
+        this.timer = fromDef('timer');  // throttle, debounce, defer, batch, sync
+        this.clear = fromDef('clear') || F.ALWAYS_FALSE;
+
         this.isPrimed = false;
-        this.source = stream.name;
+
 
     };
 
-    handle(msg, source) {
+    handle(frame, wire, msg, source, topic) {
 
-        this.keep(msg, source);
+        this.keep(msg, source, topic);
         if(!this.isPrimed){
             const content = this.keep.content();
             if(this.when(content)){
@@ -48,7 +61,7 @@ class Pool {
         pool.isPrimed = false;
 
         if(hasContent)
-            pool.stream.emit(msg, pool.stream.name);
+            pool.frame.emit(pool.wire, msg);
 
     };
 
