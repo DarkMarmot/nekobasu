@@ -1,10 +1,8 @@
 
-import F from './flib.js';
+
 import Data from './data.js';
-import { DATA_TYPES, isValid } from './dataTypes.js';
+import { DATA_TYPES } from './dataTypes.js';
 import Bus from './bus.js';
-import Nyan from './nyan.js';
-import Stream from './stream.js';
 import nyanToBus from './nyanBus.js';
 
 let idCounter = 0;

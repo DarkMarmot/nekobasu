@@ -4,444 +4,6 @@
 	(global.Catbus = factory());
 }(this, (function () { 'use strict';
 
-function ALWAYS_TRUE() {
-    return true;
-}
-
-function ALWAYS_FALSE() {
-    return false;
-}
-
-function TO_SOURCE(msg, source) {
-    return source;
-}
-
-function TO_TOPIC(msg, source, topic) {
-    return topic;
-}
-
-function TO_MSG(msg) {
-    return msg;
-}
-
-function NOOP() {}
-
-function FUNCTOR(val) {
-    return typeof val === 'function' ? val : function () {
-        return val;
-    };
-}
-
-var Func = {
-
-    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
-        if (args.length < 1) throw new Error('Method requires at least one argument.');
-    },
-
-    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
-        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
-    },
-
-    getAlwaysTrue: function getAlwaysTrue() {
-        return function () {
-            return true;
-        };
-    },
-
-    getBatchTimer: function getBatchTimer(pool) {
-
-        Catbus$1.enqueue(pool);
-    },
-
-    getSyncTimer: function getSyncTimer() {
-        return function (pool) {
-            pool.release(pool);
-        };
-    },
-
-    getDeferTimer: function getDeferTimer() {
-        return function (pool) {
-            setTimeout(pool.release, 0, pool);
-        };
-    },
-
-    getThrottleTimer: function getThrottleTimer(fNum) {
-
-        var pool = this;
-        fNum = FUNCTOR(fNum);
-        var wasEmpty = false;
-        var timeoutId = null;
-        var msgDuringTimer = false;
-        var auto = pool.keep.auto;
-
-        function timedRelease(fromTimeout) {
-
-            if (pool.stream.dead) return;
-
-            var nowEmpty = pool.keep.isEmpty;
-
-            if (!fromTimeout) {
-                if (!timeoutId) {
-                    pool.release(pool);
-                    wasEmpty = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                } else {
-                    msgDuringTimer = true;
-                }
-                return;
-            }
-
-            if (nowEmpty) {
-                if (wasEmpty) {
-                    // throttle becomes inactive
-                } else {
-                    // try one more time period to maintain throttle
-                    wasEmpty = true;
-                    msgDuringTimer = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                }
-            } else {
-                pool.release(pool);
-                wasEmpty = false;
-                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-            }
-        }
-
-        return timedRelease;
-    },
-
-    getQueue: function getQueue(n) {
-
-        n = n || Infinity;
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.isBuffer = ALWAYS_TRUE;
-
-        f.next = function () {
-            return buffer.shift();
-        };
-
-        f.isEmpty = function () {
-            return buffer.length === 0;
-        };
-
-        f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getScan: function getScan(func, seed) {
-
-        var hasSeed = arguments.length === 2;
-        var acc = void 0;
-        var initMsg = true;
-
-        var f = function f(msg, source) {
-
-            if (initMsg) {
-                initMsg = false;
-                if (hasSeed) {
-                    acc = func(seed, msg, source);
-                } else {
-                    acc = msg;
-                }
-            } else {
-                acc = func(acc, msg, source);
-            }
-
-            return acc;
-        };
-
-        f.reset = NOOP;
-
-        f.next = f.content = function () {
-            return acc;
-        };
-
-        return f;
-    },
-
-    getGroup: function getGroup(groupBy) {
-
-        groupBy = groupBy || TO_SOURCE;
-        var hash = {};
-
-        var f = function f(msg, source) {
-
-            var g = groupBy(msg, source);
-            if (g) {
-                hash[g] = msg;
-            } else {
-                // no source, copy message props into hash to merge nameless streams of key data
-                for (var k in msg) {
-                    hash[k] = msg[k];
-                }
-            }
-
-            return hash;
-        };
-
-        f.reset = function () {
-            for (var k in hash) {
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return hash;
-        };
-
-        return f;
-    },
-
-    getHash: function getHash(groupBy) {
-
-        groupBy = groupBy || TO_SOURCE;
-        var hash = {};
-
-        var f = function f(msg, source) {
-
-            var g = groupBy(msg, source);
-            hash[g] = msg;
-            return hash;
-        };
-
-        f.reset = function () {
-            for (var k in hash) {
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return hash;
-        };
-
-        return f;
-    },
-
-    getKeepLast: function getKeepLast(n) {
-
-        if (!n || n < 0) {
-
-            var last = void 0;
-
-            var _f = function _f(msg, source) {
-                return last = msg;
-            };
-
-            _f.reset = function () {
-                _f.isEmpty = true;
-            };
-
-            _f.next = _f.content = function () {
-                return last;
-            };
-
-            return _f;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            if (buffer.length > n) buffer.shift();
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepFirst: function getKeepFirst(n) {
-
-        if (!n || n < 0) {
-
-            var firstMsg = void 0;
-            var hasFirst = false;
-            var _f2 = function _f2(msg, source) {
-                return hasFirst ? firstMsg : firstMsg = msg;
-            };
-
-            _f2.reset = function () {
-                firstMsg = false;
-                _f2.isEmpty = true;
-            };
-
-            _f2.next = _f2.content = function () {
-                return firstMsg;
-            };
-
-            return _f2;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepAll: function getKeepAll() {
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getWhenCount: function getWhenCount(n) {
-
-        var latched = false;
-
-        var f = function f(messages) {
-            latched = latched || messages.length >= n;
-            return latched;
-        };
-
-        f.reset = function () {
-            latched = false;
-        };
-
-        return f;
-    },
-
-    getWhenKeys: function getWhenKeys(keys) {
-
-        var keyHash = {};
-        var len = keys.length;
-
-        for (var i = 0; i < len; i++) {
-            var k = keys[i];
-            keyHash[k] = true;
-        }
-
-        var latched = false;
-
-        var f = function f(messagesByKey) {
-
-            if (latched) return true;
-
-            for (var _i = 0; _i < len; _i++) {
-                var _k = keys[_i];
-                if (!messagesByKey.hasOwnProperty(_k)) return false;
-            }
-
-            return latched = true;
-        };
-
-        f.reset = function () {
-            latched = false;
-            for (var _k2 in keyHash) {
-                delete keyHash[_k2];
-            }
-        };
-
-        return f;
-    },
-
-    getHasKeys: function getHasKeys(keys, noLatch) {
-
-        var latched = false;
-        var len = keys.length;
-
-        return function (msg) {
-
-            if (latched || !len) return true;
-
-            for (var i = 0; i < len; i++) {
-
-                var k = keys[i];
-                if (!msg.hasOwnProperty(k)) return false;
-            }
-
-            if (!noLatch) latched = true;
-
-            return true;
-        };
-    },
-
-    getSkipDupes: function getSkipDupes() {
-
-        var hadMsg = false;
-        var lastMsg = void 0;
-
-        return function (msg) {
-
-            var diff = !hadMsg || msg !== lastMsg;
-            lastMsg = msg;
-            hadMsg = true;
-            return diff;
-        };
-    },
-
-    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
-        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
-
-    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
-        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
-
-};
-
-Func.TO_SOURCE = TO_SOURCE;
-Func.TO_TOPIC = TO_TOPIC;
-Func.To_MSG = TO_MSG;
-Func.FUNCTOR = FUNCTOR;
-Func.ALWAYS_TRUE = ALWAYS_TRUE;
-Func.ALWAYS_FALSE = ALWAYS_FALSE;
-Func.NOOP = NOOP;
-
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) {
   return typeof obj;
 } : function (obj) {
@@ -1033,6 +595,444 @@ var Wave = function () {
     }]);
     return Wave;
 }();
+
+function ALWAYS_TRUE() {
+    return true;
+}
+
+function ALWAYS_FALSE() {
+    return false;
+}
+
+function TO_SOURCE(msg, source) {
+    return source;
+}
+
+function TO_TOPIC(msg, source, topic) {
+    return topic;
+}
+
+function TO_MSG(msg) {
+    return msg;
+}
+
+function NOOP() {}
+
+function FUNCTOR(val) {
+    return typeof val === 'function' ? val : function () {
+        return val;
+    };
+}
+
+var Func = {
+
+    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
+        if (args.length < 1) throw new Error('Method requires at least one argument.');
+    },
+
+    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
+        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
+    },
+
+    getAlwaysTrue: function getAlwaysTrue() {
+        return function () {
+            return true;
+        };
+    },
+
+    getBatchTimer: function getBatchTimer(pool) {
+
+        Catbus$1.enqueue(pool);
+    },
+
+    getSyncTimer: function getSyncTimer() {
+        return function (pool) {
+            pool.release(pool);
+        };
+    },
+
+    getDeferTimer: function getDeferTimer() {
+        return function (pool) {
+            setTimeout(pool.release, 0, pool);
+        };
+    },
+
+    getThrottleTimer: function getThrottleTimer(fNum) {
+
+        var pool = this;
+        fNum = FUNCTOR(fNum);
+        var wasEmpty = false;
+        var timeoutId = null;
+        var msgDuringTimer = false;
+        var auto = pool.keep.auto;
+
+        function timedRelease(fromTimeout) {
+
+            if (pool.stream.dead) return;
+
+            var nowEmpty = pool.keep.isEmpty;
+
+            if (!fromTimeout) {
+                if (!timeoutId) {
+                    pool.release(pool);
+                    wasEmpty = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                } else {
+                    msgDuringTimer = true;
+                }
+                return;
+            }
+
+            if (nowEmpty) {
+                if (wasEmpty) {
+                    // throttle becomes inactive
+                } else {
+                    // try one more time period to maintain throttle
+                    wasEmpty = true;
+                    msgDuringTimer = false;
+                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+                }
+            } else {
+                pool.release(pool);
+                wasEmpty = false;
+                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
+            }
+        }
+
+        return timedRelease;
+    },
+
+    getQueue: function getQueue(n) {
+
+        n = n || Infinity;
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.isBuffer = ALWAYS_TRUE;
+
+        f.next = function () {
+            return buffer.shift();
+        };
+
+        f.isEmpty = function () {
+            return buffer.length === 0;
+        };
+
+        f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getScan: function getScan(func, seed) {
+
+        var hasSeed = arguments.length === 2;
+        var acc = void 0;
+        var initMsg = true;
+
+        var f = function f(msg, source) {
+
+            if (initMsg) {
+                initMsg = false;
+                if (hasSeed) {
+                    acc = func(seed, msg, source);
+                } else {
+                    acc = msg;
+                }
+            } else {
+                acc = func(acc, msg, source);
+            }
+
+            return acc;
+        };
+
+        f.reset = NOOP;
+
+        f.next = f.content = function () {
+            return acc;
+        };
+
+        return f;
+    },
+
+    getGroup: function getGroup(groupBy) {
+
+        groupBy = groupBy || TO_SOURCE;
+        var hash = {};
+
+        var f = function f(msg, source) {
+
+            var g = groupBy(msg, source);
+            if (g) {
+                hash[g] = msg;
+            } else {
+                // no source, copy message props into hash to merge nameless streams of key data
+                for (var k in msg) {
+                    hash[k] = msg[k];
+                }
+            }
+
+            return hash;
+        };
+
+        f.reset = function () {
+            for (var k in hash) {
+                delete hash[k];
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return hash;
+        };
+
+        return f;
+    },
+
+    getHash: function getHash(groupBy) {
+
+        groupBy = groupBy || TO_SOURCE;
+        var hash = {};
+
+        var f = function f(msg, source) {
+
+            var g = groupBy(msg, source);
+            hash[g] = msg;
+            return hash;
+        };
+
+        f.reset = function () {
+            for (var k in hash) {
+                delete hash[k];
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return hash;
+        };
+
+        return f;
+    },
+
+    getKeepLast: function getKeepLast(n) {
+
+        if (!n || n < 0) {
+
+            var last = void 0;
+
+            var _f = function _f(msg, source) {
+                return last = msg;
+            };
+
+            _f.reset = function () {
+                _f.isEmpty = true;
+            };
+
+            _f.next = _f.content = function () {
+                return last;
+            };
+
+            return _f;
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            if (buffer.length > n) buffer.shift();
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getKeepFirst: function getKeepFirst(n) {
+
+        if (!n || n < 0) {
+
+            var firstMsg = void 0;
+            var hasFirst = false;
+            var _f2 = function _f2(msg, source) {
+                return hasFirst ? firstMsg : firstMsg = msg;
+            };
+
+            _f2.reset = function () {
+                firstMsg = false;
+                _f2.isEmpty = true;
+            };
+
+            _f2.next = _f2.content = function () {
+                return firstMsg;
+            };
+
+            return _f2;
+        }
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+
+            if (buffer.length < n) buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getKeepAll: function getKeepAll() {
+
+        var buffer = [];
+
+        var f = function f(msg, source) {
+            buffer.push(msg);
+            return buffer;
+        };
+
+        f.reset = function () {
+            while (buffer.length) {
+                buffer.shift();
+            }
+            f.isEmpty = true;
+        };
+
+        f.next = f.content = function () {
+            return buffer;
+        };
+
+        return f;
+    },
+
+    getWhenCount: function getWhenCount(n) {
+
+        var latched = false;
+
+        var f = function f(messages) {
+            latched = latched || messages.length >= n;
+            return latched;
+        };
+
+        f.reset = function () {
+            latched = false;
+        };
+
+        return f;
+    },
+
+    getWhenKeys: function getWhenKeys(keys) {
+
+        var keyHash = {};
+        var len = keys.length;
+
+        for (var i = 0; i < len; i++) {
+            var k = keys[i];
+            keyHash[k] = true;
+        }
+
+        var latched = false;
+
+        var f = function f(messagesByKey) {
+
+            if (latched) return true;
+
+            for (var _i = 0; _i < len; _i++) {
+                var _k = keys[_i];
+                if (!messagesByKey.hasOwnProperty(_k)) return false;
+            }
+
+            return latched = true;
+        };
+
+        f.reset = function () {
+            latched = false;
+            for (var _k2 in keyHash) {
+                delete keyHash[_k2];
+            }
+        };
+
+        return f;
+    },
+
+    getHasKeys: function getHasKeys(keys, noLatch) {
+
+        var latched = false;
+        var len = keys.length;
+
+        return function (msg) {
+
+            if (latched || !len) return true;
+
+            for (var i = 0; i < len; i++) {
+
+                var k = keys[i];
+                if (!msg.hasOwnProperty(k)) return false;
+            }
+
+            if (!noLatch) latched = true;
+
+            return true;
+        };
+    },
+
+    getSkipDupes: function getSkipDupes() {
+
+        var hadMsg = false;
+        var lastMsg = void 0;
+
+        return function (msg) {
+
+            var diff = !hadMsg || msg !== lastMsg;
+            lastMsg = msg;
+            hadMsg = true;
+            return diff;
+        };
+    },
+
+    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
+        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
+    },
+
+    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
+        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    }
+
+};
+
+Func.TO_SOURCE = TO_SOURCE;
+Func.TO_TOPIC = TO_TOPIC;
+Func.To_MSG = TO_MSG;
+Func.FUNCTOR = FUNCTOR;
+Func.ALWAYS_TRUE = ALWAYS_TRUE;
+Func.ALWAYS_FALSE = ALWAYS_FALSE;
+Func.NOOP = NOOP;
 
 var Pool = function () {
     function Pool(frame, wire, def) {
@@ -2136,218 +2136,6 @@ function parsePhrase(str) {
 }
 
 Nyan.parse = parse;
-
-var Stream = function () {
-    function Stream() {
-        classCallCheck(this, Stream);
-
-
-        this.dead = false;
-        this.children = [];
-        this.name = null;
-        this.pool = null;
-        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.pull = Func.NOOP; // to retrieve and emit stored values from a source
-        this.processMethod = this.emit;
-        this.actionMethod = null; // for run, transform, filter, name, delay
-    }
-
-    createClass(Stream, [{
-        key: 'handle',
-        value: function handle(msg, source) {
-
-            if (this.dead) // true if canceled or disposed midstream
-                return this;
-
-            this.processMethod(msg, this.name || source); // handle method = doDelay, doGroup, doHold, , doFilter
-
-            return this;
-        }
-    }, {
-        key: 'drop',
-        value: function drop(stream) {
-
-            var children = this.children;
-            var i = children.indexOf(stream);
-
-            if (i !== -1) children.splice(i, 1);
-        }
-    }, {
-        key: 'addTarget',
-        value: function addTarget(stream) {
-            this.children.push(stream);
-        }
-    }, {
-        key: 'emit',
-        value: function emit(msg, source, topic, thisStream) {
-
-            thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
-            source = thisStream.name || source;
-
-            var children = thisStream.children;
-            var len = children.length;
-
-            for (var i = 0; i < len; i++) {
-                var c = children[i];
-                c.handle(msg, source, topic);
-            }
-        }
-    }, {
-        key: 'doFilter',
-        value: function doFilter(msg, source, topic) {
-
-            if (!this.actionMethod(msg, source, topic)) return;
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doMsg',
-        value: function doMsg(msg, source, topic) {
-
-            msg = this.actionMethod(msg, source, topic);
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doTransform',
-        value: function doTransform(msg, source, topic) {
-
-            msg = this.actionMethod.msg ? this.actionMethod.msg(msg, source, topic) : msg;
-            source = this.actionMethod.source ? this.actionMethod.source(msg, source, topic) : source;
-            topic = this.actionMethod.topic ? this.actionMethod.topic(msg, source, topic) : topic;
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doDelay',
-        value: function doDelay(msg, source, topic) {
-
-            // todo add destroy -> kills timeout
-            // passes 'this' to avoid bind slowdown
-            setTimeout(this.emit, this.actionMethod(msg, source, topic) || 0, msg, source, topic, this);
-        }
-    }, {
-        key: 'doSource',
-        value: function doSource(msg, source, topic) {
-
-            this.name = this.actionMethod(); // todo shoehorned -- this needs it's own setup
-            //source = this.actionMethod(msg, source, topic);
-            // this.name = function(){ return }
-            this.emit(msg, this.name || source, topic);
-        }
-    }, {
-        key: 'doRun',
-        value: function doRun(msg, source, topic) {
-
-            this.actionMethod(msg, source, topic);
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'createPool',
-        value: function createPool() {
-
-            this.pool = new Pool(this);
-        }
-    }, {
-        key: 'doPool',
-        value: function doPool(msg, source, topic) {
-
-            this.pool.handle(msg, this.name || source, topic);
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return;
-
-            this.cleanupMethod(); // should remove an eventListener if present
-        }
-    }]);
-    return Stream;
-}();
-
-Stream.fromMonitor = function (data, name, canPull) {
-
-    var stream = new Stream();
-    var streamName = name || data.name;
-
-    stream.name = streamName;
-
-    var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName, topic);
-    };
-
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream);
-    };
-
-    if (canPull) {
-        stream.pull = function () {
-            var packet = data.survey();
-            if (packet) {
-                var msg = packet._msg;
-                var source = streamName || packet._source;
-                var topic = packet._topic;
-                stream.emit(msg, source, topic, stream);
-            }
-        };
-    }
-
-    data.monitor(toStream);
-
-    return stream;
-};
-
-Stream.fromSubscribe = function (data, topic, name, canPull) {
-
-    var stream = new Stream();
-    var streamName = name || topic || data.name;
-    stream.name = streamName;
-
-    var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName, topic);
-    };
-
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream, topic);
-    };
-
-    if (canPull) {
-        stream.pull = function () {
-            var packet = data.peek();
-            if (packet) {
-                var msg = packet._msg;
-                var source = streamName || packet._source;
-                var _topic = packet._topic;
-                stream.emit(msg, source, _topic, stream);
-            }
-        };
-    }
-
-    data.subscribe(toStream, topic);
-
-    return stream;
-};
-
-Stream.fromEvent = function (target, eventName, useCapture) {
-
-    useCapture = !!useCapture;
-
-    var stream = new Stream();
-    stream.name = eventName;
-
-    var on = target.addEventListener || target.addListener || target.on;
-    var off = target.removeEventListener || target.removeListener || target.off;
-
-    var toStream = function toStream(msg) {
-        stream.handle(msg, eventName);
-    };
-
-    stream.cleanupMethod = function () {
-        off.call(target, eventName, toStream, useCapture);
-    };
-
-    on.call(target, eventName, toStream, useCapture);
-
-    return stream;
-};
 
 function getPacketFromDataWord(scope, word) {
 
