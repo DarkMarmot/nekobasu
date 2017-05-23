@@ -3,7 +3,7 @@ import F from './flib.js';
 
 class Pool {
 
-    constructor(frame){
+    constructor(stream){
 
         this.stream = stream;
 

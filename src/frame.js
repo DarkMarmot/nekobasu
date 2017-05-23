@@ -1,29 +1,57 @@
-import F from './flib.js';
-import PoolAspects from './poolAspects.js';
 
+import Wave from './wave.js';
+import Pool from './pool.js';
 
 class Frame {
 
-    constructor(bus, streams) {
+    constructor(bus) {
 
-        streams = streams || [];
         this._bus = bus;
+        this._targets = []; // frames to join or fork into
         this._index = bus._frames.length;
-        this._holding = false; //begins group, keep, schedule frames
-        this._streams = streams;
+        this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
+        this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
+        this._processDef = null; // wave or poll definition
 
-        this._process = null; // name of sync process method in streams
-        this._action = null; // function defining sync stream action
-        this._isFactory = false; // whether sync action is a stateful factory function
+    };
 
-        this._poolAspects = null;
+    define(def) {
 
-        const len = streams.length;
+        this._processDef = def;
+        return this;
+
+    };
+
+    handle(wire, msg, source, topic){
+
+        const hasWire = this._wireMap.has(wire);
+        if(!hasWire)
+            this._wireMap.set(wire, this._createHandler());
+
+        const handler = this._wireMap.get(wire);
+        handler.handle(this, wire, msg, wire.name || source, topic);
+
+    };
+
+    emit(wire, msg, source, topic){
+
+        const len = this._targets.length;
         for(let i = 0; i < len; i++){
-            streams[i].debugFrame = this;
+            const frame = this._targets[i];
+            frame.handle(wire, msg, source, topic);
         }
 
     };
+
+    _createHandler(){
+
+        const stream = this._holding ? new Pool() : new Wave();
+        if(this._processDef)
+            stream.define(this._processDef);
+        return stream;
+
+    };
+
 
     get bus() {
         return this._bus;
@@ -37,163 +65,116 @@ class Frame {
         return this._holding;
     };
 
-    get streams() {
-        return [].concat(this._streams);
-    }
-
-    applySyncProcess(name, action, isFactory, ...args){ // generate means action function must be called to generate stateful action
-
-        this._process = name;
-        this._action = action;
-        this._isFactory = isFactory;
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        if(isFactory) {
-            for (let i = 0; i < len; i++) {
-                const s = streams[i];
-                s.actionMethod = action(...args);
-                s.processMethod = s[name];
-            }
-        } else {
-            for (let i = 0; i < len; i++) {
-                const s = streams[i];
-                s.actionMethod = action;
-                s.processMethod = s[name];
-            }
-        }
-
-        return this;
-
-    };
-
     hold(){
 
         this._holding = true;
-        this._poolAspects = new PoolAspects();
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.createPool();
-            s.processMethod = s.doPool;
-        }
-
         return this;
 
     };
 
     pull(){
 
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.pull();
-        }
+        // todo pull from observers
 
     };
 
-    source(name) {
+    target(frame) {
 
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-            const s = streams[i];
-            s.name = name;
-        }
-        return this;
-
-    }
-
-    run(func, stateful){
-        return this.applySyncProcess('doRun', func, stateful);
-    };
-
-    msg(fAny, stateful){
-        return this.applySyncProcess('doMsg', F.FUNCTOR(fAny), stateful);
-    };
-
-
-    transform(fAny, stateful){
-        return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
-    };
-
-    delay(fNum, stateful){
-        return this.applySyncProcess('doDelay', F.FUNCTOR(fNum), stateful);
-    };
-
-    filter(func, stateful){
-        return this.applySyncProcess('doFilter', func, stateful);
-    };
-
-    skipDupes() {
-        return this.applySyncProcess('doFilter', F.getSkipDupes, true);
-    };
-
-    hasKeys(keys) {
-        return this.applySyncProcess('doFilter', F.getHasKeys, true, keys);
-    };
-
-    clear(factory, ...args){
-        return this.buildPoolAspect('clear', factory, ...args);
-    };
-
-    // factory should define content and reset methods have signature f(msg, source) return f.content()
-
-    reduce(factory, ...args){
-        return this.buildPoolAspect('keep', factory, ...args);
-    };
-
-    timer(factory, ...args){
-        return this.buildPoolAspect('timer', factory, ...args);
-    };
-
-    when(factory, ...args){
-        return this.buildPoolAspect('when', factory, ...args);
-    };
-
-    until(factory, ...args){
-        return this.buildPoolAspect('until', factory, ...args);
-    };
-
-    buildPoolAspect(aspect, factory, ...args){
-
-        if(aspect === 'timer')
-            this._holding = false;
-
-        this._poolAspects[aspect] = [factory, ...args];
-
-        const streams = this._streams;
-        const len = streams.length;
-
-        for(let i = 0; i < len; i++){
-
-            const s = streams[i];
-            const pool = s.pool;
-            pool.build(aspect, factory, ...args);
-
-        }
-
-        return this;
+        this._targets.push(frame);
 
     };
 
-    destroy(){
-
-        const streams = this._streams;
-        const len = streams.length;
-        for(let i = 0; i < len; i++){
-            streams[i].cleanupMethod();
-        }
-        this._streams = null;
+    destroy() {
 
     };
+
+    // source(name) {
+    //
+    //     const streams = this._streams;
+    //     const len = streams.length;
+    //
+    //     for(let i = 0; i < len; i++){
+    //         const s = streams[i];
+    //         s.name = name;
+    //     }
+    //     return this;
+    //
+    // }
+    //
+    // run(func, stateful){
+    //     return this.applySyncProcess('doRun', func, stateful);
+    // };
+    //
+    // msg(fAny, stateful){
+    //     return this.applySyncProcess('doMsg', F.FUNCTOR(fAny), stateful);
+    // };
+    //
+    //
+    // transform(fAny, stateful){
+    //     return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
+    // };
+    //
+    // delay(fNum, stateful){
+    //     return this.applySyncProcess('doDelay', F.FUNCTOR(fNum), stateful);
+    // };
+    //
+    // filter(func, stateful){
+    //     return this.applySyncProcess('doFilter', func, stateful);
+    // };
+    //
+    // skipDupes() {
+    //     return this.applySyncProcess('doFilter', F.getSkipDupes, true);
+    // };
+    //
+    // hasKeys(keys) {
+    //     return this.applySyncProcess('doFilter', F.getHasKeys, true, keys);
+    // };
+    //
+    // clear(factory, ...args){
+    //     return this.buildPoolAspect('clear', factory, ...args);
+    // };
+    //
+    // // factory should define content and reset methods have signature f(msg, source) return f.content()
+    //
+    // reduce(factory, ...args){
+    //     return this.buildPoolAspect('keep', factory, ...args);
+    // };
+    //
+    // timer(factory, ...args){
+    //     return this.buildPoolAspect('timer', factory, ...args);
+    // };
+    //
+    // when(factory, ...args){
+    //     return this.buildPoolAspect('when', factory, ...args);
+    // };
+    //
+    // until(factory, ...args){
+    //     return this.buildPoolAspect('until', factory, ...args);
+    // };
+    //
+    // buildPoolAspect(aspect, factory, ...args){
+    //
+    //     if(aspect === 'timer')
+    //         this._holding = false;
+    //
+    //     this._poolAspects[aspect] = [factory, ...args];
+    //
+    //     const streams = this._streams;
+    //     const len = streams.length;
+    //
+    //     for(let i = 0; i < len; i++){
+    //
+    //         const s = streams[i];
+    //         const pool = s.pool;
+    //         pool.build(aspect, factory, ...args);
+    //
+    //     }
+    //
+    //     return this;
+    //
+    // };
+
+
     
 }
 

@@ -1,8 +1,7 @@
 
 import Scope from './scope.js';
-import Stream from './stream.js';
+import Wire from './wire.js';
 import Bus from './bus.js';
-import Nyan from './nyan.js';
 
 
 const Catbus = {};
@@ -14,8 +13,9 @@ let _primed = false;
 
 Catbus.fromEvent = function(target, eventName, useCapture){
 
-    const stream = Stream.fromEvent(target, eventName, useCapture);
-    return new Bus(null, [stream]);
+    const bus = new Bus();
+    bus.event(target, eventName, useCapture);
+    return bus;
 
 };
 

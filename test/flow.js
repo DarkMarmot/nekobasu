@@ -42,12 +42,6 @@ var teardown = function(){
 
 
 reset();
-//
-//
-//var b = Catbus.fromEvent(emitter, 'boo');
-//b.msg(function(msg){ return msg + '-cat';});
-//b.run(log);
-
 
 describe('Catbus', function(){
 

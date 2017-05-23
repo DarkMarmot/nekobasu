@@ -5,7 +5,6 @@ class Stream {
 
     constructor(){
 
-        this.debugFrame = null;
         this.dead = false;
         this.children = [];
         this.name = null;
@@ -164,50 +163,6 @@ Stream.fromMonitor = function(data, name, canPull){
 
 };
 
-
-
-Stream.fromTopicData = function(data, topicData, name, canPull){
-
-    const stream = new Stream();
-    const streamName = name || data.name;
-    stream.name = streamName;
-
-    let currentTopic = topicData.read();
-
-    const toTopicChange = function(msg){
-        data.unsubscribe(toStream, currentTopic);
-        currentTopic = msg;
-        data.subscribe(toStream, currentTopic);
-    };
-
-    topicData.subscribe(toTopicChange);
-
-    const toStream = function(msg, source, topic){
-        stream.emit(msg, streamName, topic);
-    };
-
-    stream.cleanupMethod = function(){
-        topicData.unsubscribe(toTopicChange);
-        data.unsubscribe(toStream, currentTopic);
-    };
-
-    if(canPull){
-        stream.pull = function(){
-            const packet = data.peek();
-            if(packet) {
-                const msg = packet._msg;
-                const source = streamName || packet._source;
-                const topic = packet._topic;
-                stream.emit(msg, source, topic, stream);
-            }
-        }
-    }
-
-    data.subscribe(toStream, currentTopic);
-
-    return stream;
-
-};
 
 
 Stream.fromSubscribe = function(data, topic, name, canPull){

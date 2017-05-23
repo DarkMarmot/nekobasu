@@ -1,14 +1,15 @@
 
 import Frame from './frame.js';
 import F from './flib.js';
-import Stream from './stream.js';
-
+import Wire from './wire.js';
+import WaveDef from './waveDef.js';
 
 class Bus {
 
-    constructor(scope, streams) {
+    constructor(scope) {
 
         this._frames = [];
+        this._wires = [];
         this._dead = false;
         this._scope = scope; // data scope
         this._children = []; // from forks
@@ -17,7 +18,7 @@ class Bus {
         if(scope)
             scope._busList.push(this);
 
-        const f = new Frame(this, streams || []);
+        const f = new Frame(this);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -65,18 +66,18 @@ class Bus {
         return this._scope;
     }
 
-    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
-    // todo private?
 
-    addFrame(streams) {
+
+    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+
+    addFrame() {
 
         const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this, streams);
+        const nextFrame = this._currentFrame = new Frame(this);
         this._frames.push(nextFrame);
-
-        _wireFrames(lastFrame, nextFrame);
-
+        lastFrame.target(nextFrame);
         return nextFrame;
+
     };
 
 
@@ -98,7 +99,7 @@ class Bus {
         F.ASSERT_NOT_HOLDING(this);
         const fork = new Bus(this.scope);
         fork.parent = this;
-        _wireFrames(this._currentFrame, fork._currentFrame, true);
+        this._currentFrame.target(fork._currentFrame);
 
         return fork;
     };
@@ -123,7 +124,7 @@ class Bus {
     add(bus) {
 
         const frame = this.addFrame(); // wire from current bus
-        _wireFrames(bus._currentFrame, frame); // wire from outside bus
+        bus._currentFrame.target(frame); // wire from outside bus
         return this;
 
     };
@@ -170,37 +171,38 @@ class Bus {
 
     };
 
-    event(name, target, eventName, useCapture) {
+    event(target, eventName, useCapture) {
 
-        eventName = eventName || name;
         F.ASSERT_NOT_HOLDING(this);
-        const stream = Stream.fromEvent(target, eventName, useCapture);
-        stream.name = name;
-        this.addFrame([stream]);
+        const wire = Wire.fromEvent(target, eventName, useCapture);
+        wire.name = eventName;
+        wire.target = this.addFrame();
+        this._wires.push(wire);
+
         return this;
 
     };
 
-    eventList(list) {
-
-        F.ASSERT_NOT_HOLDING(this);
-
-        const len = list.length;
-        const streams = [];
-
-        for(let i = 0; i < len; i++){
-            const e = list[i];
-            const eventName = e.eventName || e.name;
-            const name = e.name || e.eventName;
-            const s = Stream.fromEvent(e.target, eventName, e.useCapture);
-            s.name = name;
-            streams.push(s);
-        }
-
-        this.addFrame(streams);
-        return this;
-
-    };
+    // eventList(list) {
+    //
+    //     F.ASSERT_NOT_HOLDING(this);
+    //
+    //     const len = list.length;
+    //     const streams = [];
+    //
+    //     for(let i = 0; i < len; i++){
+    //         const e = list[i];
+    //         const eventName = e.eventName || e.name;
+    //         const name = e.name || e.eventName;
+    //         const s = Stream.fromEvent(e.target, eventName, e.useCapture);
+    //         s.name = name;
+    //         streams.push(s);
+    //     }
+    //
+    //     this.addFrame(streams);
+    //     return this;
+    //
+    // };
 
     scan(func, seed){
         return this.reduce(F.getScan, func, seed);
@@ -296,7 +298,8 @@ class Bus {
 
         F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().run(func);
+
+        this.addFrame().define(new WaveDef('run', func));
         return this;
 
     };
@@ -325,7 +328,8 @@ class Bus {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().msg(fAny);
+
+        this.addFrame().define(new WaveDef('msg', fAny));
         return this;
 
     };
@@ -355,8 +359,9 @@ class Bus {
         F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().filter(func);
+        this.addFrame().define(new WaveDef('filter', func));
         return this;
+
 
     };
 
@@ -371,7 +376,8 @@ class Bus {
     skipDupes() {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().skipDupes();
+
+        this.addFrame().define(new WaveDef('filter', F.getSkipDupes, true));
         return this;
 
     };
@@ -387,10 +393,11 @@ class Bus {
 
         this._dead = true;
 
-        const frames = this._frames;
-
-        for (const f of frames) {
-            f.destroy();
+        const wires = this._wires;
+        const len = wires.length;
+        for (let i = 0; i < len; i++) {
+            const wire = wires[i];
+            wire.destroy();
         }
 
         return this;
@@ -399,30 +406,6 @@ class Bus {
 
 }
 
-// send messages from streams in one frame to new empty streams in another frame
-// injects new streams to frame 2
-
-function _wireFrames(frame1, frame2, isForking) {
-
-    const streams1 = frame1._streams;
-    const streams2 = frame2._streams;
-
-    const len = streams1.length;
-
-    for (let i = 0; i < len; i++) {
-
-        const s1 = streams1[i];
-        const s2 = new Stream(frame2);
-
-        if(!isForking)
-            s2.name = s1.name;
-
-        streams2.push(s2);
-        s1.addTarget(s2);
-
-    }
-
-}
 
 
 export default Bus;
