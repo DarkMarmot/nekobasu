@@ -1007,6 +1007,13 @@ var Wave = function () {
             frame.emit(wire, _msg, source, topic);
         }
     }, {
+        key: "source",
+        value: function source(frame, wire, msg, _source, topic) {
+
+            _source = this.action(msg, _source, topic);
+            frame.emit(wire, msg, _source, topic);
+        }
+    }, {
         key: "filter",
         value: function filter(frame, wire, msg, source, topic) {
 
@@ -1182,7 +1189,7 @@ Wire.fromSubscribe = function (data, topic, name, canPull) {
                 var msg = packet._msg;
                 var source = wireName || packet._source;
                 var _topic = packet._topic;
-                wire.handle(msg, source, _topic, wire);
+                wire.handle(msg, source, _topic);
             }
         };
     }
@@ -1248,7 +1255,7 @@ var Frame = function () {
         value: function handle(wire, msg, source, topic) {
 
             if (this._mergingWire) {
-                this.emit(wire, msg, source, topic);
+                this.emit(this._mergingWire, msg, source, topic);
                 return;
             }
 
@@ -1256,7 +1263,7 @@ var Frame = function () {
             if (!hasWire) this._wireMap.set(wire, this._createHandler(wire));
 
             var handler = this._wireMap.get(wire);
-            handler.handle(this, wire, msg, wire.name || source, topic);
+            handler.handle(this, wire, msg, source || wire.name, topic);
         }
     }, {
         key: 'emit',
@@ -1282,13 +1289,6 @@ var Frame = function () {
             this._holding = true;
             this._processDef = new PoolDef();
             return this;
-        }
-    }, {
-        key: 'pull',
-        value: function pull() {
-
-            // todo pull from observers
-
         }
     }, {
         key: 'target',
@@ -1449,16 +1449,11 @@ var Bus = function () {
         key: 'pull',
         value: function pull() {
 
-            var frame1 = this._frames[0];
+            var len = this._wires.length;
 
-            if (frame1._streams.length > 0) {
-                frame1.pull();
-                return this;
-            }
-
-            if (this._frames.length !== 1) {
-                var frame2 = this._frames[1];
-                frame2.pull();
+            for (var i = 0; i < len; i++) {
+                var wire = this._wires[i];
+                wire.pull();
             }
 
             return this;
@@ -1467,39 +1462,36 @@ var Bus = function () {
         key: 'event',
         value: function event(target, eventName, useCapture) {
 
-            Func.ASSERT_NOT_HOLDING(this);
             var wire = Wire.fromEvent(target, eventName, useCapture);
-            wire.name = eventName;
-            wire.target = this.addFrame();
+            return this.wire(wire);
+        }
+    }, {
+        key: 'subscribe',
+        value: function subscribe(data, topic, name, canPull) {
+
+            var wire = Wire.fromSubscribe(data, topic, name, canPull);
+            return this.wire(wire);
+        }
+    }, {
+        key: 'wire',
+        value: function wire(_wire) {
+
+            _wire.target = this._frames[0];
+            this._wires.push(_wire);
+            return this;
+        }
+    }, {
+        key: 'monitor',
+        value: function monitor(data, name) {
+
+            var wire = Wire.fromMonitor(data, name);
+            wire.target = this._frames[0];
             this._wires.push(wire);
 
             return this;
         }
     }, {
         key: 'scan',
-
-
-        // eventList(list) {
-        //
-        //     F.ASSERT_NOT_HOLDING(this);
-        //
-        //     const len = list.length;
-        //     const streams = [];
-        //
-        //     for(let i = 0; i < len; i++){
-        //         const e = list[i];
-        //         const eventName = e.eventName || e.name;
-        //         const name = e.name || e.eventName;
-        //         const s = Stream.fromEvent(e.target, eventName, e.useCapture);
-        //         s.name = name;
-        //         streams.push(s);
-        //     }
-        //
-        //     this.addFrame(streams);
-        //     return this;
-        //
-        // };
-
         value: function scan(func, seed) {
             return this.reduce(Func.getScan, func, seed);
         }
@@ -1523,14 +1515,15 @@ var Bus = function () {
     }, {
         key: 'whenKeys',
         value: function whenKeys(keys) {
-            return this.when(Func.getWhenKeys, keys);
+            return this.when(Func.getWhenKeys, true, keys);
         }
     }, {
         key: 'group',
         value: function group(by) {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold().reduce(Func.getGroup, by);
+
+            this.hold().reduce(Func.getGroup, by);
             return this;
         }
     }, {
@@ -1587,8 +1580,6 @@ var Bus = function () {
                 var _frame = this._currentFrame;
                 var _def = _frame._processDef;
                 _def.keep = [factory, true].concat(args);
-
-                //this.addFrame().hold().reduce(factory, ...args).timer(F.getSyncTimer);
             }
 
             return this;
@@ -1624,15 +1615,33 @@ var Bus = function () {
         }
     }, {
         key: 'when',
-        value: function when(factory) {
-            var _currentFrame3, _addFrame$hold$reduce2;
+        value: function when(factory, stateful) {
 
-            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
-                args[_key5 - 1] = arguments[_key5];
+            var holding = this.holding;
+
+            for (var _len5 = arguments.length, args = Array(_len5 > 2 ? _len5 - 2 : 0), _key5 = 2; _key5 < _len5; _key5++) {
+                args[_key5 - 2] = arguments[_key5];
             }
 
-            this.holding ? (_currentFrame3 = this._currentFrame).when.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold$reduce2 = this.addFrame().hold().reduce(Func.getKeepLast)).when.apply(_addFrame$hold$reduce2, [factory].concat(args)).timer(Func.getSyncTimer);
+            if (!holding) {
+
+                var frame = this.addFrame();
+                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['filter', factory, stateful], args)))();
+                frame.define(def);
+            } else {
+
+                var _frame2 = this._currentFrame;
+                var _def2 = _frame2._processDef;
+                _def2.when = [factory, stateful].concat(args);
+            }
+
             return this;
+
+            //
+            // this.holding ?
+            //     this._currentFrame.when(factory, ...args) :
+            //     this.addFrame().hold().reduce(F.getKeepLast).when(factory, ...args).timer(F.getSyncTimer);
+            // return this;
         }
     }, {
         key: 'run',
@@ -1650,19 +1659,7 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
 
-            var mergedStream = new Stream();
-
-            var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-            this._frames.push(nextFrame);
-
-            var streams = lastFrame._streams;
-            var len = streams.length;
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.addTarget(mergedStream);
-            }
-
+            this.addFrame().merge();
             return this;
         }
     }, {
@@ -1672,7 +1669,7 @@ var Bus = function () {
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('msg', fAny));
+            this.addFrame().define(new WaveDef('msg', Func.FUNCTOR(fAny)));
             return this;
         }
     }, {
@@ -1691,7 +1688,7 @@ var Bus = function () {
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().source(fStr);
+            this.addFrame().define(new WaveDef('source', Func.FUNCTOR(fStr)));
             return this;
         }
     }, {
@@ -1710,7 +1707,7 @@ var Bus = function () {
         value: function hasKeys(keys) {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hasKeys(keys);
+            this.addFrame().define(new WaveDef('filter', Func.getHasKeys(keys)));
             return this;
         }
     }, {
@@ -2140,7 +2137,7 @@ function parsePhrase(str) {
 
 Nyan.parse = parse;
 
-var Stream$1 = function () {
+var Stream = function () {
     function Stream() {
         classCallCheck(this, Stream);
 
@@ -2266,9 +2263,9 @@ var Stream$1 = function () {
     return Stream;
 }();
 
-Stream$1.fromMonitor = function (data, name, canPull) {
+Stream.fromMonitor = function (data, name, canPull) {
 
-    var stream = new Stream$1();
+    var stream = new Stream();
     var streamName = name || data.name;
 
     stream.name = streamName;
@@ -2298,9 +2295,9 @@ Stream$1.fromMonitor = function (data, name, canPull) {
     return stream;
 };
 
-Stream$1.fromSubscribe = function (data, topic, name, canPull) {
+Stream.fromSubscribe = function (data, topic, name, canPull) {
 
-    var stream = new Stream$1();
+    var stream = new Stream();
     var streamName = name || topic || data.name;
     stream.name = streamName;
 
@@ -2329,11 +2326,11 @@ Stream$1.fromSubscribe = function (data, topic, name, canPull) {
     return stream;
 };
 
-Stream$1.fromEvent = function (target, eventName, useCapture) {
+Stream.fromEvent = function (target, eventName, useCapture) {
 
     useCapture = !!useCapture;
 
-    var stream = new Stream$1();
+    var stream = new Stream();
     stream.name = eventName;
 
     var on = target.addEventListener || target.addListener || target.on;
@@ -2534,13 +2531,13 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPull) {
+function getDataWire(scope, word, canPull) {
 
     var data = scope.find(word.name, !word.maybe);
     if (word.monitor) {
-        return Stream$1.fromMonitor(data, word.alias, canPull);
+        return Wire.fromMonitor(data, word.alias, canPull);
     } else {
-        return Stream$1.fromSubscribe(data, word.topic, word.alias, canPull);
+        return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
     }
 }
 
@@ -2549,9 +2546,9 @@ function isObject(v) {
     return typeof v === 'function' || (typeof v === 'undefined' ? 'undefined' : _typeof(v)) === 'object';
 }
 
-function getEventStream(scope, word, node) {
+function getEventWire(word, target) {
 
-    return Stream$1.fromEvent(node, word.topic, word.useCapture, word.alias);
+    return Wire.fromEvent(target, word.topic, word.useCapture, word.alias);
 }
 
 function doExtracts(value, extracts) {
@@ -2623,32 +2620,31 @@ function applyReaction(scope, bus, phrase, target) {
     var extracts = [];
 
     if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
-        bus.addFrame(getDataStream(scope, phrase[0], false));
+        var word = phrase[0];
+        bus.wire(getDataWire(scope, word, false));
         return;
     }
 
     for (var i = 0; i < phrase.length; i++) {
 
-        var word = phrase[i];
-        var operation = word.operation;
+        var _word3 = phrase[i];
+        var operation = _word3.operation;
 
         if (operation === 'WATCH') {
-            streams.push(getDataStream(scope, word, true));
-            skipDupes.push(word.alias);
+            bus.wire(getDataWire(scope, _word3, true));
+            skipDupes.push(_word3.alias);
         } else if (operation === 'WIRE') {
-            streams.push(getDataStream(scope, word, true));
+            bus.wire(getDataWire(scope, _word3, true));
         } else if (operation === 'EVENT') {
-            streams.push(getEventStream(scope, word));
+            bus.wire(getEventWire(_word3, target));
         }
 
-        if (word.extracts) extracts.push(word);
+        if (_word3.extracts) extracts.push(_word3);
 
-        if (word.need) need.push(word.alias);
+        if (_word3.need) need.push(_word3.alias);
     }
 
-    bus.addFrame(streams);
-
-    if (streams.length > 1) {
+    if (bus._wires.length > 1) {
 
         bus.merge().group().batch();
 

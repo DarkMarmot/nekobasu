@@ -33,6 +33,13 @@ class Wave {
 
     }
 
+    source(frame, wire, msg, source, topic) {
+
+        source = this.action(msg, source, topic);
+        frame.emit(wire, msg, source, topic);
+
+    }
+
     filter(frame, wire, msg, source, topic) {
 
         if(!this.action(msg, source, topic))

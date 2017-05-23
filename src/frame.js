@@ -36,7 +36,7 @@ class Frame {
     handle(wire, msg, source, topic){
 
         if(this._mergingWire){
-            this.emit(wire, msg, source, topic);
+            this.emit(this._mergingWire, msg, source, topic);
             return;
         }
 
@@ -45,7 +45,7 @@ class Frame {
             this._wireMap.set(wire, this._createHandler(wire));
 
         const handler = this._wireMap.get(wire);
-        handler.handle(this, wire, msg, wire.name || source, topic);
+        handler.handle(this, wire, msg, source || wire.name , topic);
 
     };
 
@@ -87,12 +87,6 @@ class Frame {
 
     };
 
-    pull(){
-
-        // todo pull from observers
-
-    };
-
     target(frame) {
 
         this._targets.push(frame);
@@ -103,93 +97,27 @@ class Frame {
 
     };
 
-    // source(name) {
-    //
-    //     const streams = this._streams;
-    //     const len = streams.length;
-    //
-    //     for(let i = 0; i < len; i++){
-    //         const s = streams[i];
-    //         s.name = name;
-    //     }
-    //     return this;
-    //
-    // }
-    //
-    // run(func, stateful){
-    //     return this.applySyncProcess('doRun', func, stateful);
-    // };
-    //
-    // msg(fAny, stateful){
-    //     return this.applySyncProcess('doMsg', F.FUNCTOR(fAny), stateful);
-    // };
-    //
+
+
     //
     // transform(fAny, stateful){
     //     return this.applySyncProcess('doTransform', F.FUNCTOR(fAny), stateful);
     // };
     //
-    // delay(fNum, stateful){
-    //     return this.applySyncProcess('doDelay', F.FUNCTOR(fNum), stateful);
-    // };
-    //
-    // filter(func, stateful){
-    //     return this.applySyncProcess('doFilter', func, stateful);
-    // };
-    //
-    // skipDupes() {
-    //     return this.applySyncProcess('doFilter', F.getSkipDupes, true);
-    // };
-    //
-    // hasKeys(keys) {
-    //     return this.applySyncProcess('doFilter', F.getHasKeys, true, keys);
-    // };
-    //
+
+
     // clear(factory, ...args){
     //     return this.buildPoolAspect('clear', factory, ...args);
     // };
     //
     // // factory should define content and reset methods have signature f(msg, source) return f.content()
     //
-    // reduce(factory, ...args){
-    //     return this.buildPoolAspect('keep', factory, ...args);
-    // };
-    //
-    // timer(factory, ...args){
-    //     return this.buildPoolAspect('timer', factory, ...args);
-    // };
-    //
-    // when(factory, ...args){
-    //     return this.buildPoolAspect('when', factory, ...args);
-    // };
+
     //
     // until(factory, ...args){
     //     return this.buildPoolAspect('until', factory, ...args);
     // };
     //
-    // buildPoolAspect(aspect, factory, ...args){
-    //
-    //     if(aspect === 'timer')
-    //         this._holding = false;
-    //
-    //     this._poolAspects[aspect] = [factory, ...args];
-    //
-    //     const streams = this._streams;
-    //     const len = streams.length;
-    //
-    //     for(let i = 0; i < len; i++){
-    //
-    //         const s = streams[i];
-    //         const pool = s.pool;
-    //         pool.build(aspect, factory, ...args);
-    //
-    //     }
-    //
-    //     return this;
-    //
-    // };
-
-
     
 }
 

@@ -75,7 +75,7 @@ Wire.fromSubscribe = function(data, topic, name, canPull){
                 const msg = packet._msg;
                 const source = wireName || packet._source;
                 const topic = packet._topic;
-                wire.handle(msg, source, topic, wire);
+                wire.handle(msg, source, topic);
             }
         }
     }

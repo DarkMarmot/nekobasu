@@ -1,4 +1,4 @@
-import Stream from './stream.js';
+import Wire from './wire.js';
 import Nyan from './nyan.js';
 
 
@@ -190,13 +190,13 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPull) {
+function getDataWire(scope, word, canPull) {
 
     const data = scope.find(word.name, !word.maybe);
     if(word.monitor){
-        return Stream.fromMonitor(data, word.alias, canPull);
+        return Wire.fromMonitor(data, word.alias, canPull);
     } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias, canPull);
+        return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
     }
 
 }
@@ -208,9 +208,9 @@ function isObject(v) {
 }
 
 
-function getEventStream(scope, word, node){
+function getEventWire(word, target){
 
-    return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
+    return Wire.fromEvent(target, word.topic, word.useCapture, word.alias);
 
 }
 
@@ -287,7 +287,8 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
     const extracts = [];
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
-        bus.addFrame(getDataStream(scope, phrase[0], false));
+        const word = phrase[0];
+        bus.wire(getDataWire(scope, word, false));
         return;
     }
 
@@ -297,14 +298,14 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         const operation = word.operation;
 
         if(operation === 'WATCH') {
-            streams.push(getDataStream(scope, word, true));
+            bus.wire(getDataWire(scope, word, true));
             skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
-            streams.push(getDataStream(scope, word, true));
+            bus.wire(getDataWire(scope, word, true));
         }
         else if(operation === 'EVENT') {
-            streams.push(getEventStream(scope, word));
+            bus.wire(getEventWire(word, target));
         }
 
         if(word.extracts)
@@ -315,9 +316,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     }
 
-    bus.addFrame(streams);
-
-    if(streams.length > 1) {
+    if(bus._wires.length > 1) {
 
         bus.merge().group().batch();
 
