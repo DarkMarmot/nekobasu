@@ -2,11 +2,11 @@ import F from './flib.js';
 
 class Wire {
 
-    constructor(){
+    constructor(name){
 
         this.target = null; // a frame in a bus
         this.dead = false;
-        this.name = null;
+        this.name = name;
         this.cleanupMethod = F.NOOP; // to cleanup subscriptions
         this.pull = F.NOOP; // to retrieve and emit stored values from a source
 
@@ -33,14 +33,31 @@ class Wire {
 }
 
 
+Wire.fromInterval = function(delay, name){
+
+    const wire = new Wire(name);
+
+    const toWire = function(msg){
+        wire.handle(msg);
+    };
+
+    const id = setInterval(toWire, delay);
+
+    wire.cleanupMethod = function(){
+        clearInterval(id);
+    };
+
+    return wire;
+
+};
+
 
 Wire.fromMonitor = function(data, name){
 
-    const wire = new Wire();
-    const wireName = wire.name = name || data.name;
+    const wire = new Wire(name);
 
     const toWire = function(msg, source, topic){
-        wire.handle(msg, wireName, topic);
+        wire.handle(msg, source, topic);
     };
 
     wire.cleanupMethod = function(){
@@ -57,11 +74,10 @@ Wire.fromMonitor = function(data, name){
 
 Wire.fromSubscribe = function(data, topic, name, canPull){
 
-    const wire = new Wire();
-    const wireName = wire.name = name || topic || data.name;
+    const wire = new Wire(name || topic || data.name);
 
     const toWire = function(msg, source, topic){
-        wire.handle(msg, wireName, topic);
+        wire.handle(msg, source, topic);
     };
 
     wire.cleanupMethod = function(){
@@ -73,7 +89,7 @@ Wire.fromSubscribe = function(data, topic, name, canPull){
             const packet = data.peek();
             if(packet) {
                 const msg = packet._msg;
-                const source = wireName || packet._source;
+                const source = packet._source;
                 const topic = packet._topic;
                 wire.handle(msg, source, topic);
             }
@@ -92,8 +108,7 @@ Wire.fromEvent = function(target, eventName, useCapture){
 
     useCapture = !!useCapture;
 
-    const wire = new Wire();
-    wire.name = eventName;
+    const wire = new Wire(eventName);
 
     const on = target.addEventListener || target.addListener || target.on;
     const off = target.removeEventListener || target.removeListener || target.off;

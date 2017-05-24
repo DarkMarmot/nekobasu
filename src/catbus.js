@@ -9,6 +9,9 @@ const Catbus = {};
 let _batchQueue = [];
 let _primed = false;
 
+Catbus.bus = function(){
+    return new Bus();
+};
 
 
 Catbus.fromEvent = function(target, eventName, useCapture){

@@ -316,6 +316,8 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     }
 
+    // transformations are applied via named hashes for performance
+
     if(bus._wires.length > 1) {
 
         bus.merge().group().batch();
@@ -342,8 +344,13 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
 }
 
-function isTruthy(msg){ return !!msg; };
-function isFalsey(msg){ return !msg; };
+function isTruthy(msg){
+    return !!msg;
+}
+
+function isFalsey(msg){
+    return !msg;
+}
 
 
 function applyMethod(bus, word) {

@@ -328,6 +328,8 @@ describe('RootScope', function(){
     it('can write to datab', function(){
 
 
+
+
         var d1 = world.data('village');
         var d2 = world.data('forest');
         var d3 = world.data('sea');
@@ -344,7 +346,6 @@ describe('RootScope', function(){
         d3.write('dog');
         Catbus.flush();
         // Catbus.flush();
-
 
         console.log('is', d1.read(), msgLog);
         var name = d1.name;

@@ -541,6 +541,24 @@ describe('Catbus', function(){
 
             });
 
+            it('can emit at intervals', function () {
+
+                b1 = Catbus.bus();
+                b1.interval(100, 'cat');
+                b1.msg('meow');
+                b1.run(log);
+                clock.tick(350);
+
+
+                assert.equal(msgLog.length, 3);
+                assert.equal(sourceLog[2], 'cat');
+                assert.equal(msgLog[2], 'meow');
+
+                b1.destroy();
+
+
+            });
+
 
         });
 

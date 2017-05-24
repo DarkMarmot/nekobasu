@@ -178,6 +178,13 @@ class Bus {
 
     };
 
+    interval(delay, name){
+
+        const wire = Wire.fromInterval(delay, name);
+        return this.wire(wire);
+
+    }
+
     wire(wire) {
 
         wire.target = this._frames[0];
@@ -198,7 +205,9 @@ class Bus {
 
 
     scan(func, seed){
+
         return this.reduce(F.getScan, func, seed);
+
     };
 
     delay(fNum) {
@@ -219,21 +228,22 @@ class Bus {
     }
 
     whenKeys(keys) {
+
         return this.when(F.getWhenKeys, true, keys);
+
     };
 
     group(by) {
 
-        F.ASSERT_NOT_HOLDING(this);
-
-        this.hold().reduce(F.getGroup, by);
+        this.reduce(F.getGroup, by);
         return this;
+
     };
 
     groupByTopic() {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hold().reduce(F.getGroup, F.TO_TOPIC);
+        this.hold().reduce(F.getGroup, F.TO_TOPIC);
         return this;
     };
 
@@ -277,7 +287,6 @@ class Bus {
 
     timer(factory, stateful, ...args) {
 
-
         const holding = this.holding;
         const frame = holding ? this._currentFrame : this.addFrame().hold();
         const def = frame._processDef;
@@ -316,12 +325,6 @@ class Bus {
         }
 
         return this;
-
-        //
-        // this.holding ?
-        //     this._currentFrame.when(factory, ...args) :
-        //     this.addFrame().hold().reduce(F.getKeepLast).when(factory, ...args).timer(F.getSyncTimer);
-        // return this;
 
     };
 
@@ -420,6 +423,7 @@ class Bus {
             wire.destroy();
         }
 
+        this._wires = null;
         return this;
 
     };

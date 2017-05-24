@@ -1119,13 +1119,13 @@ var PoolDef = function PoolDef() {
 };
 
 var Wire = function () {
-    function Wire() {
+    function Wire(name) {
         classCallCheck(this, Wire);
 
 
         this.target = null; // a frame in a bus
         this.dead = false;
-        this.name = null;
+        this.name = name;
         this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
         this.pull = Func.NOOP; // to retrieve and emit stored values from a source
     }
@@ -1151,13 +1151,29 @@ var Wire = function () {
     return Wire;
 }();
 
+Wire.fromInterval = function (delay, name) {
+
+    var wire = new Wire(name);
+
+    var toWire = function toWire(msg) {
+        wire.handle(msg);
+    };
+
+    var id = setInterval(toWire, delay);
+
+    wire.cleanupMethod = function () {
+        clearInterval(id);
+    };
+
+    return wire;
+};
+
 Wire.fromMonitor = function (data, name) {
 
-    var wire = new Wire();
-    var wireName = wire.name = name || data.name;
+    var wire = new Wire(name);
 
     var toWire = function toWire(msg, source, topic) {
-        wire.handle(msg, wireName, topic);
+        wire.handle(msg, source, topic);
     };
 
     wire.cleanupMethod = function () {
@@ -1171,11 +1187,10 @@ Wire.fromMonitor = function (data, name) {
 
 Wire.fromSubscribe = function (data, topic, name, canPull) {
 
-    var wire = new Wire();
-    var wireName = wire.name = name || topic || data.name;
+    var wire = new Wire(name || topic || data.name);
 
     var toWire = function toWire(msg, source, topic) {
-        wire.handle(msg, wireName, topic);
+        wire.handle(msg, source, topic);
     };
 
     wire.cleanupMethod = function () {
@@ -1187,7 +1202,7 @@ Wire.fromSubscribe = function (data, topic, name, canPull) {
             var packet = data.peek();
             if (packet) {
                 var msg = packet._msg;
-                var source = wireName || packet._source;
+                var source = packet._source;
                 var _topic = packet._topic;
                 wire.handle(msg, source, _topic);
             }
@@ -1203,8 +1218,7 @@ Wire.fromEvent = function (target, eventName, useCapture) {
 
     useCapture = !!useCapture;
 
-    var wire = new Wire();
-    wire.name = eventName;
+    var wire = new Wire(eventName);
 
     var on = target.addEventListener || target.addListener || target.on;
     var off = target.removeEventListener || target.removeListener || target.off;
@@ -1473,6 +1487,13 @@ var Bus = function () {
             return this.wire(wire);
         }
     }, {
+        key: 'interval',
+        value: function interval(delay, name) {
+
+            var wire = Wire.fromInterval(delay, name);
+            return this.wire(wire);
+        }
+    }, {
         key: 'wire',
         value: function wire(_wire) {
 
@@ -1493,6 +1514,7 @@ var Bus = function () {
     }, {
         key: 'scan',
         value: function scan(func, seed) {
+
             return this.reduce(Func.getScan, func, seed);
         }
     }, {
@@ -1515,15 +1537,14 @@ var Bus = function () {
     }, {
         key: 'whenKeys',
         value: function whenKeys(keys) {
+
             return this.when(Func.getWhenKeys, true, keys);
         }
     }, {
         key: 'group',
         value: function group(by) {
 
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.hold().reduce(Func.getGroup, by);
+            this.reduce(Func.getGroup, by);
             return this;
         }
     }, {
@@ -1531,7 +1552,7 @@ var Bus = function () {
         value: function groupByTopic() {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold().reduce(Func.getGroup, Func.TO_TOPIC);
+            this.hold().reduce(Func.getGroup, Func.TO_TOPIC);
             return this;
         }
     }, {
@@ -1636,12 +1657,6 @@ var Bus = function () {
             }
 
             return this;
-
-            //
-            // this.holding ?
-            //     this._currentFrame.when(factory, ...args) :
-            //     this.addFrame().hold().reduce(F.getKeepLast).when(factory, ...args).timer(F.getSyncTimer);
-            // return this;
         }
     }, {
         key: 'run',
@@ -1739,6 +1754,7 @@ var Bus = function () {
                 wire.destroy();
             }
 
+            this._wires = null;
             return this;
         }
     }, {
@@ -2432,6 +2448,8 @@ function applyReaction(scope, bus, phrase, target) {
         if (_word3.need) need.push(_word3.alias);
     }
 
+    // transformations are applied via named hashes for performance
+
     if (bus._wires.length > 1) {
 
         bus.merge().group().batch();
@@ -2454,6 +2472,7 @@ function applyReaction(scope, bus, phrase, target) {
 function isTruthy(msg) {
     return !!msg;
 }
+
 function isFalsey(msg) {
     return !msg;
 }
@@ -3232,6 +3251,10 @@ var Catbus$1 = {};
 
 var _batchQueue = [];
 var _primed = false;
+
+Catbus$1.bus = function () {
+    return new Bus();
+};
 
 Catbus$1.fromEvent = function (target, eventName, useCapture) {
 
