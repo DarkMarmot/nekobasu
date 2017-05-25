@@ -1,6 +1,6 @@
 import Wire from './wire.js';
 import Nyan from './nyan.js';
-
+import Bus from './bus.js';
 
 function getPacketFromDataWord(scope, word){
 
@@ -283,7 +283,6 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     const need = [];
     const skipDupes = [];
-    const streams = [];
     const extracts = [];
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
@@ -502,19 +501,22 @@ function applyFilterProcess(bus, phrase, context){
 
 }
 
+function createBus(nyan, scope, context, target){
 
-function nyanToBus(scope, bus, str, context, target){
+    let bus = new Bus(scope);
+    return applyNyan(nyan, bus, context, target);
 
-    const nyan = Nyan.parse(str);
+}
+
+function applyNyan(nyan, bus, context, target){
+
     const len = nyan.length;
-
+    const scope = bus.scope;
     for(let i = 0; i < len; i++){
 
         const cmd = nyan[i];
         const name = cmd.name;
         const phrase = cmd.phrase;
-
-      //  console.log('----', name, phrase);
 
         if(name === 'JOIN') {
             bus = bus.join();
@@ -539,4 +541,10 @@ function nyanToBus(scope, bus, str, context, target){
 
 }
 
-export default nyanToBus;
+const NyanRunner = {
+    applyNyan: applyNyan,
+    createBus: createBus
+};
+
+
+export default NyanRunner;

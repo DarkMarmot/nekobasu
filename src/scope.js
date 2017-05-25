@@ -3,7 +3,8 @@
 import Data from './data.js';
 import { DATA_TYPES } from './dataTypes.js';
 import Bus from './bus.js';
-import nyanToBus from './nyanBus.js';
+import NyanRunner from './nyanRunner.js';
+import Nyan from './nyan.js';
 
 let idCounter = 0;
 
@@ -43,18 +44,16 @@ class Scope{
 
     };
 
+    bus(strOrNyan, context, node){
 
-    // todo react via nyan (so it can be precompiled and reused
-    react(str, context, node){ // string is Nyan
+        if(!strOrNyan)
+            return new Bus(this);
 
-        if(!str)
-            throw new Error('Need a Nyan phrase!');
-
-        let b = new Bus(this);
-
-        return nyanToBus(this, b, str, context, node);
+        const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
+        return NyanRunner.createBus(nyan, this, context, node);
 
     };
+
 
     clear(){
 

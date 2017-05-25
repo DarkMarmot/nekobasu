@@ -1246,7 +1246,7 @@ var Frame = function () {
         this._index = bus._frames.length;
         this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
-        this._processDef = null; // wave or poll definition
+        this._processDef = null; // wave or pool definition
         this._mergingWire = null;
     }
 
@@ -1347,466 +1347,6 @@ var WaveDef = function WaveDef(process, action, stateful) {
 
     this.args = args;
 };
-
-var Bus = function () {
-    function Bus(scope) {
-        classCallCheck(this, Bus);
-
-
-        this._frames = [];
-        this._wires = [];
-        this._dead = false;
-        this._scope = scope; // data scope
-        this._children = []; // from forks
-        this._parent = null;
-
-        if (scope) scope._busList.push(this);
-
-        var f = new Frame(this);
-        this._frames.push(f);
-        this._currentFrame = f;
-    }
-
-    createClass(Bus, [{
-        key: 'addFrame',
-
-
-        // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
-
-        value: function addFrame() {
-
-            var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this);
-            this._frames.push(nextFrame);
-            lastFrame.target(nextFrame);
-            return nextFrame;
-        }
-    }, {
-        key: 'spawn',
-
-
-        // create stream
-        value: function spawn() {}
-
-        // convert each stream into a bus, wiring prior streams, dump in array
-
-    }, {
-        key: 'split',
-        value: function split() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-        }
-    }, {
-        key: 'fork',
-        value: function fork() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            var fork = new Bus(this.scope);
-            fork.parent = this;
-            this._currentFrame.target(fork._currentFrame);
-
-            return fork;
-        }
-    }, {
-        key: 'back',
-        value: function back() {
-
-            if (!this._parent) throw new Error('Cannot exit fork, parent does not exist!');
-
-            return this.parent;
-        }
-    }, {
-        key: 'join',
-        value: function join() {
-
-            var parent = this.back();
-            parent.add(this);
-            return parent;
-        }
-    }, {
-        key: 'add',
-        value: function add(bus) {
-
-            var frame = this.addFrame(); // wire from current bus
-            bus._currentFrame.target(frame); // wire from outside bus
-            return this;
-        }
-    }, {
-        key: 'defer',
-        value: function defer() {
-            return this.timer(Func.getDeferTimer);
-        }
-    }, {
-        key: 'batch',
-        value: function batch() {
-            return this.timer(Func.getBatchTimer);
-        }
-    }, {
-        key: 'sync',
-        value: function sync() {
-            return this.timer(Func.getSyncTimer);
-        }
-    }, {
-        key: 'throttle',
-        value: function throttle(fNum) {
-            return this.timer(Func.getThrottleTimer, fNum);
-        }
-    }, {
-        key: 'hold',
-        value: function hold() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold();
-            return this;
-        }
-    }, {
-        key: 'pull',
-        value: function pull() {
-
-            var len = this._wires.length;
-
-            for (var i = 0; i < len; i++) {
-                var wire = this._wires[i];
-                wire.pull();
-            }
-
-            return this;
-        }
-    }, {
-        key: 'event',
-        value: function event(target, eventName, useCapture) {
-
-            var wire = Wire.fromEvent(target, eventName, useCapture);
-            return this.wire(wire);
-        }
-    }, {
-        key: 'subscribe',
-        value: function subscribe(data, topic, name, canPull) {
-
-            var wire = Wire.fromSubscribe(data, topic, name, canPull);
-            return this.wire(wire);
-        }
-    }, {
-        key: 'interval',
-        value: function interval(delay, name) {
-
-            var wire = Wire.fromInterval(delay, name);
-            return this.wire(wire);
-        }
-    }, {
-        key: 'wire',
-        value: function wire(_wire) {
-
-            _wire.target = this._frames[0];
-            this._wires.push(_wire);
-            return this;
-        }
-    }, {
-        key: 'monitor',
-        value: function monitor(data, name) {
-
-            var wire = Wire.fromMonitor(data, name);
-            wire.target = this._frames[0];
-            this._wires.push(wire);
-
-            return this;
-        }
-    }, {
-        key: 'scan',
-        value: function scan(func, seed) {
-
-            return this.reduce(Func.getScan, func, seed);
-        }
-    }, {
-        key: 'delay',
-        value: function delay(fNum) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('delay', Func.FUNCTOR(fNum)));
-            return this;
-        }
-    }, {
-        key: 'willReset',
-        value: function willReset() {
-
-            Func.ASSERT_IS_HOLDING(this);
-            return this.clear(Func.getAlwaysTrue);
-        }
-    }, {
-        key: 'whenKeys',
-        value: function whenKeys(keys) {
-
-            return this.when(Func.getWhenKeys, true, keys);
-        }
-    }, {
-        key: 'group',
-        value: function group(by) {
-
-            this.reduce(Func.getGroup, by);
-            return this;
-        }
-    }, {
-        key: 'groupByTopic',
-        value: function groupByTopic() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.hold().reduce(Func.getGroup, Func.TO_TOPIC);
-            return this;
-        }
-    }, {
-        key: 'all',
-        value: function all() {
-            return this.reduce(Func.getKeepAll);
-        }
-    }, {
-        key: 'first',
-        value: function first(n) {
-            return this.reduce(Func.getKeepFirst, n);
-        }
-    }, {
-        key: 'last',
-        value: function last(n) {
-            return this.reduce(Func.getKeepLast, n);
-        }
-    }, {
-        key: 'clear',
-        value: function clear(factory) {
-            var _currentFrame;
-
-            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-                args[_key - 1] = arguments[_key];
-            }
-
-            return (_currentFrame = this._currentFrame).clear.apply(_currentFrame, [factory].concat(args));
-        }
-    }, {
-        key: 'reduce',
-        value: function reduce(factory) {
-
-            var holding = this.holding;
-
-            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-                args[_key2 - 1] = arguments[_key2];
-            }
-
-            if (!holding) {
-
-                var frame = this.addFrame();
-                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['msg', factory, true], args)))();
-                frame.define(def);
-            } else {
-
-                var _frame = this._currentFrame;
-                var _def = _frame._processDef;
-                _def.keep = [factory, true].concat(args);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'timer',
-        value: function timer(factory, stateful) {
-
-            var holding = this.holding;
-            var frame = holding ? this._currentFrame : this.addFrame().hold();
-            var def = frame._processDef;
-
-            for (var _len3 = arguments.length, args = Array(_len3 > 2 ? _len3 - 2 : 0), _key3 = 2; _key3 < _len3; _key3++) {
-                args[_key3 - 2] = arguments[_key3];
-            }
-
-            def.timer = [factory, stateful].concat(args);
-            this._currentFrame._holding = false; // timer ends hold
-
-            return this;
-        }
-    }, {
-        key: 'until',
-        value: function until(factory) {
-            var _currentFrame2, _addFrame$hold$reduce;
-
-            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
-                args[_key4 - 1] = arguments[_key4];
-            }
-
-            this.holding ? (_currentFrame2 = this._currentFrame).until.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold$reduce = this.addFrame().hold().reduce(Func.getKeepLast)).until.apply(_addFrame$hold$reduce, [factory].concat(args)).timer(Func.getSyncTimer);
-            return this;
-        }
-    }, {
-        key: 'when',
-        value: function when(factory, stateful) {
-
-            var holding = this.holding;
-
-            for (var _len5 = arguments.length, args = Array(_len5 > 2 ? _len5 - 2 : 0), _key5 = 2; _key5 < _len5; _key5++) {
-                args[_key5 - 2] = arguments[_key5];
-            }
-
-            if (!holding) {
-
-                var frame = this.addFrame();
-                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['filter', factory, stateful], args)))();
-                frame.define(def);
-            } else {
-
-                var _frame2 = this._currentFrame;
-                var _def2 = _frame2._processDef;
-                _def2.when = [factory, stateful].concat(args);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'run',
-        value: function run(func) {
-
-            Func.ASSERT_IS_FUNCTION(func);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('run', func));
-            return this;
-        }
-    }, {
-        key: 'merge',
-        value: function merge() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().merge();
-            return this;
-        }
-    }, {
-        key: 'msg',
-        value: function msg(fAny) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('msg', Func.FUNCTOR(fAny)));
-            return this;
-        }
-    }, {
-        key: 'transform',
-        value: function transform(fAny) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().transform(fAny);
-            return this;
-        }
-    }, {
-        key: 'source',
-        value: function source(fStr) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('source', Func.FUNCTOR(fStr)));
-            return this;
-        }
-    }, {
-        key: 'filter',
-        value: function filter(func) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_IS_FUNCTION(func);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('filter', func));
-            return this;
-        }
-    }, {
-        key: 'hasKeys',
-        value: function hasKeys(keys) {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().define(new WaveDef('filter', Func.getHasKeys(keys)));
-            return this;
-        }
-    }, {
-        key: 'skipDupes',
-        value: function skipDupes() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().define(new WaveDef('filter', Func.getSkipDupes, true));
-            return this;
-        }
-    }, {
-        key: 'toStream',
-        value: function toStream() {
-            // merge, fork -> immutable stream?
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return this;
-
-            this._dead = true;
-
-            var wires = this._wires;
-            var len = wires.length;
-            for (var i = 0; i < len; i++) {
-                var wire = wires[i];
-                wire.destroy();
-            }
-
-            this._wires = null;
-            return this;
-        }
-    }, {
-        key: 'children',
-        get: function get$$1() {
-
-            return this._children.map(function (d) {
-                return d;
-            });
-        }
-    }, {
-        key: 'parent',
-        get: function get$$1() {
-            return this._parent;
-        },
-        set: function set$$1(newParent) {
-
-            var oldParent = this.parent;
-
-            if (oldParent === newParent) return;
-
-            if (oldParent) {
-                var i = oldParent._children.indexOf(this);
-                oldParent._children.splice(i, 1);
-            }
-
-            this._parent = newParent;
-
-            if (newParent) {
-                newParent._children.push(this);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'holding',
-        get: function get$$1() {
-            return this._currentFrame._holding;
-        }
-    }, {
-        key: 'scope',
-        get: function get$$1() {
-            return this._scope;
-        }
-    }]);
-    return Bus;
-}();
 
 var Nyan = {};
 
@@ -2420,7 +1960,6 @@ function applyReaction(scope, bus, phrase, target) {
 
     var need = [];
     var skipDupes = [];
-    var streams = [];
     var extracts = [];
 
     if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
@@ -2602,18 +2141,21 @@ function applyFilterProcess(bus, phrase, context) {
     }
 }
 
-function nyanToBus(scope, bus, str, context, target) {
+function createBus(nyan, scope, context, target) {
 
-    var nyan = Nyan.parse(str);
+    var bus = new Bus(scope);
+    return applyNyan(nyan, bus, context, target);
+}
+
+function applyNyan(nyan, bus, context, target) {
+
     var len = nyan.length;
-
+    var scope = bus.scope;
     for (var i = 0; i < len; i++) {
 
         var cmd = nyan[i];
         var name = cmd.name;
         var phrase = cmd.phrase;
-
-        //  console.log('----', name, phrase);
 
         if (name === 'JOIN') {
             bus = bus.join();
@@ -2633,6 +2175,480 @@ function nyanToBus(scope, bus, str, context, target) {
 
     return bus;
 }
+
+var NyanRunner = {
+    applyNyan: applyNyan,
+    createBus: createBus
+};
+
+var Bus = function () {
+    function Bus(scope) {
+        classCallCheck(this, Bus);
+
+
+        this._frames = [];
+        this._wires = [];
+        this._dead = false;
+        this._scope = scope;
+        this._children = []; // from forks
+        this._parent = null;
+
+        if (scope) scope._busList.push(this);
+
+        var f = new Frame(this);
+        this._frames.push(f);
+        this._currentFrame = f;
+    }
+
+    createClass(Bus, [{
+        key: 'addFrame',
+
+
+        // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+
+        value: function addFrame() {
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new Frame(this);
+            this._frames.push(nextFrame);
+            lastFrame.target(nextFrame);
+            return nextFrame;
+        }
+    }, {
+        key: 'process',
+        value: function process(nyan, context, target) {
+
+            if (typeof nyan === 'string') nyan = Nyan.parse(nyan, true);
+
+            NyanRunner.applyNyan(nyan, this, context, target);
+            return this;
+        }
+
+        // create stream
+
+    }, {
+        key: 'spawn',
+        value: function spawn() {}
+
+        // convert each stream into a bus, wiring prior streams, dump in array
+
+    }, {
+        key: 'split',
+        value: function split() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+        }
+    }, {
+        key: 'fork',
+        value: function fork() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            var fork = new Bus(this.scope);
+            fork.parent = this;
+            this._currentFrame.target(fork._currentFrame);
+
+            return fork;
+        }
+    }, {
+        key: 'back',
+        value: function back() {
+
+            if (!this._parent) throw new Error('Cannot exit fork, parent does not exist!');
+
+            return this.parent;
+        }
+    }, {
+        key: 'join',
+        value: function join() {
+
+            var parent = this.back();
+            parent.add(this);
+            return parent;
+        }
+    }, {
+        key: 'add',
+        value: function add(bus) {
+
+            var frame = this.addFrame(); // wire from current bus
+            bus._currentFrame.target(frame); // wire from outside bus
+            return this;
+        }
+    }, {
+        key: 'defer',
+        value: function defer() {
+            return this.timer(Func.getDeferTimer);
+        }
+    }, {
+        key: 'batch',
+        value: function batch() {
+            return this.timer(Func.getBatchTimer);
+        }
+    }, {
+        key: 'sync',
+        value: function sync() {
+            return this.timer(Func.getSyncTimer);
+        }
+    }, {
+        key: 'throttle',
+        value: function throttle(fNum) {
+            return this.timer(Func.getThrottleTimer, fNum);
+        }
+    }, {
+        key: 'hold',
+        value: function hold() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().hold();
+            return this;
+        }
+    }, {
+        key: 'pull',
+        value: function pull() {
+
+            var len = this._wires.length;
+
+            for (var i = 0; i < len; i++) {
+                var wire = this._wires[i];
+                wire.pull();
+            }
+
+            return this;
+        }
+    }, {
+        key: 'event',
+        value: function event(target, eventName, useCapture) {
+
+            var wire = Wire.fromEvent(target, eventName, useCapture);
+            return this.wire(wire);
+        }
+    }, {
+        key: 'subscribe',
+        value: function subscribe(data, topic, name, canPull) {
+
+            var wire = Wire.fromSubscribe(data, topic, name, canPull);
+            return this.wire(wire);
+        }
+    }, {
+        key: 'interval',
+        value: function interval(delay, name) {
+
+            var wire = Wire.fromInterval(delay, name);
+            return this.wire(wire);
+        }
+    }, {
+        key: 'wire',
+        value: function wire(_wire, targetFrame) {
+
+            _wire.target = targetFrame || this._frames[0];
+            this._wires.push(_wire);
+            return this;
+        }
+    }, {
+        key: 'monitor',
+        value: function monitor(data, name) {
+
+            var wire = Wire.fromMonitor(data, name);
+            wire.target = this._frames[0];
+            this._wires.push(wire);
+
+            return this;
+        }
+    }, {
+        key: 'scan',
+        value: function scan(func, seed) {
+
+            return this.reduce(Func.getScan, func, seed);
+        }
+    }, {
+        key: 'delay',
+        value: function delay(fNum) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('delay', Func.FUNCTOR(fNum)));
+            return this;
+        }
+    }, {
+        key: 'willReset',
+        value: function willReset() {
+
+            Func.ASSERT_IS_HOLDING(this);
+            return this.clear(Func.getAlwaysTrue);
+        }
+    }, {
+        key: 'whenKeys',
+        value: function whenKeys(keys) {
+
+            return this.when(Func.getWhenKeys, true, keys);
+        }
+    }, {
+        key: 'group',
+        value: function group(by) {
+
+            this.reduce(Func.getGroup, by);
+            return this;
+        }
+    }, {
+        key: 'groupByTopic',
+        value: function groupByTopic() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.hold().reduce(Func.getGroup, Func.TO_TOPIC);
+            return this;
+        }
+    }, {
+        key: 'all',
+        value: function all() {
+            return this.reduce(Func.getKeepAll);
+        }
+    }, {
+        key: 'first',
+        value: function first(n) {
+            return this.reduce(Func.getKeepFirst, n);
+        }
+    }, {
+        key: 'last',
+        value: function last(n) {
+            return this.reduce(Func.getKeepLast, n);
+        }
+    }, {
+        key: 'clear',
+        value: function clear(factory) {
+            var _currentFrame;
+
+            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+                args[_key - 1] = arguments[_key];
+            }
+
+            return (_currentFrame = this._currentFrame).clear.apply(_currentFrame, [factory].concat(args));
+        }
+    }, {
+        key: 'reduce',
+        value: function reduce(factory) {
+
+            var holding = this.holding;
+
+            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
+            }
+
+            if (!holding) {
+
+                var frame = this.addFrame();
+                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['msg', factory, true], args)))();
+                frame.define(def);
+            } else {
+
+                var _frame = this._currentFrame;
+                var _def = _frame._processDef;
+                _def.keep = [factory, true].concat(args);
+            }
+
+            return this;
+        }
+    }, {
+        key: 'timer',
+        value: function timer(factory, stateful) {
+
+            var holding = this.holding;
+            var frame = holding ? this._currentFrame : this.addFrame().hold();
+            var def = frame._processDef;
+
+            for (var _len3 = arguments.length, args = Array(_len3 > 2 ? _len3 - 2 : 0), _key3 = 2; _key3 < _len3; _key3++) {
+                args[_key3 - 2] = arguments[_key3];
+            }
+
+            def.timer = [factory, stateful].concat(args);
+            this._currentFrame._holding = false; // timer ends hold
+
+            return this;
+        }
+    }, {
+        key: 'until',
+        value: function until(factory) {
+            var _currentFrame2, _addFrame$hold$reduce;
+
+            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
+                args[_key4 - 1] = arguments[_key4];
+            }
+
+            this.holding ? (_currentFrame2 = this._currentFrame).until.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold$reduce = this.addFrame().hold().reduce(Func.getKeepLast)).until.apply(_addFrame$hold$reduce, [factory].concat(args)).timer(Func.getSyncTimer);
+            return this;
+        }
+    }, {
+        key: 'when',
+        value: function when(factory, stateful) {
+
+            var holding = this.holding;
+
+            for (var _len5 = arguments.length, args = Array(_len5 > 2 ? _len5 - 2 : 0), _key5 = 2; _key5 < _len5; _key5++) {
+                args[_key5 - 2] = arguments[_key5];
+            }
+
+            if (!holding) {
+
+                var frame = this.addFrame();
+                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['filter', factory, stateful], args)))();
+                frame.define(def);
+            } else {
+
+                var _frame2 = this._currentFrame;
+                var _def2 = _frame2._processDef;
+                _def2.when = [factory, stateful].concat(args);
+            }
+
+            return this;
+        }
+    }, {
+        key: 'run',
+        value: function run(func) {
+
+            Func.ASSERT_IS_FUNCTION(func);
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('run', func));
+            return this;
+        }
+    }, {
+        key: 'merge',
+        value: function merge() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().merge();
+            return this;
+        }
+    }, {
+        key: 'msg',
+        value: function msg(fAny) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('msg', Func.FUNCTOR(fAny)));
+            return this;
+        }
+    }, {
+        key: 'transform',
+        value: function transform(fAny) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().transform(fAny);
+            return this;
+        }
+    }, {
+        key: 'source',
+        value: function source(fStr) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('source', Func.FUNCTOR(fStr)));
+            return this;
+        }
+    }, {
+        key: 'filter',
+        value: function filter(func) {
+
+            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
+            Func.ASSERT_IS_FUNCTION(func);
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('filter', func));
+            return this;
+        }
+    }, {
+        key: 'hasKeys',
+        value: function hasKeys(keys) {
+
+            Func.ASSERT_NOT_HOLDING(this);
+            this.addFrame().define(new WaveDef('filter', Func.getHasKeys(keys)));
+            return this;
+        }
+    }, {
+        key: 'skipDupes',
+        value: function skipDupes() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame().define(new WaveDef('filter', Func.getSkipDupes, true));
+            return this;
+        }
+    }, {
+        key: 'toStream',
+        value: function toStream() {
+            // merge, fork -> immutable stream?
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            if (this.dead) return this;
+
+            this._dead = true;
+
+            var wires = this._wires;
+            var len = wires.length;
+            for (var i = 0; i < len; i++) {
+                var wire = wires[i];
+                wire.destroy();
+            }
+
+            this._wires = null;
+            return this;
+        }
+    }, {
+        key: 'children',
+        get: function get$$1() {
+
+            return this._children.map(function (d) {
+                return d;
+            });
+        }
+    }, {
+        key: 'parent',
+        get: function get$$1() {
+            return this._parent;
+        },
+        set: function set$$1(newParent) {
+
+            var oldParent = this.parent;
+
+            if (oldParent === newParent) return;
+
+            if (oldParent) {
+                var i = oldParent._children.indexOf(this);
+                oldParent._children.splice(i, 1);
+            }
+
+            this._parent = newParent;
+
+            if (newParent) {
+                newParent._children.push(this);
+            }
+
+            return this;
+        }
+    }, {
+        key: 'dead',
+        get: function get$$1() {
+            return this._dead;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return this._currentFrame._holding;
+        }
+    }, {
+        key: 'scope',
+        get: function get$$1() {
+            return this._scope;
+        }
+    }]);
+    return Bus;
+}();
 
 var idCounter = 0;
 
@@ -2662,18 +2678,13 @@ var Scope = function () {
     }
 
     createClass(Scope, [{
-        key: 'react',
+        key: 'bus',
+        value: function bus(strOrNyan, context, node) {
 
+            if (!strOrNyan) return new Bus(this);
 
-        // todo react via nyan (so it can be precompiled and reused
-        value: function react(str, context, node) {
-            // string is Nyan
-
-            if (!str) throw new Error('Need a Nyan phrase!');
-
-            var b = new Bus(this);
-
-            return nyanToBus(this, b, str, context, node);
+            var nyan = typeof strOrNyan === 'string' ? Nyan.parse(strOrNyan) : strOrNyan;
+            return NyanRunner.createBus(nyan, this, context, node);
         }
     }, {
         key: 'clear',

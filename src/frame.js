@@ -13,7 +13,7 @@ class Frame {
         this._index = bus._frames.length;
         this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
-        this._processDef = null; // wave or poll definition
+        this._processDef = null; // wave or pool definition
         this._mergingWire = null;
 
     };

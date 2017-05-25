@@ -3,6 +3,8 @@ import Frame from './frame.js';
 import F from './flib.js';
 import Wire from './wire.js';
 import WaveDef from './waveDef.js';
+import Nyan from './nyan.js';
+import NyanRunner from './nyanRunner.js';
 
 class Bus {
 
@@ -11,7 +13,7 @@ class Bus {
         this._frames = [];
         this._wires = [];
         this._dead = false;
-        this._scope = scope; // data scope
+        this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
 
@@ -78,6 +80,16 @@ class Bus {
 
     };
 
+
+    process(nyan, context, target){
+
+        if(typeof nyan === 'string')
+            nyan = Nyan.parse(nyan, true);
+
+        NyanRunner.applyNyan(nyan, this, context, target);
+        return this;
+
+    }
 
     // create stream
     spawn(){
@@ -185,9 +197,9 @@ class Bus {
 
     }
 
-    wire(wire) {
+    wire(wire, targetFrame) {
 
-        wire.target = this._frames[0];
+        wire.target = targetFrame || this._frames[0];
         this._wires.push(wire);
         return this;
 
