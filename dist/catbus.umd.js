@@ -188,414 +188,6 @@ function isValid(type) {
     return reverseLookup.hasOwnProperty(type);
 }
 
-var SubscriberList = function () {
-    function SubscriberList(topic, data) {
-        classCallCheck(this, SubscriberList);
-
-
-        this._topic = topic;
-        this._subscribers = [];
-        this._lastPacket = null;
-        this._data = data;
-        this._name = data._name;
-        this._dead = false;
-    }
-
-    createClass(SubscriberList, [{
-        key: 'handle',
-        value: function handle(msg, topic, silently) {
-
-            if (this.dead) return;
-
-            topic = topic || this.topic;
-            var source = this.name;
-            var currentPacket = new Packet(msg, topic, source);
-
-            if (this.data.type !== DATA_TYPES.ACTION) // actions do not store data (ephemeral and immediate)
-                this._lastPacket = currentPacket;
-
-            var subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-            var len = subscribers.length;
-
-            if (!silently) {
-                for (var i = 0; i < len; i++) {
-                    var s = subscribers[i];
-                    typeof s === 'function' ? s.call(s, msg, currentPacket) : s.handle(msg, currentPacket);
-                }
-            }
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return;
-
-            this._subscribers = null;
-            this._lastPacket = null;
-            this._dead = true;
-        }
-    }, {
-        key: 'add',
-        value: function add(watcher) {
-
-            this._subscribers.push(watcher);
-        }
-    }, {
-        key: 'remove',
-        value: function remove(watcher) {
-
-            var i = this._subscribers.indexOf(watcher);
-
-            if (i !== -1) this._subscribers.splice(i, 1);
-        }
-    }, {
-        key: 'lastPacket',
-        get: function get$$1() {
-            return this._lastPacket;
-        }
-    }, {
-        key: 'data',
-        get: function get$$1() {
-            return this._data;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'topic',
-        get: function get$$1() {
-            return this._topic;
-        }
-    }]);
-    return SubscriberList;
-}();
-
-var Data = function () {
-    function Data(scope, name, type) {
-        classCallCheck(this, Data);
-
-
-        type = type || DATA_TYPES.NONE;
-
-        if (!isValid(type)) throw new Error('Invalid Data of type: ' + type);
-
-        this._scope = scope;
-        this._name = name;
-        this._type = type;
-        this._dead = false;
-
-        this._wildcardSubscriberList = new SubscriberList(null, this);
-        this._subscriberListsByTopic = new Map();
-    }
-
-    createClass(Data, [{
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) this._throwDead();
-
-            var _iteratorNormalCompletion = true;
-            var _didIteratorError = false;
-            var _iteratorError = undefined;
-
-            try {
-                for (var _iterator = this._subscriberListsByTopic.values()[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var list = _step.value;
-
-                    list.destroy();
-                }
-            } catch (err) {
-                _didIteratorError = true;
-                _iteratorError = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion && _iterator.return) {
-                        _iterator.return();
-                    }
-                } finally {
-                    if (_didIteratorError) {
-                        throw _iteratorError;
-                    }
-                }
-            }
-
-            this._dead = true;
-        }
-    }, {
-        key: '_demandSubscriberList',
-        value: function _demandSubscriberList(topic) {
-
-            topic = topic || undefined;
-            var list = this._subscriberListsByTopic.get(topic);
-
-            if (list) return list;
-
-            list = new SubscriberList(topic, this);
-            this._subscriberListsByTopic.set(topic, list);
-
-            return list;
-        }
-    }, {
-        key: 'verify',
-        value: function verify(expectedType) {
-
-            if (this.type === expectedType) return this;
-
-            throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
-        }
-    }, {
-        key: 'follow',
-        value: function follow(watcher, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this.subscribe(watcher, topic);
-            var packet = this.peek();
-
-            if (packet) typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.handle(packet.msg, packet);
-
-            return this;
-        }
-    }, {
-        key: 'subscribe',
-        value: function subscribe(watcher, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this._demandSubscriberList(topic).add(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'monitor',
-        value: function monitor(watcher) {
-
-            if (this.dead) this._throwDead();
-
-            this._wildcardSubscriberList.add(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'unsubscribe',
-        value: function unsubscribe(watcher, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this._demandSubscriberList(topic).remove(watcher);
-            this._wildcardSubscriberList.remove(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'topics',
-        value: function topics() {
-
-            return this._subscriberListsByTopic.keys();
-        }
-    }, {
-        key: 'survey',
-        value: function survey() {
-            // get entire key/value store by topic:lastPacket
-
-            var entries = this._subscriberListsByTopic.entries();
-            var m = new Map();
-            var _iteratorNormalCompletion2 = true;
-            var _didIteratorError2 = false;
-            var _iteratorError2 = undefined;
-
-            try {
-                for (var _iterator2 = entries[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var _step2$value = slicedToArray(_step2.value, 2),
-                        key = _step2$value[0],
-                        value = _step2$value[1];
-
-                    m.set(key, value.lastPacket);
-                }
-            } catch (err) {
-                _didIteratorError2 = true;
-                _iteratorError2 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                        _iterator2.return();
-                    }
-                } finally {
-                    if (_didIteratorError2) {
-                        throw _iteratorError2;
-                    }
-                }
-            }
-
-            return m;
-        }
-    }, {
-        key: 'peek',
-        value: function peek(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var subscriberList = this._subscriberListsByTopic.get(topic);
-            return subscriberList ? subscriberList.lastPacket : null;
-        }
-    }, {
-        key: 'read',
-        value: function read(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var packet = this.peek(topic);
-            return packet ? packet.msg : undefined;
-        }
-    }, {
-        key: 'silentWrite',
-        value: function silentWrite(msg, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this.write(msg, topic, true);
-        }
-    }, {
-        key: 'write',
-        value: function write(msg, topic, silently) {
-
-            if (this.dead) this._throwDead();
-
-            if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
-
-            topic = topic || undefined;
-            var list = this._demandSubscriberList(topic);
-            list.handle(msg, topic, silently);
-            this._wildcardSubscriberList.handle(msg, topic, silently);
-        }
-    }, {
-        key: 'refresh',
-        value: function refresh(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var lastPacket = this.peek(topic);
-
-            if (lastPacket) this.write(lastPacket._msg, topic);
-
-            return this;
-        }
-    }, {
-        key: 'toggle',
-        value: function toggle(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this.write(!this.read(topic), topic);
-
-            return this;
-        }
-    }, {
-        key: '_throwDead',
-        value: function _throwDead() {
-
-            throw new Error('Data: ' + this.name + ' is already dead.');
-        }
-    }, {
-        key: 'scope',
-        get: function get$$1() {
-            return this._scope;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'type',
-        get: function get$$1() {
-            return this._type;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }]);
-    return Data;
-}();
-
-function pass(frame, wire, msg, source, topic) {
-
-    frame.emit(wire, msg, source, topic);
-}
-
-var Wave = function () {
-    function Wave(def) {
-        classCallCheck(this, Wave);
-
-
-        this.process = def && def.process ? this[def.process] : pass;
-        this.action = def ? def.stateful ? def.action.apply(def, toConsumableArray(def.args)) : def.action : null;
-    }
-
-    createClass(Wave, [{
-        key: "handle",
-        value: function handle(frame, wire, msg, source, topic) {
-            this.process(frame, wire, msg, source, topic);
-        }
-    }, {
-        key: "run",
-        value: function run(frame, wire, msg, source, topic) {
-
-            this.action(msg, source, topic);
-            frame.emit(wire, msg, source, topic);
-        }
-    }, {
-        key: "msg",
-        value: function msg(frame, wire, _msg, source, topic) {
-
-            _msg = this.action(_msg, source, topic);
-            frame.emit(wire, _msg, source, topic);
-        }
-    }, {
-        key: "source",
-        value: function source(frame, wire, msg, _source, topic) {
-
-            _source = this.action(msg, _source, topic);
-            frame.emit(wire, msg, _source, topic);
-        }
-    }, {
-        key: "filter",
-        value: function filter(frame, wire, msg, source, topic) {
-
-            if (!this.action(msg, source, topic)) return;
-            frame.emit(wire, msg, source, topic);
-        }
-    }, {
-        key: "delay",
-        value: function delay(frame, wire, msg, source, topic) {
-
-            function callback() {
-                frame.emit(wire, msg, source, topic);
-            }
-
-            setTimeout(callback, this.action(msg, source, topic) || 0, msg, source, topic);
-        }
-    }]);
-    return Wave;
-}();
-
 function ALWAYS_TRUE() {
     return true;
 }
@@ -760,6 +352,25 @@ var Func = {
 
         return f;
     },
+
+    // getScan: function(func, seed){
+    //
+    //     let acc = seed;
+    //
+    //     const f = function(msg, source){
+    //
+    //         return acc = func(acc, msg, source);
+    //     };
+    //
+    //     f.reset = NOOP;
+    //
+    //     f.next = f.content = function(){
+    //         return acc;
+    //     };
+    //
+    //
+    //     return f;
+    // },
 
     getGroup: function getGroup(groupBy) {
 
@@ -1034,6 +645,469 @@ Func.ALWAYS_TRUE = ALWAYS_TRUE;
 Func.ALWAYS_FALSE = ALWAYS_FALSE;
 Func.NOOP = NOOP;
 
+function callMany(list, msg, source, topic) {
+
+    var len = list.length;
+    for (var i = 0; i < len; i++) {
+        var s = list[i];
+        s.call(s, msg, source, topic);
+    }
+}
+
+function callNoOne(list, msg, source, topic) {}
+
+function callOne(list, msg, source, topic) {
+    var s = list[0];
+    s.call(s, msg, source, topic);
+}
+
+var SubscriberList = function () {
+    function SubscriberList(topic, data) {
+        classCallCheck(this, SubscriberList);
+
+
+        this._topic = topic;
+        this._subscribers = [];
+        this._callback = callNoOne;
+        this._used = false; // true after first msg
+        this._lastMsg = null;
+        this._lastTopic = null;
+        this._data = data;
+        this._name = data._name;
+        this._dead = false;
+
+        if (data.type === DATA_TYPES.ACTION) {
+            this.handle = this.handleAction;
+        }
+    }
+
+    createClass(SubscriberList, [{
+        key: 'handle',
+        value: function handle(msg, topic, silently) {
+
+            // if(this.dead)
+            //     return;
+
+            this._used = true;
+            topic = topic || this.topic;
+            var source = this.name;
+
+            this._lastMsg = msg;
+            this._lastTopic = topic;
+
+            //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
+
+            if (!silently) {
+                this._callback(this._subscribers, msg, source, topic);
+            }
+        }
+    }, {
+        key: 'handleAction',
+        value: function handleAction(msg, topic) {
+
+            topic = topic || this.topic;
+            var source = this.name;
+
+            //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
+            this._callback(this._subscribers, msg, source, topic);
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {
+
+            // if(this.dead)
+            //     return;
+
+            this._subscribers = null;
+            this._lastMsg = null;
+            this._dead = true;
+        }
+    }, {
+        key: 'add',
+        value: function add(watcher) {
+
+            var s = typeof watcher === 'function' ? watcher : function (msg, source, topic) {
+                watcher.handle(msg, source, topic);
+            };
+            this._subscribers.push(s);
+            this.determineCaller();
+            return this;
+        }
+    }, {
+        key: 'remove',
+        value: function remove(watcher) {
+
+            var i = this._subscribers.indexOf(watcher);
+
+            if (i !== -1) this._subscribers.splice(i, 1);
+
+            this.determineCaller();
+
+            return this;
+        }
+    }, {
+        key: 'determineCaller',
+        value: function determineCaller() {
+            var len = this._subscribers.length;
+            if (len === 0) {
+                this._callback = callNoOne;
+            } else if (len == 1) {
+                this._callback = callOne;
+            } else {
+                this._callback = callMany;
+            }
+        }
+    }, {
+        key: 'used',
+        get: function get$$1() {
+            return this._used;
+        }
+    }, {
+        key: 'lastMsg',
+        get: function get$$1() {
+            return this._lastMsg;
+        }
+    }, {
+        key: 'lastTopic',
+        get: function get$$1() {
+            return this._lastTopic;
+        }
+    }, {
+        key: 'data',
+        get: function get$$1() {
+            return this._data;
+        }
+    }, {
+        key: 'name',
+        get: function get$$1() {
+            return this._name;
+        }
+    }, {
+        key: 'dead',
+        get: function get$$1() {
+            return this._dead;
+        }
+    }, {
+        key: 'topic',
+        get: function get$$1() {
+            return this._topic;
+        }
+    }]);
+    return SubscriberList;
+}();
+
+var Data = function () {
+    function Data(scope, name, type) {
+        classCallCheck(this, Data);
+
+
+        type = type || DATA_TYPES.NONE;
+
+        if (!isValid(type)) throw new Error('Invalid Data of type: ' + type);
+
+        this._scope = scope;
+        this._name = name;
+        this._type = type;
+        this._dead = false;
+
+        this._noTopicList = new SubscriberList(null, this);
+        this._wildcardSubscriberList = new SubscriberList(null, this);
+        this._subscriberListsByTopic = {};
+    }
+
+    createClass(Data, [{
+        key: 'destroy',
+        value: function destroy() {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            var _iteratorNormalCompletion = true;
+            var _didIteratorError = false;
+            var _iteratorError = undefined;
+
+            try {
+                for (var _iterator = this._subscriberListsByTopic.values()[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+                    var list = _step.value;
+
+                    list.destroy();
+                }
+            } catch (err) {
+                _didIteratorError = true;
+                _iteratorError = err;
+            } finally {
+                try {
+                    if (!_iteratorNormalCompletion && _iterator.return) {
+                        _iterator.return();
+                    }
+                } finally {
+                    if (_didIteratorError) {
+                        throw _iteratorError;
+                    }
+                }
+            }
+
+            this._dead = true;
+        }
+    }, {
+        key: '_demandSubscriberList',
+        value: function _demandSubscriberList(topic) {
+
+            topic = topic || null;
+            var list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
+
+            if (list) return list;
+
+            list = new SubscriberList(topic, this);
+            this._subscriberListsByTopic[topic] = list;
+
+            return list;
+        }
+    }, {
+        key: 'verify',
+        value: function verify(expectedType) {
+
+            if (this.type === expectedType) return this;
+
+            throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
+        }
+    }, {
+        key: 'follow',
+        value: function follow(watcher, topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            var list = this.subscribe(watcher, topic);
+
+            if (list.used) typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
+
+            return this;
+        }
+    }, {
+        key: 'subscribe',
+        value: function subscribe(watcher, topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            return this._demandSubscriberList(topic).add(watcher);
+        }
+    }, {
+        key: 'monitor',
+        value: function monitor(watcher) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            this._wildcardSubscriberList.add(watcher);
+
+            return this;
+        }
+    }, {
+        key: 'unsubscribe',
+        value: function unsubscribe(watcher, topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            topic = topic || null;
+            this._demandSubscriberList(topic).remove(watcher);
+            this._wildcardSubscriberList.remove(watcher);
+
+            return this;
+        }
+    }, {
+        key: 'survey',
+
+
+        // topics(){
+        //
+        //     return this._subscriberListsByTopic.keys();
+        //
+        // };
+
+        value: function survey() {
+            // get entire key/value store by topic:lastPacket
+            throw new Error('not imp');
+
+            // const entries = this._subscriberListsByTopic.entries();
+            // const m = new Map();
+            // for (const [key, value] of entries) {
+            //     m.set(key, value.lastPacket);
+            // }
+            //
+            // return m;
+        }
+    }, {
+        key: 'present',
+        value: function present(topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            var subscriberList = this._demandSubscriberList(topic);
+            return subscriberList.used;
+        }
+    }, {
+        key: 'read',
+        value: function read(topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            var list = this._demandSubscriberList(topic);
+            return list.used ? list.lastMsg : undefined;
+        }
+    }, {
+        key: 'silentWrite',
+        value: function silentWrite(msg, topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            this.write(msg, topic, true);
+        }
+    }, {
+        key: 'write',
+        value: function write(msg, topic, silently) {
+
+            // todo change methods to imply if statements for perf?
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
+
+            var list = this._demandSubscriberList(topic);
+            list.handle(msg, topic, silently);
+            this._wildcardSubscriberList.handle(msg, topic, silently);
+        }
+    }, {
+        key: 'refresh',
+        value: function refresh(topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            var list = this._demandSubscriberList(topic);
+
+            if (list.used) this.write(list.lastMsg, list.lastTopic);
+
+            return this;
+        }
+    }, {
+        key: 'toggle',
+        value: function toggle(topic) {
+
+            // if(this.dead)
+            //     this._throwDead();
+
+            this.write(!this.read(topic), topic);
+
+            return this;
+        }
+    }, {
+        key: '_throwDead',
+        value: function _throwDead() {
+
+            throw new Error('Data: ' + this.name + ' is already dead.');
+        }
+    }, {
+        key: 'scope',
+        get: function get$$1() {
+            return this._scope;
+        }
+    }, {
+        key: 'name',
+        get: function get$$1() {
+            return this._name;
+        }
+    }, {
+        key: 'type',
+        get: function get$$1() {
+            return this._type;
+        }
+    }, {
+        key: 'dead',
+        get: function get$$1() {
+            return this._dead;
+        }
+    }]);
+    return Data;
+}();
+
+function pass(frame, wire, msg, source, topic) {
+
+    frame.emit(wire, msg, source, topic);
+}
+
+var Wave = function () {
+    function Wave(def) {
+        classCallCheck(this, Wave);
+
+
+        this.process = def && def.process ? this[def.process] : pass;
+        this.action = def ? def.stateful ? def.action.apply(def, toConsumableArray(def.args)) : def.action : null;
+    }
+
+    createClass(Wave, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+            this.process(frame, wire, msg, source, topic);
+        }
+    }, {
+        key: "run",
+        value: function run(frame, wire, msg, source, topic) {
+
+            this.action(msg, source, topic);
+            frame.emit(wire, msg, source, topic);
+        }
+    }, {
+        key: "msg",
+        value: function msg(frame, wire, _msg, source, topic) {
+
+            _msg = this.action(_msg, source, topic);
+            frame.emit(wire, _msg, source, topic);
+        }
+    }, {
+        key: "source",
+        value: function source(frame, wire, msg, _source, topic) {
+
+            _source = this.action(msg, _source, topic);
+            frame.emit(wire, msg, _source, topic);
+        }
+    }, {
+        key: "filter",
+        value: function filter(frame, wire, msg, source, topic) {
+
+            if (!this.action(msg, source, topic)) return;
+            frame.emit(wire, msg, source, topic);
+        }
+    }, {
+        key: "split",
+        value: function split(frame, wire, msg, source, topic) {
+
+            var len = msg.length || 0;
+            for (var i = 0; i < len; i++) {
+                var chunk = msg[i];
+                frame.emit(wire, chunk, source, topic);
+            }
+        }
+    }, {
+        key: "delay",
+        value: function delay(frame, wire, msg, source, topic) {
+
+            function callback() {
+                frame.emit(wire, msg, source, topic);
+            }
+
+            setTimeout(callback, this.action(msg, source, topic) || 0, msg, source, topic);
+        }
+    }]);
+    return Wave;
+}();
+
 var Pool = function () {
     function Pool(frame, wire, def) {
         classCallCheck(this, Pool);
@@ -1106,23 +1180,84 @@ var Pool = function () {
     return Pool;
 }();
 
-var PoolDef = function PoolDef() {
-    classCallCheck(this, PoolDef);
+var Frame = function () {
+    function Frame(bus, def) {
+        classCallCheck(this, Frame);
 
 
-    this.name = 'pool';
-    this.keep = null;
-    this.when = null;
-    this.until = null;
-    this.timer = null;
-    this.clear = null;
-};
+        this._bus = bus;
+        this._targets = []; // frames to join or fork into
+        this._index = bus._frames.length;
+        this._wireMap = {}; //new WeakMap(); // wires as keys, handlers/pools as values
+        this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
+        this._processDef = def; // wave or pool definition
+    }
+
+    createClass(Frame, [{
+        key: 'handle',
+        value: function handle(wire, msg, source, topic) {
+
+            var wireId = wire._id;
+            var hasWire = this._wireMap.hasOwnProperty(wireId); //this._wireMap.has(wire); //this._wireMap.hasOwnProperty(wireId); //
+            if (!hasWire) this._wireMap[wireId] = this._createHandler(wire);
+            // this._wireMap.set(wire, this._createHandler(wire));
+
+            var handler = this._wireMap[wireId]; // this._wireMap.get(wire);
+            handler.handle(this, wire, msg, source || wire.name, topic);
+        }
+    }, {
+        key: 'emit',
+        value: function emit(wire, msg, source, topic) {
+
+            var len = this._targets.length;
+            for (var i = 0; i < len; i++) {
+                var frame = this._targets[i];
+                frame.handle(wire, msg, source, topic);
+            }
+        }
+    }, {
+        key: '_createHandler',
+        value: function _createHandler(wire) {
+
+            var def = this._processDef;
+            return def && def.name === 'pool' ? new Pool(this, wire, def) : new Wave(def);
+        }
+    }, {
+        key: 'target',
+        value: function target(frame) {
+
+            this._targets.push(frame);
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {}
+    }, {
+        key: 'bus',
+        get: function get$$1() {
+            return this._bus;
+        }
+    }, {
+        key: 'index',
+        get: function get$$1() {
+            return this._index;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return this._holding;
+        }
+    }]);
+    return Frame;
+}();
+
+var _id = 0;
 
 var Wire = function () {
     function Wire(name) {
         classCallCheck(this, Wire);
 
 
+        this._id = ++_id + '';
         this.target = null; // a frame in a bus
         this.dead = false;
         this.name = name;
@@ -1134,9 +1269,9 @@ var Wire = function () {
         key: 'handle',
         value: function handle(msg, source, topic) {
 
-            if (!this.dead && this.target) this.target.handle(this, msg, this.name || source, topic);
+            if (!this.dead && this.target) this.target.handle(this, msg, this.name, topic);
 
-            return this;
+            //return this;
         }
     }, {
         key: 'destroy',
@@ -1199,12 +1334,11 @@ Wire.fromSubscribe = function (data, topic, name, canPull) {
 
     if (canPull) {
         wire.pull = function () {
-            var packet = data.peek();
-            if (packet) {
-                var msg = packet._msg;
-                var source = packet._source;
-                var _topic = packet._topic;
-                wire.handle(msg, source, _topic);
+            var present = data.present(topic);
+            if (present) {
+                var msg = data.read(topic);
+                var source = wire.name;
+                wire.handle(msg, source, topic);
             }
         };
     }
@@ -1236,45 +1370,142 @@ Wire.fromEvent = function (target, eventName, useCapture) {
     return wire;
 };
 
-var Frame = function () {
-    function Frame(bus) {
-        classCallCheck(this, Frame);
+var FrameMerger = function () {
+    function FrameMerger(bus) {
+        classCallCheck(this, FrameMerger);
 
 
         this._bus = bus;
-        this._targets = []; // frames to join or fork into
+        this._nextFrame = null;
         this._index = bus._frames.length;
-        this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
-        this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
-        this._processDef = null; // wave or pool definition
-        this._mergingWire = null;
+        this._mergingWire = new Wire();
     }
 
-    createClass(Frame, [{
-        key: 'define',
-        value: function define(def) {
-
-            this._processDef = def;
-            return this;
-        }
-    }, {
-        key: 'merge',
-        value: function merge() {
-
-            this._mergingWire = new Wire();
-            return this;
-        }
-    }, {
+    createClass(FrameMerger, [{
         key: 'handle',
         value: function handle(wire, msg, source, topic) {
 
-            if (this._mergingWire) {
-                this.emit(this._mergingWire, msg, source, topic);
-                return;
-            }
+            this.emit(this._mergingWire, msg, source, topic);
+        }
+    }, {
+        key: 'emit',
+        value: function emit(wire, msg, source, topic) {
 
-            var hasWire = this._wireMap.has(wire);
-            if (!hasWire) this._wireMap.set(wire, this._createHandler(wire));
+            if (this._nextFrame) this._nextFrame.handle(wire, msg, source, topic);
+        }
+    }, {
+        key: 'target',
+        value: function target(frame) {
+
+            this._nextFrame = frame;
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {}
+    }, {
+        key: 'bus',
+        get: function get$$1() {
+            return this._bus;
+        }
+    }, {
+        key: 'index',
+        get: function get$$1() {
+            return this._index;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return false;
+        }
+    }]);
+    return FrameMerger;
+}();
+
+var FrameStateless = function () {
+    function FrameStateless(bus, def) {
+        classCallCheck(this, FrameStateless);
+
+
+        this._bus = bus;
+        this._nextFrame = null;
+        this._index = bus._frames.length;
+        this._process = new Wave(def);
+    }
+
+    createClass(FrameStateless, [{
+        key: 'handle',
+        value: function handle(wire, msg, source, topic) {
+
+            this._process.handle(this, wire, msg, source || wire.name, topic);
+        }
+    }, {
+        key: 'emit',
+        value: function emit(wire, msg, source, topic) {
+
+            if (this._nextFrame) this._nextFrame.handle(wire, msg, source, topic);
+        }
+    }, {
+        key: 'target',
+        value: function target(frame) {
+
+            this._nextFrame = frame;
+        }
+    }, {
+        key: 'destroy',
+        value: function destroy() {}
+    }, {
+        key: 'bus',
+        get: function get$$1() {
+            return this._bus;
+        }
+    }, {
+        key: 'index',
+        get: function get$$1() {
+            return this._index;
+        }
+    }, {
+        key: 'holding',
+        get: function get$$1() {
+            return false;
+        }
+    }]);
+    return FrameStateless;
+}();
+
+var PoolDef = function PoolDef() {
+    classCallCheck(this, PoolDef);
+
+
+    this.name = 'pool';
+    this.keep = null;
+    this.when = null;
+    this.until = null;
+    this.timer = null;
+    this.clear = null;
+};
+
+var FrameHold = function () {
+    function FrameHold(bus) {
+        classCallCheck(this, FrameHold);
+
+
+        this._bus = bus;
+        this._nextFrame = null;
+        this._index = bus._frames.length;
+        this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
+        this._processDef = new PoolDef(); // pool definition
+        this._holding = true;
+    }
+
+    createClass(FrameHold, [{
+        key: 'handle',
+        value: function handle(wire, msg, source, topic) {
+
+            //const wireId = wire._id;
+            var hasWire = this._wireMap.has(wire); //this._wireMap.hasOwnProperty(wireId); //
+            if (!hasWire)
+                // this._wireMap[wireId] = this._createHandler(wire);
+                this._wireMap.set(wire, this._createHandler(wire));
 
             var handler = this._wireMap.get(wire);
             handler.handle(this, wire, msg, source || wire.name, topic);
@@ -1283,32 +1514,20 @@ var Frame = function () {
         key: 'emit',
         value: function emit(wire, msg, source, topic) {
 
-            var len = this._targets.length;
-            for (var i = 0; i < len; i++) {
-                var frame = this._targets[i];
-                frame.handle(wire, msg, source, topic);
-            }
+            if (this._nextFrame) this._nextFrame.handle(wire, msg, source, topic);
         }
     }, {
         key: '_createHandler',
         value: function _createHandler(wire) {
 
             var def = this._processDef;
-            return def && def.name === 'pool' ? new Pool(this, wire, def) : new Wave(def);
-        }
-    }, {
-        key: 'hold',
-        value: function hold() {
-
-            this._holding = true;
-            this._processDef = new PoolDef();
-            return this;
+            return new Pool(this, wire, def);
         }
     }, {
         key: 'target',
         value: function target(frame) {
 
-            this._targets.push(frame);
+            this._nextFrame = frame;
         }
     }, {
         key: 'destroy',
@@ -1329,7 +1548,59 @@ var Frame = function () {
             return this._holding;
         }
     }]);
-    return Frame;
+    return FrameHold;
+}();
+
+var FrameForker = function () {
+    function FrameForker(bus) {
+        classCallCheck(this, FrameForker);
+
+
+        this._bus = bus;
+        this._targets = []; // frames to join or fork into
+        this._index = bus._frames.length;
+    }
+
+    createClass(FrameForker, [{
+        key: "handle",
+
+
+        // handle is a multi-emit
+
+        value: function handle(wire, msg, source, topic) {
+
+            var len = this._targets.length;
+            for (var i = 0; i < len; i++) {
+                var frame = this._targets[i];
+                frame.handle(wire, msg, source, topic);
+            }
+        }
+    }, {
+        key: "target",
+        value: function target(frame) {
+
+            this._targets.push(frame);
+        }
+    }, {
+        key: "destroy",
+        value: function destroy() {}
+    }, {
+        key: "bus",
+        get: function get$$1() {
+            return this._bus;
+        }
+    }, {
+        key: "index",
+        get: function get$$1() {
+            return this._index;
+        }
+    }, {
+        key: "holding",
+        get: function get$$1() {
+            return false;
+        }
+    }]);
+    return FrameForker;
 }();
 
 var WaveDef = function WaveDef(process, action, stateful) {
@@ -1693,13 +1964,6 @@ function parsePhrase(str) {
 
 Nyan.parse = parse;
 
-function getPacketFromDataWord(scope, word) {
-
-    var data = scope.find(word.name, !word.maybe);
-    var peek = data && data.peek(word.topic);
-    return peek;
-}
-
 function getSurveyFromDataWord(scope, word) {
 
     var data = scope.find(word.name, !word.maybe);
@@ -1802,10 +2066,12 @@ function getDoAnd(scope, phrase) {
 
 function getDoReadSingle(scope, word) {
 
+    var data = scope.find(word.name, !word.maybe);
+    var topic = word.topic;
+
     return function doReadSingle() {
 
-        var packet = getPacketFromDataWord(scope, word);
-        return packet && packet.msg;
+        return data.read(topic);
     };
 }
 
@@ -1862,9 +2128,9 @@ function getDoReadMultiple(scope, phrase, isAndOperation) {
                 }
             } else {
 
-                var packet = getPacketFromDataWord(scope, word);
+                var data = scope.find(word.name, !word.maybe);
                 var prop = word.monitor ? word.alias || word.topic : word.alias || word.name;
-                if (packet) result[prop] = packet.msg;
+                if (data.present(word.topic)) result[prop] = data.read(word.topic);
             }
         }
 
@@ -2195,7 +2461,7 @@ var Bus = function () {
 
         if (scope) scope._busList.push(this);
 
-        var f = new Frame(this);
+        var f = new FrameStateless(this);
         this._frames.push(f);
         this._currentFrame = f;
     }
@@ -2206,10 +2472,40 @@ var Bus = function () {
 
         // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
-        value: function addFrame() {
+        value: function addFrame(def) {
 
             var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this);
+            var nextFrame = this._currentFrame = def && def.stateful ? new Frame(this, def) : new FrameStateless(this, def);
+            this._frames.push(nextFrame);
+            lastFrame.target(nextFrame);
+            return nextFrame;
+        }
+    }, {
+        key: 'addFrameHold',
+        value: function addFrameHold() {
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new FrameHold(this);
+            this._frames.push(nextFrame);
+            lastFrame.target(nextFrame);
+            return nextFrame;
+        }
+    }, {
+        key: 'addFrameMerger',
+        value: function addFrameMerger() {
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new FrameMerger(this);
+            this._frames.push(nextFrame);
+            lastFrame.target(nextFrame);
+            return nextFrame;
+        }
+    }, {
+        key: 'addFrameForker',
+        value: function addFrameForker() {
+
+            var lastFrame = this._currentFrame;
+            var nextFrame = this._currentFrame = new FrameForker(this);
             this._frames.push(nextFrame);
             lastFrame.target(nextFrame);
             return nextFrame;
@@ -2229,15 +2525,6 @@ var Bus = function () {
     }, {
         key: 'spawn',
         value: function spawn() {}
-
-        // convert each stream into a bus, wiring prior streams, dump in array
-
-    }, {
-        key: 'split',
-        value: function split() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-        }
     }, {
         key: 'fork',
         value: function fork() {
@@ -2245,6 +2532,7 @@ var Bus = function () {
             Func.ASSERT_NOT_HOLDING(this);
             var fork = new Bus(this.scope);
             fork.parent = this;
+            this.addFrameForker();
             this._currentFrame.target(fork._currentFrame);
 
             return fork;
@@ -2298,7 +2586,7 @@ var Bus = function () {
         value: function hold() {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold();
+            this.addFrameHold();
             return this;
         }
     }, {
@@ -2366,7 +2654,7 @@ var Bus = function () {
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('delay', Func.FUNCTOR(fNum)));
+            this.addFrame(new WaveDef('delay', Func.FUNCTOR(fNum)));
             return this;
         }
     }, {
@@ -2435,14 +2723,12 @@ var Bus = function () {
 
             if (!holding) {
 
-                var frame = this.addFrame();
-                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['msg', factory, true], args)))();
-                frame.define(def);
+                this.addFrame(new (Function.prototype.bind.apply(WaveDef, [null].concat(['msg', factory, true], args)))());
             } else {
 
-                var _frame = this._currentFrame;
-                var _def = _frame._processDef;
-                _def.keep = [factory, true].concat(args);
+                var frame = this._currentFrame;
+                var def = frame._processDef;
+                def.keep = [factory, true].concat(args);
             }
 
             return this;
@@ -2452,7 +2738,7 @@ var Bus = function () {
         value: function timer(factory, stateful) {
 
             var holding = this.holding;
-            var frame = holding ? this._currentFrame : this.addFrame().hold();
+            var frame = holding ? this._currentFrame : this.addFrameHold();
             var def = frame._processDef;
 
             for (var _len3 = arguments.length, args = Array(_len3 > 2 ? _len3 - 2 : 0), _key3 = 2; _key3 < _len3; _key3++) {
@@ -2467,13 +2753,13 @@ var Bus = function () {
     }, {
         key: 'until',
         value: function until(factory) {
-            var _currentFrame2, _addFrame$hold$reduce;
+            var _currentFrame2, _addFrameHold$reduce;
 
             for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
                 args[_key4 - 1] = arguments[_key4];
             }
 
-            this.holding ? (_currentFrame2 = this._currentFrame).until.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold$reduce = this.addFrame().hold().reduce(Func.getKeepLast)).until.apply(_addFrame$hold$reduce, [factory].concat(args)).timer(Func.getSyncTimer);
+            this.holding ? (_currentFrame2 = this._currentFrame).until.apply(_currentFrame2, [factory].concat(args)) : (_addFrameHold$reduce = this.addFrameHold().reduce(Func.getKeepLast)).until.apply(_addFrameHold$reduce, [factory].concat(args)).timer(Func.getSyncTimer);
             return this;
         }
     }, {
@@ -2488,14 +2774,12 @@ var Bus = function () {
 
             if (!holding) {
 
-                var frame = this.addFrame();
-                var def = new (Function.prototype.bind.apply(WaveDef, [null].concat(['filter', factory, stateful], args)))();
-                frame.define(def);
+                this.addFrame(new (Function.prototype.bind.apply(WaveDef, [null].concat(['filter', factory, stateful], args)))());
             } else {
 
-                var _frame2 = this._currentFrame;
-                var _def2 = _frame2._processDef;
-                _def2.when = [factory, stateful].concat(args);
+                var frame = this._currentFrame;
+                var def = frame._processDef;
+                def.when = [factory, stateful].concat(args);
             }
 
             return this;
@@ -2507,7 +2791,7 @@ var Bus = function () {
             Func.ASSERT_IS_FUNCTION(func);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('run', func));
+            this.addFrame(new WaveDef('run', func));
             return this;
         }
     }, {
@@ -2516,7 +2800,7 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().merge();
+            this.addFrameMerger();
             return this;
         }
     }, {
@@ -2526,26 +2810,28 @@ var Bus = function () {
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('msg', Func.FUNCTOR(fAny)));
-            return this;
-        }
-    }, {
-        key: 'transform',
-        value: function transform(fAny) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().transform(fAny);
+            this.addFrame(new WaveDef('msg', Func.FUNCTOR(fAny)));
             return this;
         }
     }, {
         key: 'source',
+
+
+        // transform(fAny) {
+        //
+        //     F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+        //     F.ASSERT_NOT_HOLDING(this);
+        //     this.addFrame().transform(fAny);
+        //     return this;
+        //
+        // };
+
         value: function source(fStr) {
 
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('source', Func.FUNCTOR(fStr)));
+            this.addFrame(new WaveDef('source', Func.FUNCTOR(fStr)));
             return this;
         }
     }, {
@@ -2556,7 +2842,16 @@ var Bus = function () {
             Func.ASSERT_IS_FUNCTION(func);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('filter', func));
+            this.addFrame(new WaveDef('filter', func));
+            return this;
+        }
+    }, {
+        key: 'split',
+        value: function split() {
+
+            Func.ASSERT_NOT_HOLDING(this);
+
+            this.addFrame(new WaveDef('split'));
             return this;
         }
     }, {
@@ -2564,7 +2859,7 @@ var Bus = function () {
         value: function hasKeys(keys) {
 
             Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().define(new WaveDef('filter', Func.getHasKeys(keys)));
+            this.addFrame(new WaveDef('filter', Func.getHasKeys(keys)));
             return this;
         }
     }, {
@@ -2573,7 +2868,7 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame().define(new WaveDef('filter', Func.getSkipDupes, true));
+            this.addFrame(new WaveDef('filter', Func.getSkipDupes, true));
             return this;
         }
     }, {
@@ -2684,6 +2979,7 @@ var Scope = function () {
             if (!strOrNyan) return new Bus(this);
 
             var nyan = typeof strOrNyan === 'string' ? Nyan.parse(strOrNyan) : strOrNyan;
+            console.log(nyan);
             return NyanRunner.createBus(nyan, this, context, node);
         }
     }, {
@@ -2819,8 +3115,8 @@ var Scope = function () {
                     var d = _step2.value;
 
                     if (d) {
-                        var lastPacket = d.peek();
-                        if (lastPacket) result[d.name] = lastPacket.msg;
+
+                        if (d.present()) result[d.name] = d.read();
                     }
                 }
             } catch (err) {

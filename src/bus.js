@@ -1,5 +1,9 @@
 
 import Frame from './frame.js';
+import FrameMerger from './frameMerger.js';
+import FrameStateless from './frameStateless.js';
+import FrameHold from './frameHold.js';
+import FrameForker from './frameForker.js';
 import F from './flib.js';
 import Wire from './wire.js';
 import WaveDef from './waveDef.js';
@@ -20,7 +24,7 @@ class Bus {
         if(scope)
             scope._busList.push(this);
 
-        const f = new Frame(this);
+        const f = new FrameStateless(this);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -70,10 +74,41 @@ class Bus {
 
     // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
 
-    addFrame() {
+    addFrame(def) {
 
         const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this);
+        const nextFrame = this._currentFrame = (def && def.stateful) ? new Frame(this, def) : new FrameStateless(this, def);
+        this._frames.push(nextFrame);
+        lastFrame.target(nextFrame);
+        return nextFrame;
+
+    };
+
+    addFrameHold() {
+
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new FrameHold(this);
+        this._frames.push(nextFrame);
+        lastFrame.target(nextFrame);
+        return nextFrame;
+
+    };
+
+
+    addFrameMerger() {
+
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new FrameMerger(this);
+        this._frames.push(nextFrame);
+        lastFrame.target(nextFrame);
+        return nextFrame;
+
+    };
+
+    addFrameForker() {
+
+        const lastFrame = this._currentFrame;
+        const nextFrame = this._currentFrame = new FrameForker(this);
         this._frames.push(nextFrame);
         lastFrame.target(nextFrame);
         return nextFrame;
@@ -96,19 +131,13 @@ class Bus {
 
     }
 
-    // convert each stream into a bus, wiring prior streams, dump in array
-
-    split(){
-
-        F.ASSERT_NOT_HOLDING(this);
-
-    };
 
     fork() {
 
         F.ASSERT_NOT_HOLDING(this);
         const fork = new Bus(this.scope);
         fork.parent = this;
+        this.addFrameForker();
         this._currentFrame.target(fork._currentFrame);
 
         return fork;
@@ -158,7 +187,7 @@ class Bus {
     hold() {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hold();
+        this.addFrameHold();
         return this;
 
     };
@@ -227,7 +256,7 @@ class Bus {
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('delay', F.FUNCTOR(fNum)));
+        this.addFrame(new WaveDef('delay', F.FUNCTOR(fNum)));
         return this;
 
     };
@@ -281,9 +310,7 @@ class Bus {
 
         if(!holding){
 
-            const frame = this.addFrame();
-            const def = new WaveDef('msg', factory, true, ...args);
-            frame.define(def);
+            this.addFrame(new WaveDef('msg', factory, true, ...args));
 
         } else {
 
@@ -300,7 +327,7 @@ class Bus {
     timer(factory, stateful, ...args) {
 
         const holding = this.holding;
-        const frame = holding ? this._currentFrame : this.addFrame().hold();
+        const frame = holding ? this._currentFrame : this.addFrameHold();
         const def = frame._processDef;
         def.timer = [factory, stateful, ...args];
         this._currentFrame._holding = false; // timer ends hold
@@ -313,7 +340,7 @@ class Bus {
 
         this.holding ?
             this._currentFrame.until(factory, ...args) :
-            this.addFrame().hold().reduce(F.getKeepLast).until(factory, ...args).timer(F.getSyncTimer);
+            this.addFrameHold().reduce(F.getKeepLast).until(factory, ...args).timer(F.getSyncTimer);
         return this;
 
     };
@@ -324,9 +351,7 @@ class Bus {
 
         if(!holding){
 
-            const frame = this.addFrame();
-            const def = new WaveDef('filter', factory, stateful, ...args);
-            frame.define(def);
+            this.addFrame(new WaveDef('filter', factory, stateful, ...args));
 
         } else {
 
@@ -345,7 +370,7 @@ class Bus {
         F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('run', func));
+        this.addFrame(new WaveDef('run', func));
         return this;
 
     };
@@ -354,7 +379,7 @@ class Bus {
 
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().merge();
+        this.addFrameMerger();
         return this;
     };
 
@@ -363,26 +388,26 @@ class Bus {
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('msg', F.FUNCTOR(fAny)));
+        this.addFrame(new WaveDef('msg', F.FUNCTOR(fAny)));
         return this;
 
     };
 
-    transform(fAny) {
-
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().transform(fAny);
-        return this;
-
-    };
+    // transform(fAny) {
+    //
+    //     F.ASSERT_NEED_ONE_ARGUMENT(arguments);
+    //     F.ASSERT_NOT_HOLDING(this);
+    //     this.addFrame().transform(fAny);
+    //     return this;
+    //
+    // };
 
     source(fStr) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('source', F.FUNCTOR(fStr)));
+        this.addFrame(new WaveDef('source', F.FUNCTOR(fStr)));
         return this;
 
     };
@@ -394,16 +419,25 @@ class Bus {
         F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('filter', func));
+        this.addFrame(new WaveDef('filter', func));
         return this;
 
+
+    };
+
+    split() {
+
+        F.ASSERT_NOT_HOLDING(this);
+
+        this.addFrame(new WaveDef('split'));
+        return this;
 
     };
 
     hasKeys(keys) {
 
         F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().define(new WaveDef('filter', F.getHasKeys(keys)));
+        this.addFrame(new WaveDef('filter', F.getHasKeys(keys)));
         return this;
 
     };
@@ -412,7 +446,7 @@ class Bus {
 
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame().define(new WaveDef('filter', F.getSkipDupes, true));
+        this.addFrame(new WaveDef('filter', F.getSkipDupes, true));
         return this;
 
     };

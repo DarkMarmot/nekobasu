@@ -48,6 +48,16 @@ class Wave {
 
     };
 
+    split(frame, wire, msg, source, topic) {
+
+        const len = msg.length || 0;
+        for(let i = 0; i < len; i++){
+            const chunk = msg[i];
+            frame.emit(wire, chunk, source, topic);
+        }
+
+    };
+
     delay(frame, wire, msg, source, topic) {
 
         function callback(){

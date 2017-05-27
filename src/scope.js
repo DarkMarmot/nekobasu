@@ -50,6 +50,7 @@ class Scope{
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
+        console.log(nyan);
         return NyanRunner.createBus(nyan, this, context, node);
 
     };
@@ -201,9 +202,9 @@ class Scope{
 
         for(const d of dataSet) {
             if (d) {
-                const lastPacket = d.peek();
-                if (lastPacket)
-                    result[d.name] = lastPacket.msg;
+
+                if (d.present())
+                    result[d.name] = d.read();
             }
         }
 

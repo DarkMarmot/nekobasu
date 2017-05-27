@@ -1,9 +1,12 @@
 import F from './flib.js';
 
+let _id = 0;
+
 class Wire {
 
     constructor(name){
 
+        this._id = ++_id + '';
         this.target = null; // a frame in a bus
         this.dead = false;
         this.name = name;
@@ -15,9 +18,9 @@ class Wire {
     handle(msg, source, topic) {
 
         if(!this.dead && this.target)
-            this.target.handle(this, msg, this.name || source, topic);
+            this.target.handle(this, msg, this.name, topic);
 
-        return this;
+        //return this;
 
     };
 
@@ -86,11 +89,10 @@ Wire.fromSubscribe = function(data, topic, name, canPull){
 
     if(canPull){
         wire.pull = function(){
-            const packet = data.peek();
-            if(packet) {
-                const msg = packet._msg;
-                const source = packet._source;
-                const topic = packet._topic;
+            const present = data.present(topic);
+            if(present) {
+                const msg = data.read(topic);
+                const source = wire.name;
                 wire.handle(msg, source, topic);
             }
         }

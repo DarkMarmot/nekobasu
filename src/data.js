@@ -18,8 +18,9 @@ class Data {
         this._type       = type;
         this._dead       = false;
 
+        this._noTopicList = new SubscriberList(null, this);
         this._wildcardSubscriberList = new SubscriberList(null, this);
-        this._subscriberListsByTopic = new Map();
+        this._subscriberListsByTopic = {};
 
     };
 
@@ -30,8 +31,8 @@ class Data {
 
     destroy(){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
         
         for(const list of this._subscriberListsByTopic.values()){
             list.destroy();
@@ -43,14 +44,14 @@ class Data {
     
     _demandSubscriberList(topic){
 
-        topic = topic || undefined;
-        let list = this._subscriberListsByTopic.get(topic);
+        topic = topic || null;
+        let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
 
         if(list)
             return list;
 
         list = new SubscriberList(topic, this);
-        this._subscriberListsByTopic.set(topic, list);
+        this._subscriberListsByTopic[topic] = list;
 
         return list;
         
@@ -67,15 +68,13 @@ class Data {
 
     follow(watcher, topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
-        this.subscribe(watcher, topic);
-        let packet = this.peek();
+        const list = this.subscribe(watcher, topic);
 
-        if(packet)
-            typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.handle(packet.msg, packet);
+        if(list.used)
+            typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
 
         return this;
 
@@ -83,20 +82,17 @@ class Data {
 
     subscribe(watcher, topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
-        this._demandSubscriberList(topic).add(watcher);
-
-        return this;
+        return this._demandSubscriberList(topic).add(watcher);
 
     };
 
     monitor(watcher){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
         this._wildcardSubscriberList.add(watcher);
 
@@ -106,10 +102,10 @@ class Data {
 
     unsubscribe(watcher, topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
+        topic = topic || null;
         this._demandSubscriberList(topic).remove(watcher);
         this._wildcardSubscriberList.remove(watcher);
 
@@ -117,54 +113,53 @@ class Data {
 
     };
 
-    topics(){
+    // topics(){
+    //
+    //     return this._subscriberListsByTopic.keys();
+    //
+    // };
 
-        return this._subscriberListsByTopic.keys();
+    survey(){
+        // get entire key/value store by topic:lastPacket
+        throw new Error('not imp');
 
+        // const entries = this._subscriberListsByTopic.entries();
+        // const m = new Map();
+        // for (const [key, value] of entries) {
+        //     m.set(key, value.lastPacket);
+        // }
+        //
+        // return m;
     };
 
-    survey(){ // get entire key/value store by topic:lastPacket
 
-        const entries = this._subscriberListsByTopic.entries();
-        const m = new Map();
-        for (const [key, value] of entries) {
-            m.set(key, value.lastPacket);
-        }
+    present(topic){
 
-        return m;
-    };
+        // if(this.dead)
+        //     this._throwDead();
 
-
-    peek(topic){
-
-        if(this.dead)
-            this._throwDead();
-
-        topic = topic || undefined;
-        const subscriberList = this._subscriberListsByTopic.get(topic);
-        return subscriberList ? subscriberList.lastPacket : null;
+        const subscriberList = this._demandSubscriberList(topic);
+        return subscriberList.used;
 
     };
 
 
     read(topic) {
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
-        let packet = this.peek(topic);
-        return (packet) ? packet.msg : undefined;
+        const list = this._demandSubscriberList(topic);
+        return (list.used) ? list.lastMsg : undefined;
 
     };
 
 
     silentWrite(msg, topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
         this.write(msg, topic, true);
 
     };
@@ -172,13 +167,14 @@ class Data {
 
     write(msg, topic, silently){
 
-        if(this.dead)
-            this._throwDead();
+        // todo change methods to imply if statements for perf?
+
+        // if(this.dead)
+        //     this._throwDead();
 
         if(this.type === DATA_TYPES.MIRROR)
             throw new Error('Mirror Data: ' + this.name + ' is read-only');
 
-        topic = topic || undefined;
         const list = this._demandSubscriberList(topic);
         list.handle(msg, topic, silently);
         this._wildcardSubscriberList.handle(msg, topic, silently);
@@ -188,14 +184,13 @@ class Data {
 
     refresh(topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
-        const lastPacket = this.peek(topic);
+        const list = this._demandSubscriberList(topic);
 
-        if(lastPacket)
-            this.write(lastPacket._msg, topic);
+        if(list.used)
+            this.write(list.lastMsg, list.lastTopic);
 
         return this;
 
@@ -204,10 +199,9 @@ class Data {
 
     toggle(topic){
 
-        if(this.dead)
-            this._throwDead();
+        // if(this.dead)
+        //     this._throwDead();
 
-        topic = topic || undefined;
         this.write(!this.read(topic), topic);
 
         return this;

@@ -11,7 +11,6 @@ class WaveDef {
 
     };
 
-
 }
 
 export default WaveDef;

@@ -2,14 +2,6 @@ import Wire from './wire.js';
 import Nyan from './nyan.js';
 import Bus from './bus.js';
 
-function getPacketFromDataWord(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-    const peek = data && data.peek(word.topic);
-    return peek;
-
-}
-
 
 function getSurveyFromDataWord(scope, word){
 
@@ -128,10 +120,12 @@ function getDoAnd(scope, phrase) {
 
 function getDoReadSingle(scope, word) {
 
+    const data = scope.find(word.name, !word.maybe);
+    const topic = word.topic;
+
     return function doReadSingle() {
 
-        const packet = getPacketFromDataWord(scope, word);
-        return packet && packet.msg;
+        return data.read(topic);
 
     };
 
@@ -171,10 +165,10 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
                 } else {
 
-                    const packet = getPacketFromDataWord(scope, word);
+                    const data = scope.find(word.name, !word.maybe);
                     const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
-                    if (packet)
-                        result[prop] = packet.msg;
+                    if (data.present(word.topic))
+                        result[prop] = data.read(word.topic);
 
                 }
 

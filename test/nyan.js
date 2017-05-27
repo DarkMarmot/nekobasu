@@ -169,7 +169,8 @@ describe('RootScope', function(){
         d1.write('wizard');
         d2.write('mage');
 
-        const bus = world.bus('castle, palace | *handle', watcher).pull();
+        const bus = world.bus('castle, palace | *handle', watcher);
+        bus.pull();
 
         Catbus.flush();
 

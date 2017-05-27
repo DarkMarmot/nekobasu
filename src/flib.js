@@ -177,6 +177,25 @@ const Func = {
         return f;
     },
 
+    // getScan: function(func, seed){
+    //
+    //     let acc = seed;
+    //
+    //     const f = function(msg, source){
+    //
+    //         return acc = func(acc, msg, source);
+    //     };
+    //
+    //     f.reset = NOOP;
+    //
+    //     f.next = f.content = function(){
+    //         return acc;
+    //     };
+    //
+    //
+    //     return f;
+    // },
+
     getGroup: function(groupBy){
 
         groupBy = groupBy || TO_SOURCE;
