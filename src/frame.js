@@ -8,7 +8,7 @@ class Frame {
     constructor(bus, def) {
 
         this._bus = bus;
-        this._targets = []; // frames to join or fork into
+        this._nextFrame = null; // frames to join or fork into
         this._index = bus._frames.length;
         this._wireMap = {}; //new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
@@ -33,11 +33,7 @@ class Frame {
 
     emit(wire, msg, source, topic){
 
-        const len = this._targets.length;
-        for(let i = 0; i < len; i++){
-            const frame = this._targets[i];
-            frame.handle(wire, msg, source, topic);
-        }
+        this._nextFrame.handle(wire, msg, source, topic);
 
     };
 
@@ -63,7 +59,7 @@ class Frame {
 
     target(frame) {
 
-        this._targets.push(frame);
+        this._nextFrame = frame;
 
     };
 

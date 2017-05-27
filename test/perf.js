@@ -78,7 +78,6 @@ describe('RootScope', function(){
     it('can react to data', function(){
 
 
-
         const n = new Date();
 
         const d = world.data('castle');

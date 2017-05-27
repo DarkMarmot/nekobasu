@@ -513,10 +513,11 @@ function applyNyan(nyan, bus, context, target){
         const phrase = cmd.phrase;
 
         if(name === 'JOIN') {
+
             bus = bus.join();
             bus.merge();
             bus.group();
-            bus.sync();
+
         } else if(name === 'FORK'){
             bus = bus.fork();
         } else if (name === 'BACK'){

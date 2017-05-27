@@ -26,8 +26,14 @@ Watcher.prototype.handle = function(msg, source, topic){
 Watcher.prototype.meow = function(msg, source, topic){
 
     console.log('meow:', msg, source);
-    callback(msg, source, topic);
-    return 'meow done meow!';
+    return msg;
+
+};
+
+Watcher.prototype.tap = function(msg, source, topic){
+
+    console.log('tap:', msg, source);
+    return msg;
 
 };
 
@@ -197,6 +203,27 @@ describe('RootScope', function(){
 
     });
 
+    it('can fork and join', function(){
+
+        const d1 = world.data('castle');
+        const d2 = world.data('palace');
+        const d3 = world.data('bunny');
+
+        const bus = world.bus('castle, palace | (puppy) | *meow | { (cat) | *meow -} *handle', watcher);
+        //bus.process('*handle', watcher).pull();
+
+        d1.write('wizard');
+        d2.write('mage');
+        d3.write('knight');
+
+        Catbus.flush();
+        Catbus.flush();
+
+        assert.equal(msgLog[0].puppy.castle, 'wizard');
+        // assert.equal(msgLog[0].palace, 'mage');
+
+    });
+
     // it('can subscribe to dynamic topics', function(){
     //
     //     const d1 = world.data('books');
@@ -348,6 +375,7 @@ describe('RootScope', function(){
 
 
 
+        console.log('DB');
 
         var d1 = world.data('village');
         var d2 = world.data('forest');
@@ -359,14 +387,18 @@ describe('RootScope', function(){
          // d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.bus('forest (green), sea!  { (tooth) | sea -} | &sea, grove(cave) | (poo) | =village', watcher).pull();
+        const bus = world.bus('forest (green), sea!  { (tooth) | *handle | sea -}  &sea, grove(cave) | (poo) | =village', watcher); //pull
         // const bus = world.bus('forest!, sea | *handle', watcher).pull();
 
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        // d3.write('dog');
+        d4.write('mushroom');
         d3.write('dog');
         Catbus.flush();
         // Catbus.flush();
 
-        console.log('is', d1.read(), msgLog);
+        console.log('DBE- is', d1.read(), msgLog);
         var name = d1.name;
         assert.equal(name, 'village');
 
@@ -381,21 +413,27 @@ describe('RootScope', function(){
         var d3 = world.data('sea');
         var d4 = world.data('grove');
 
+        console.log('DC');
+
         d1.write('fish');
         d2.write({moo: {spot: 5}});
         // d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.bus('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy` -} | &sea, grove(cave) | (poo) | =village:grr', watcher).pull();
+        const bus = world.bus('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy` | *meow  | *tap -} | *tap | *handle | &sea, grove(cave) | (poo) | =village:grr', watcher);
         // const bus = world.bus('forest!, sea | *handle', watcher).pull();
 
         d3.write('dog');
+        d1.write('fish');
+        d2.write({moo: {spot: 5}});
+        // d3.write('dog');
+        d4.write('mushroom');
         Catbus.flush();
         // Catbus.flush();
 
         console.log('is', d1.read(), msgLog);
 
-        console.log('gr', d1.read('grr'), msgLog);
+        console.log('DCE -gr', d1.read('grr'), msgLog);
 
         var name = d1.name;
         assert.equal(name, 'village');

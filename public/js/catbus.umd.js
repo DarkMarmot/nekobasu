@@ -1186,7 +1186,7 @@ var Frame = function () {
 
 
         this._bus = bus;
-        this._targets = []; // frames to join or fork into
+        this._nextFrame = null; // frames to join or fork into
         this._index = bus._frames.length;
         this._wireMap = {}; //new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
@@ -1209,11 +1209,7 @@ var Frame = function () {
         key: 'emit',
         value: function emit(wire, msg, source, topic) {
 
-            var len = this._targets.length;
-            for (var i = 0; i < len; i++) {
-                var frame = this._targets[i];
-                frame.handle(wire, msg, source, topic);
-            }
+            this._nextFrame.handle(wire, msg, source, topic);
         }
     }, {
         key: '_createHandler',
@@ -1226,7 +1222,7 @@ var Frame = function () {
         key: 'target',
         value: function target(frame) {
 
-            this._targets.push(frame);
+            this._nextFrame = frame;
         }
     }, {
         key: 'destroy',
@@ -2424,10 +2420,10 @@ function applyNyan(nyan, bus, context, target) {
         var phrase = cmd.phrase;
 
         if (name === 'JOIN') {
+
             bus = bus.join();
             bus.merge();
             bus.group();
-            bus.sync();
         } else if (name === 'FORK') {
             bus = bus.fork();
         } else if (name === 'BACK') {
