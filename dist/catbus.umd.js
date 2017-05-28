@@ -1180,6 +1180,461 @@ var Pool = function () {
     return Pool;
 }();
 
+var Tap = function () {
+    function Tap(def) {
+        classCallCheck(this, Tap);
+
+
+        this.action = def.action;
+        this.value = null;
+        this.stateful = false;
+    }
+
+    createClass(Tap, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            this.action(msg, source, topic);
+            frame.emit(wire, msg, source, topic);
+        }
+    }]);
+    return Tap;
+}();
+
+var Msg = function () {
+    function Msg(def) {
+        classCallCheck(this, Msg);
+
+
+        this.action = def.action;
+        this.value = null;
+        this.stateful = false;
+    }
+
+    createClass(Msg, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var nextMsg = this.action(msg, source, topic);
+            frame.emit(wire, nextMsg, source, topic);
+        }
+    }]);
+    return Msg;
+}();
+
+var Source = function () {
+    function Source(def) {
+        classCallCheck(this, Source);
+
+
+        this.action = def.action;
+        this.value = null;
+        this.stateful = false;
+    }
+
+    createClass(Source, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var nextSource = this.action(msg, source, topic);
+            frame.emit(wire, msg, nextSource, topic);
+        }
+    }]);
+    return Source;
+}();
+
+var Filter = function () {
+    function Filter(def) {
+        classCallCheck(this, Filter);
+
+
+        this.action = def.action;
+        this.value = null;
+        this.stateful = false;
+    }
+
+    createClass(Filter, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            if (this.action(msg, source, topic)) frame.emit(wire, msg, source, topic);
+        }
+    }]);
+    return Filter;
+}();
+
+function callback(frame, wire, msg, source, topic) {
+
+    frame.emit(wire, msg, source, topic);
+}
+
+var Delay = function () {
+    function Delay(def) {
+        classCallCheck(this, Delay);
+
+
+        this.action = def.action;
+        this.value = null;
+    }
+
+    createClass(Delay, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            setTimeout(callback, this.action(msg, source, topic) || 0, frame, wire, msg, source, topic);
+        }
+    }]);
+    return Delay;
+}();
+
+var Scan = function () {
+    function Scan(def) {
+        classCallCheck(this, Scan);
+
+
+        this.action = def.action;
+        this.value = 0;
+        this.stateful = true;
+    }
+
+    createClass(Scan, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            this.value = this.action(this.value, msg, source, topic);
+            frame.emit(wire, this.value, source, topic);
+        }
+    }]);
+    return Scan;
+}();
+
+//
+// class Scan {
+//
+//     constructor(func){
+//
+//         this.hadFirstMsg = false;
+//         this.func = func;
+//         this.value = null;
+//
+//     }
+//
+//     handle(msg, source, topic){
+//
+//         if(!this.hadFirstMsg){
+//             this.hadFirstMsg = true;
+//             this.value = msg;
+//             return;
+//         }
+//
+//         this.value = this.func(this.value, msg, source, topic);
+//
+//     }
+//
+//     next(){
+//         return this.value;
+//     }
+//
+//     content(){
+//         return this.value;
+//     }
+//
+//     reset(){
+//
+//     }
+// }
+//
+//
+// export default Scan;
+
+var SkipDupes = function () {
+    function SkipDupes() {
+        classCallCheck(this, SkipDupes);
+
+
+        this.value = null;
+        this.hadValue = false;
+    }
+
+    createClass(SkipDupes, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            if (!this.hadValue || this.value !== msg) {
+                frame.emit(wire, msg, source, topic);
+                this.hadValue = true;
+                this.value = msg;
+            }
+        }
+    }]);
+    return SkipDupes;
+}();
+
+var LastN = function () {
+    function LastN(n) {
+        classCallCheck(this, LastN);
+
+
+        this.value = [];
+        this.max = n;
+    }
+
+    createClass(LastN, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var list = this.value;
+            list.push(msg);
+            if (list.length > this.max) list.shift();
+
+            frame.emit(wire, list, source, topic);
+        }
+    }, {
+        key: "reset",
+        value: function reset() {
+            this.value = [];
+        }
+    }, {
+        key: "next",
+        value: function next() {
+            return this.value;
+        }
+    }, {
+        key: "content",
+        value: function content() {
+            return this.value;
+        }
+    }]);
+    return LastN;
+}();
+
+var FirstN = function () {
+    function FirstN(n) {
+        classCallCheck(this, FirstN);
+
+
+        this.value = [];
+        this.max = n;
+    }
+
+    createClass(FirstN, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var list = this.value;
+            if (list.length < this.max) list.push(msg);
+
+            frame.emit(wire, list, source, topic);
+        }
+    }, {
+        key: "reset",
+        value: function reset() {
+            this.value = [];
+        }
+    }, {
+        key: "next",
+        value: function next() {
+            return this.value;
+        }
+    }, {
+        key: "content",
+        value: function content() {
+            return this.value;
+        }
+    }]);
+    return FirstN;
+}();
+
+var All = function () {
+    function All() {
+        classCallCheck(this, All);
+
+
+        this.value = [];
+        this.hasValue = false;
+    }
+
+    createClass(All, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var list = this.value;
+            list.push(msg);
+            frame.emit(wire, list, source, topic);
+        }
+    }, {
+        key: "reset",
+        value: function reset() {
+            this.value = [];
+        }
+    }, {
+        key: "next",
+        value: function next() {
+            return this.value;
+        }
+    }, {
+        key: "content",
+        value: function content() {
+            return this.value;
+        }
+    }]);
+    return All;
+}();
+
+function TO_SOURCE$1(msg, source, topic) {
+    return source;
+}
+
+var Group = function () {
+    function Group(def) {
+        classCallCheck(this, Group);
+
+
+        this.action = def.action || TO_SOURCE$1;
+        this.value = {};
+    }
+
+    createClass(Group, [{
+        key: "handle",
+        value: function handle(frame, wire, msg, source, topic) {
+
+            var g = this.action(msg, source);
+            var hash = this.value;
+
+            if (g) {
+                hash[g] = msg;
+            } else {
+                // no source, copy message props into hash to merge nameless streams of key data
+                for (var k in msg) {
+                    hash[k] = msg[k];
+                }
+            }
+
+            frame.emit(wire, hash, source, topic);
+        }
+    }, {
+        key: "reset",
+        value: function reset() {
+            this.value = {};
+        }
+    }, {
+        key: "next",
+        value: function next() {
+            return this.value;
+        }
+    }, {
+        key: "content",
+        value: function content() {
+            return this.value;
+        }
+    }]);
+    return Group;
+}();
+
+var PASS = {
+
+    handle: function handle(frame, wire, msg, source, topic) {
+        frame.emit(wire, msg, source, topic);
+    }
+
+};
+
+var SPLIT = {
+
+    handle: function handle(frame, wire, msg, source, topic) {
+
+        var len = msg.length || 0;
+        for (var i = 0; i < len; i++) {
+            var chunk = msg[i];
+            frame.emit(wire, chunk, source, topic);
+        }
+    }
+
+};
+
+var Handler = function () {
+    function Handler(def) {
+        classCallCheck(this, Handler);
+
+
+        this.process = def && def.process ? this[def.process](def) : PASS;
+    }
+
+    createClass(Handler, [{
+        key: 'handle',
+        value: function handle(frame, wire, msg, source, topic) {
+            this.process.handle(frame, wire, msg, source, topic);
+        }
+    }, {
+        key: 'eddy',
+        value: function eddy(def) {
+
+            return new Eddy(def);
+        }
+    }, {
+        key: 'tap',
+        value: function tap(def) {
+            return new Tap(def);
+        }
+    }, {
+        key: 'msg',
+        value: function msg(def) {
+            return new Msg(def);
+        }
+    }, {
+        key: 'source',
+        value: function source(def) {
+            return new Source(def);
+        }
+    }, {
+        key: 'filter',
+        value: function filter(def) {
+            return new Filter(def);
+        }
+    }, {
+        key: 'skipDupes',
+        value: function skipDupes(def) {
+            return new SkipDupes(def);
+        }
+    }, {
+        key: 'delay',
+        value: function delay(def) {
+            return new Delay(def);
+        }
+    }, {
+        key: 'scan',
+        value: function scan(def) {
+            return new Scan(def);
+        }
+    }, {
+        key: 'group',
+        value: function group(def) {
+            return new Group(def);
+        }
+    }, {
+        key: 'lastN',
+        value: function lastN(def) {
+            return new LastN(def.args[0]);
+        }
+    }, {
+        key: 'firstN',
+        value: function firstN(def) {
+            return new FirstN(def.args[0]);
+        }
+    }, {
+        key: 'all',
+        value: function all() {
+            return new All();
+        }
+    }, {
+        key: 'split',
+        value: function split() {
+            return SPLIT;
+        }
+    }]);
+    return Handler;
+}();
+
 var Frame = function () {
     function Frame(bus, def) {
         classCallCheck(this, Frame);
@@ -1216,7 +1671,7 @@ var Frame = function () {
         value: function _createHandler(wire) {
 
             var def = this._processDef;
-            return def && def.name === 'pool' ? new Pool(this, wire, def) : new Wave(def);
+            return def && def.name === 'pool' ? new Pool(this, wire, def) : new Handler(def);
         }
     }, {
         key: 'target',
@@ -1425,7 +1880,7 @@ var FrameStateless = function () {
         this._bus = bus;
         this._nextFrame = null;
         this._index = bus._frames.length;
-        this._process = new Wave(def);
+        this._process = new Handler(def);
     }
 
     createClass(FrameStateless, [{
@@ -2641,6 +3096,11 @@ var Bus = function () {
         key: 'scan',
         value: function scan(func, seed) {
 
+            if (!this.holding) {
+                this.addFrame(new WaveDef('scan', func, true, 0));
+                return this;
+            }
+
             return this.reduce(Func.getScan, func, seed);
         }
     }, {
@@ -2670,6 +3130,10 @@ var Bus = function () {
         key: 'group',
         value: function group(by) {
 
+            if (!this.holding) {
+                this.addFrame(new WaveDef('group', null, true));
+                return this;
+            }
             this.reduce(Func.getGroup, by);
             return this;
         }
@@ -2684,16 +3148,28 @@ var Bus = function () {
     }, {
         key: 'all',
         value: function all() {
+            if (!this.holding) {
+                this.addFrame(new WaveDef('all', null, true));
+                return this;
+            }
             return this.reduce(Func.getKeepAll);
         }
     }, {
         key: 'first',
         value: function first(n) {
+            if (!this.holding) {
+                this.addFrame(new WaveDef('firstN', null, true, n));
+                return this;
+            }
             return this.reduce(Func.getKeepFirst, n);
         }
     }, {
         key: 'last',
         value: function last(n) {
+            if (!this.holding) {
+                this.addFrame(new WaveDef('lastN', null, true, n));
+                return this;
+            }
             return this.reduce(Func.getKeepLast, n);
         }
     }, {
@@ -2787,7 +3263,7 @@ var Bus = function () {
             Func.ASSERT_IS_FUNCTION(func);
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame(new WaveDef('run', func));
+            this.addFrame(new WaveDef('tap', func));
             return this;
         }
     }, {
@@ -2811,17 +3287,6 @@ var Bus = function () {
         }
     }, {
         key: 'source',
-
-
-        // transform(fAny) {
-        //
-        //     F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        //     F.ASSERT_NOT_HOLDING(this);
-        //     this.addFrame().transform(fAny);
-        //     return this;
-        //
-        // };
-
         value: function source(fStr) {
 
             Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
@@ -2864,7 +3329,7 @@ var Bus = function () {
 
             Func.ASSERT_NOT_HOLDING(this);
 
-            this.addFrame(new WaveDef('filter', Func.getSkipDupes, true));
+            this.addFrame(new WaveDef('skipDupes', null, true));
             return this;
         }
     }, {

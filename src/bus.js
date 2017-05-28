@@ -247,6 +247,11 @@ class Bus {
 
     scan(func, seed){
 
+        if(!this.holding) {
+            this.addFrame(new WaveDef('scan', func, true, 0));
+            return this;
+        }
+
         return this.reduce(F.getScan, func, seed);
 
     };
@@ -276,6 +281,10 @@ class Bus {
 
     group(by) {
 
+        if(!this.holding) {
+             this.addFrame(new WaveDef('group', null, true));
+             return this;
+        }
         this.reduce(F.getGroup, by);
         return this;
 
@@ -289,14 +298,26 @@ class Bus {
     };
 
     all() {
+        if(!this.holding) {
+            this.addFrame(new WaveDef('all', null, true));
+            return this;
+        }
         return this.reduce(F.getKeepAll);
     };
 
     first(n) {
+        if(!this.holding) {
+            this.addFrame(new WaveDef('firstN', null, true, n));
+            return this;
+        }
         return this.reduce(F.getKeepFirst, n);
     };
 
     last(n) {
+        if(!this.holding) {
+            this.addFrame(new WaveDef('lastN', null, true, n));
+            return this;
+        }
         return this.reduce(F.getKeepLast, n);
     };
 
@@ -370,7 +391,7 @@ class Bus {
         F.ASSERT_IS_FUNCTION(func);
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame(new WaveDef('run', func));
+        this.addFrame(new WaveDef('tap', func));
         return this;
 
     };
@@ -393,14 +414,6 @@ class Bus {
 
     };
 
-    // transform(fAny) {
-    //
-    //     F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-    //     F.ASSERT_NOT_HOLDING(this);
-    //     this.addFrame().transform(fAny);
-    //     return this;
-    //
-    // };
 
     source(fStr) {
 
@@ -446,7 +459,7 @@ class Bus {
 
         F.ASSERT_NOT_HOLDING(this);
 
-        this.addFrame(new WaveDef('filter', F.getSkipDupes, true));
+        this.addFrame(new WaveDef('skipDupes', null, true));
         return this;
 
     };

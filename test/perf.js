@@ -78,6 +78,10 @@ describe('RootScope', function(){
     it('can react to data', function(){
 
 
+        const a = [];
+        for(let i = 0; i < 1000000; i++){
+            a.push(i);
+        }
         const n = new Date();
 
         const d = world.data('castle');
@@ -89,11 +93,10 @@ describe('RootScope', function(){
             sum: function(x, y) { return x + y;}
         };
 
-        var b = world.bus('~castle | >even | *add1', fs).scan(fs.sum, 0).process('=moo');
+        world.bus('~castle').split().process(' >even | *add1', fs).scan(fs.sum, 0).process('=moo');
 
-        for(let i = 0; i < 1000000; i++){
-              d.write(i);
-        }
+        d.write(a);
+
 
         console.log('e', e.read());
 

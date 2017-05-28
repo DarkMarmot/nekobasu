@@ -1,5 +1,6 @@
 
 import Wave from './wave.js';
+import Handler from './handler.js';
 
 class FrameStateless {
 
@@ -8,7 +9,7 @@ class FrameStateless {
         this._bus = bus;
         this._nextFrame = null;
         this._index = bus._frames.length;
-        this._process = new Wave(def);
+        this._process = new Handler(def);
 
     };
 

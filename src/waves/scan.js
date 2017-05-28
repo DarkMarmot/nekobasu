@@ -5,7 +5,7 @@ class Scan {
     constructor(def){
 
         this.action = def.action;
-        this.value = def.seed;
+        this.value = 0;
         this.stateful = true;
 
     }

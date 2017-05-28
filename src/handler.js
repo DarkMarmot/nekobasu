@@ -5,7 +5,11 @@ import Source from './waves/source.js';
 import Filter from './waves/filter.js';
 import Delay from './waves/delay.js';
 import Scan from './waves/scan.js';
-
+import SkipDupes from './waves/skipDupes.js'
+import LastN from './waves/lastN.js';
+import FirstN from './waves/firstN.js';
+import All from './waves/all.js';
+import Group from './waves/group.js';
 
 const PASS = {
 
@@ -42,10 +46,15 @@ class Handler {
         this.process.handle(frame, wire, msg, source, topic)
     };
 
+    eddy(def) {
+
+        return new Eddy(def);
+
+    };
+
     tap(def) {
         return new Tap(def);
     };
-
 
     msg(def) {
         return new Msg(def);
@@ -59,6 +68,10 @@ class Handler {
         return new Filter(def);
     };
 
+    skipDupes(def) {
+        return new SkipDupes(def);
+    };
+
     delay(def) {
         return new Delay(def);
     };
@@ -66,6 +79,23 @@ class Handler {
     scan(def) {
         return new Scan(def);
     };
+
+    group(def) {
+        return new Group(def);
+    };
+
+    lastN(def) {
+        return new LastN(def.args[0]);
+    };
+
+    firstN(def) {
+        return new FirstN(def.args[0]);
+    };
+
+    all() {
+        return new All();
+    };
+
 
     split() {
         return SPLIT;

@@ -1,6 +1,7 @@
 
 import Wave from './wave.js';
 import Pool from './pool.js';
+import Handler from './handler.js';
 
 
 class Frame {
@@ -18,7 +19,6 @@ class Frame {
 
 
     handle(wire, msg, source, topic){
-
 
         const wireId = wire._id;
         const hasWire = this._wireMap.hasOwnProperty(wireId);//this._wireMap.has(wire); //this._wireMap.hasOwnProperty(wireId); //
@@ -40,7 +40,7 @@ class Frame {
     _createHandler(wire){
 
         const def = this._processDef;
-        return (def && def.name === 'pool') ? new Pool(this, wire, def) : new Wave(def);
+        return (def && def.name === 'pool') ? new Pool(this, wire, def) : new Handler(def);
 
     };
 

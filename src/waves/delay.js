@@ -1,4 +1,11 @@
 
+function callback(frame, wire, msg, source, topic){
+
+    frame.emit(wire, msg, source, topic);
+
+}
+
+
 
 class Delay {
 
@@ -6,16 +13,16 @@ class Delay {
 
         this.action = def.action;
         this.value = null;
-        this.stateful = false;
 
     }
+
 
     handle(frame, wire, msg, source, topic){
 
-        if(this.action(msg, source, topic))
-            frame.emit(wire, msg, source, topic);
+        setTimeout(callback, this.action(msg, source, topic) || 0, frame, wire, msg, source, topic);
 
     }
+
 
 }
 
