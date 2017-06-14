@@ -2,6 +2,10 @@ import F from './flib.js';
 
 let _id = 0;
 
+// const FRAME_CAP = {
+//     handle: function(wire, msg, source, topic){}
+// };
+
 class Wire {
 
     constructor(name){
@@ -17,10 +21,8 @@ class Wire {
 
     handle(msg, source, topic) {
 
-        if(!this.dead && this.target)
+        // if(this.target)
             this.target.handle(this, msg, this.name, topic);
-
-        //return this;
 
     };
 
@@ -79,12 +81,12 @@ Wire.fromSubscribe = function(data, topic, name, canPull){
 
     const wire = new Wire(name || topic || data.name);
 
-    const toWire = function(msg, source, topic){
-        wire.handle(msg, source, topic);
-    };
+    // const toWire = function(msg, source, topic){
+    //     wire.handle(msg, source, topic);
+    // };
 
     wire.cleanupMethod = function(){
-        data.unsubscribe(toWire, topic);
+        data.unsubscribe(wire, topic);
     };
 
     if(canPull){
@@ -98,7 +100,8 @@ Wire.fromSubscribe = function(data, topic, name, canPull){
         }
     }
 
-    data.subscribe(toWire, topic);
+   // data.subscribe(toWire, topic);
+    data.subscribe(wire, topic);
 
     return wire;
 

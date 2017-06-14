@@ -2,6 +2,8 @@
 import Wave from './wave.js';
 import Handler from './handler.js';
 
+
+
 class FrameStateless {
 
     constructor(bus, def) {
@@ -16,7 +18,7 @@ class FrameStateless {
 
     handle(wire, msg, source, topic){
 
-        this._process.handle(this, wire, msg, source || wire.name , topic);
+        this._process.handle(this, wire, msg, source , topic);
 
     };
 

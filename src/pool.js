@@ -61,7 +61,7 @@ class Pool {
         pool.isPrimed = false;
 
         if(hasContent)
-            pool.frame.emit(pool.wire, msg);
+            pool.frame.emit(pool.wire, msg, pool.wire.name);
 
     };
 

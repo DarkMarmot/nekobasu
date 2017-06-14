@@ -10,14 +10,17 @@ import LastN from './waves/lastN.js';
 import FirstN from './waves/firstN.js';
 import All from './waves/all.js';
 import Group from './waves/group.js';
+import Pass from './waves/pass.js';
 
-const PASS = {
+// const PASS = {
+//
+//     handle: function(frame, wire, msg, source, topic) {
+//         frame.emit(wire, msg, source, topic);
+//     }
+//
+// };
 
-    handle: function(frame, wire, msg, source, topic) {
-        frame.emit(wire, msg, source, topic);
-    }
-
-};
+const PASS = new Pass();
 
 const SPLIT = {
 
@@ -46,11 +49,9 @@ class Handler {
         this.process.handle(frame, wire, msg, source, topic)
     };
 
-    eddy(def) {
-
-        return new Eddy(def);
-
-    };
+    pass(def) {
+        return new Pass(def);
+    }
 
     tap(def) {
         return new Tap(def);

@@ -2,11 +2,12 @@
 
 class Tap {
 
-    constructor(def){
+    constructor(def, frame){
 
         this.action = def.action;
         this.value = null;
         this.stateful = false;
+        this.frame = frame;
 
     }
 

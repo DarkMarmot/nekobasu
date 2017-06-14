@@ -21,6 +21,8 @@ Watcher.prototype.handle = function(msg, source, topic){
     console.log('gotL:', msg, source);
     callback(msg, source, topic);
 
+    return msg;
+
 };
 
 Watcher.prototype.meow = function(msg, source, topic){
@@ -420,7 +422,7 @@ describe('RootScope', function(){
         // d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.bus('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy` | *meow  | *tap -} | *tap | *handle | &sea, grove(cave) | (poo) | =village:grr', watcher);
+        const bus = world.bus('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy`  | *tap -}  *meow | *handle | &sea, grove(cave) | (poo) | =village:grr', watcher);
         // const bus = world.bus('forest!, sea | *handle', watcher).pull();
 
         d3.write('dog');

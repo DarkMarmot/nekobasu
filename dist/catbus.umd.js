@@ -1174,20 +1174,21 @@ var Pool = function () {
 
             pool.isPrimed = false;
 
-            if (hasContent) pool.frame.emit(pool.wire, msg);
+            if (hasContent) pool.frame.emit(pool.wire, msg, pool.wire.name);
         }
     }]);
     return Pool;
 }();
 
 var Tap = function () {
-    function Tap(def) {
+    function Tap(def, frame) {
         classCallCheck(this, Tap);
 
 
         this.action = def.action;
         this.value = null;
         this.stateful = false;
+        this.frame = frame;
     }
 
     createClass(Tap, [{
@@ -1257,7 +1258,8 @@ var Filter = function () {
         key: "handle",
         value: function handle(frame, wire, msg, source, topic) {
 
-            if (this.action(msg, source, topic)) frame.emit(wire, msg, source, topic);
+            var f = this.action;
+            f(msg, source, topic) && frame.emit(wire, msg, source, topic);
         }
     }]);
     return Filter;
@@ -1287,26 +1289,45 @@ var Delay = function () {
     return Delay;
 }();
 
-var Scan = function () {
-    function Scan(def) {
-        classCallCheck(this, Scan);
+function Scan(def) {
+
+    this.action = def.action;
+    this.value = 0;
+    this.stateful = true;
+}
+
+Scan.prototype.handle = function (frame, wire, msg, source, topic) {
+
+    this.value = this.action(this.value, msg, source, topic);
+    frame.emit(wire, this.value, source, topic);
+};
 
 
-        this.action = def.action;
-        this.value = 0;
-        this.stateful = true;
-    }
 
-    createClass(Scan, [{
-        key: "handle",
-        value: function handle(frame, wire, msg, source, topic) {
+// export default Scan;
+//
+//
+// class Scan {
+//
+//     constructor(def){
+//
+//         this.action = def.action;
+//         this.value = 0;
+//         this.stateful = true;
+//
+//     }
+//
+//     handle(frame, wire, msg, source, topic){
+//
+//         const v = this.value = this.action.call(null, this.value, msg);
+//         frame.emit(wire, v, source, topic);
+//
+//     }
+//
+// }
 
-            this.value = this.action(this.value, msg, source, topic);
-            frame.emit(wire, this.value, source, topic);
-        }
-    }]);
-    return Scan;
-}();
+// export default Scan;
+
 
 //
 // class Scan {
@@ -1531,13 +1552,22 @@ var Group = function () {
     return Group;
 }();
 
-var PASS = {
+function Pass() {}
 
-    handle: function handle(frame, wire, msg, source, topic) {
-        frame.emit(wire, msg, source, topic);
-    }
+Pass.prototype.handle = function (frame, wire, msg, source, topic) {
 
+    frame.emit(wire, msg, source, topic);
 };
+
+// const PASS = {
+//
+//     handle: function(frame, wire, msg, source, topic) {
+//         frame.emit(wire, msg, source, topic);
+//     }
+//
+// };
+
+var PASS = new Pass();
 
 var SPLIT = {
 
@@ -1566,10 +1596,9 @@ var Handler = function () {
             this.process.handle(frame, wire, msg, source, topic);
         }
     }, {
-        key: 'eddy',
-        value: function eddy(def) {
-
-            return new Eddy(def);
+        key: 'pass',
+        value: function pass(def) {
+            return new Pass(def);
         }
     }, {
         key: 'tap',
@@ -1658,13 +1687,14 @@ var Frame = function () {
             // this._wireMap.set(wire, this._createHandler(wire));
 
             var handler = this._wireMap[wireId]; // this._wireMap.get(wire);
-            handler.handle(this, wire, msg, source || wire.name, topic);
+            handler.handle(this, wire, msg, source, topic);
+            // handler.handle(this, wire, msg, source || wire.name , topic); //todo safe to use just source?
         }
     }, {
         key: 'emit',
         value: function emit(wire, msg, source, topic) {
 
-            this._nextFrame.handle(wire, msg, source, topic);
+            if (this._nextFrame) this._nextFrame.handle(wire, msg, source, topic);
         }
     }, {
         key: '_createHandler',
@@ -1703,6 +1733,10 @@ var Frame = function () {
 
 var _id = 0;
 
+// const FRAME_CAP = {
+//     handle: function(wire, msg, source, topic){}
+// };
+
 var Wire = function () {
     function Wire(name) {
         classCallCheck(this, Wire);
@@ -1720,9 +1754,8 @@ var Wire = function () {
         key: 'handle',
         value: function handle(msg, source, topic) {
 
-            if (!this.dead && this.target) this.target.handle(this, msg, this.name, topic);
-
-            //return this;
+            // if(this.target)
+            this.target.handle(this, msg, this.name, topic);
         }
     }, {
         key: 'destroy',
@@ -1775,12 +1808,12 @@ Wire.fromSubscribe = function (data, topic, name, canPull) {
 
     var wire = new Wire(name || topic || data.name);
 
-    var toWire = function toWire(msg, source, topic) {
-        wire.handle(msg, source, topic);
-    };
+    // const toWire = function(msg, source, topic){
+    //     wire.handle(msg, source, topic);
+    // };
 
     wire.cleanupMethod = function () {
-        data.unsubscribe(toWire, topic);
+        data.unsubscribe(wire, topic);
     };
 
     if (canPull) {
@@ -1794,7 +1827,8 @@ Wire.fromSubscribe = function (data, topic, name, canPull) {
         };
     }
 
-    data.subscribe(toWire, topic);
+    // data.subscribe(toWire, topic);
+    data.subscribe(wire, topic);
 
     return wire;
 };
@@ -1887,7 +1921,7 @@ var FrameStateless = function () {
         key: 'handle',
         value: function handle(wire, msg, source, topic) {
 
-            this._process.handle(this, wire, msg, source || wire.name, topic);
+            this._process.handle(this, wire, msg, source, topic);
         }
     }, {
         key: 'emit',
@@ -3098,6 +3132,17 @@ var Bus = function () {
 
             if (!this.holding) {
                 this.addFrame(new WaveDef('scan', func, true, 0));
+                return this;
+            }
+
+            return this.reduce(Func.getScan, func, seed);
+        }
+    }, {
+        key: 'scan2',
+        value: function scan2(func, seed) {
+
+            if (!this.holding) {
+                this.addFrame(new WaveDef('scan', func, false, 0));
                 return this;
             }
 

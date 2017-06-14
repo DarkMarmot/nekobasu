@@ -3,15 +3,17 @@ import Wave from './wave.js';
 import Pool from './pool.js';
 import Handler from './handler.js';
 
+const FRAME_CAP = {
+    handle: function(wire, msg, source, topic){}
+};
 
 class Frame {
 
     constructor(bus, def) {
 
         this._bus = bus;
-        this._nextFrame = null; // frames to join or fork into
+        this._nextFrame = FRAME_CAP; // frames to join or fork into
         this._index = bus._frames.length;
-        this._wireMap = {}; //new WeakMap(); // wires as keys, handlers/pools as values
         this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
         this._processDef = def; // wave or pool definition
 
@@ -27,14 +29,13 @@ class Frame {
             // this._wireMap.set(wire, this._createHandler(wire));
 
         const handler = this._wireMap[wireId]; // this._wireMap.get(wire);
-        handler.handle(this, wire, msg, source , topic);
-        // handler.handle(this, wire, msg, source || wire.name , topic); //todo safe to use just source?
+        handler.handle(this, wire, msg, source || wire.name , topic);
 
     };
 
     emit(wire, msg, source, topic){
 
-        if(this._nextFrame)
+
             this._nextFrame.handle(wire, msg, source, topic);
 
     };

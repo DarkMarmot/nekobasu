@@ -256,6 +256,20 @@ class Bus {
 
     };
 
+
+
+    scan2(func, seed){
+
+        if(!this.holding) {
+            this.addFrame(new WaveDef('scan', func, false, 0));
+            return this;
+        }
+
+        return this.reduce(F.getScan, func, seed);
+
+    };
+
+
     delay(fNum) {
 
         F.ASSERT_NEED_ONE_ARGUMENT(arguments);

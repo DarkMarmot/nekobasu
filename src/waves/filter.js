@@ -12,8 +12,8 @@ class Filter {
 
     handle(frame, wire, msg, source, topic){
 
-        if(this.action(msg, source, topic))
-            frame.emit(wire, msg, source, topic);
+        const f = this.action;
+        f(msg, source, topic) && frame.emit(wire, msg, source, topic);
 
     }
 
