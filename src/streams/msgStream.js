@@ -1,0 +1,27 @@
+
+import NOOP_STREAM from './noopStream.js';
+
+function IDENTITY(msg, source, topic) { return msg; }
+
+
+function MsgStream(name) {
+
+    this.name = name;
+    this.f = IDENTITY;
+    this.next = NOOP_STREAM;
+
+}
+
+MsgStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+    const n = this.name;
+
+    this.next.handle(v, n, topic);
+
+};
+
+export default MsgStream;
+
+

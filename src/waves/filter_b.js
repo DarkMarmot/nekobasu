@@ -1,12 +1,12 @@
 
 
-function Filter(def) {
+const Filter = function Filter(def) {
 
     this.action = def.action;
     this.value = null;
     this.stateful = false;
 
-}
+};
 
 Filter.prototype.handle = function handle(frame, wire, msg, source, topic){
 
