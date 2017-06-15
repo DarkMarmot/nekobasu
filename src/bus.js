@@ -1,9 +1,5 @@
 
 import Frame from './frame.js';
-import FrameMerger from './frameMerger.js';
-import FrameStateless from './frameStateless.js';
-import FrameHold from './frameHold.js';
-import FrameForker from './frameForker.js';
 import F from './flib.js';
 import Wire from './wire.js';
 import WaveDef from './waveDef.js';
@@ -20,11 +16,12 @@ class Bus {
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
+        this._holding = false;
 
         if(scope)
             scope._busList.push(this);
 
-        const f = new FrameStateless(this);
+        const f = new Frame(this);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -65,56 +62,30 @@ class Bus {
     };
 
     get holding() {
-        return this._currentFrame._holding;
+        return this._holding;
     };
 
     get scope() {
         return this._scope;
     }
 
-    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+    _createFrame() {
 
-    addFrame(def) {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = (def && def.stateful) ? new Frame(this, def) : new FrameStateless(this, def);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
+        const f = this._currentFrame = new Frame(this);
+        this._frames.push(f);
+        return f;
 
     };
 
-    addFrameHold() {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameHold(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
-
+    _ASSERT_NOT_HOLDING() {
+        if (this.holding)
+            throw new Error('Method cannot be invoked while holding messages in the frame.');
     };
 
-
-    addFrameMerger() {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameMerger(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
-
+    _ASSERT_IS_HOLDING(){
+        if(!this.holding)
+            throw new Error('Method cannot be invoked unless holding messages in the frame.');
     };
-
-    addFrameForker() {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameForker(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
-
-    };
-
 
     process(nyan, context, target){
 
@@ -126,18 +97,13 @@ class Bus {
 
     }
 
-    // create stream
-    spawn(){
-
-    }
-
 
     fork() {
 
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_NOT_HOLDING();
         const fork = new Bus(this.scope);
         fork.parent = this;
-        this.addFrameForker();
+        this._addFrame()
         this._currentFrame.target(fork._currentFrame);
 
         return fork;
@@ -162,7 +128,7 @@ class Bus {
 
     add(bus) {
 
-        const frame = this.addFrame(); // wire from current bus
+        const frame = this._createFrame(); // wire from current bus
         bus._currentFrame.target(frame); // wire from outside bus
         return this;
 

@@ -478,15 +478,7 @@ const Func = {
     },
 
 
-    ASSERT_NOT_HOLDING: function(bus){
-        if(bus.holding)
-            throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
 
-    ASSERT_IS_HOLDING: function(bus){
-        if(!bus.holding)
-            throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
 
 };
 
