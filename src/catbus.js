@@ -1,6 +1,6 @@
 
 import Scope from './scope.js';
-import Wire from './wire.js';
+import EventSource from './sources/eventSource.js';
 import Bus from './bus.js';
 
 
@@ -17,7 +17,9 @@ Catbus.bus = function(){
 Catbus.fromEvent = function(target, eventName, useCapture){
 
     const bus = new Bus();
-    bus.event(target, eventName, useCapture);
+    const source = new EventSource(eventName, target, eventName, useCapture);
+    bus.addSource(source);
+
     return bus;
 
 };

@@ -34,3 +34,5 @@ EventSource.prototype.destroy = function destroy(){
 
 
 NOOP_SOURCE.addStubs(EventSource);
+
+export default EventSource;

@@ -3,11 +3,10 @@ import PassStream from './streams/passStream.js';
 import ForkStream from './streams/forkStream.js';
 import BatchStream from './streams/batchStream.js';
 import ResetStream from './streams/resetStream.js';
+import TapStream from './streams/tapStream.js';
 
 import Frame from './frame.js';
-import F from './flib.js';
-import Wire from './wire.js';
-import WaveDef from './waveDef.js';
+
 import Nyan from './nyan.js';
 import NyanRunner from './nyanRunner.js';
 
@@ -23,20 +22,28 @@ const resetStreamBuilder = function(head) {
     }
 };
 
+const tapStreamBuilder = function(f) {
+    return function(name) {
+        return new TapStream(name, f);
+    }
+};
+
 class Bus {
 
     constructor(scope) {
 
         this._frames = [];
-        this._wires = [];
+        this._sources = [];
         this._dead = false;
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
 
         // temporary api states (used for interactively building the bus)
-        this._holding = false;
-        this._head = null;
+
+        this._holding = false; // multiple commands until duration function
+        this._head = null; // point to reset accumulators
+        this._locked = false; // prevents additional sources from being added
 
         if(scope)
             scope._busList.push(this);
@@ -158,6 +165,11 @@ class Bus {
 
     };
 
+    _ASSERT_IS_FUNCTION(f) {
+        if(typeof f !== 'function')
+            throw new Error('Argument must be a function.');
+    };
+
     _ASSERT_NOT_HOLDING() {
         if (this.holding)
             throw new Error('Method cannot be invoked while holding messages in the frame.');
@@ -172,6 +184,20 @@ class Bus {
         if(!this._head)
             throw new Error('Cannot reset without an upstream accumulator.');
     };
+
+    _ASSERT_NOT_LOCKED(){
+        if(this._locked)
+            throw new Error('Cannot add sources after other operations.');
+    };
+
+    addSource(source){
+
+        this._ASSERT_NOT_LOCKED();
+        this._sources.push(source);
+        this._currentFrame.streams.push(source.stream);
+        return this;
+
+    }
 
     process(nyan, context, target){
 
@@ -224,7 +250,7 @@ class Bus {
     // };
 
     batch() {
-        this._createNormalFrame(batchStreamBuilder);
+        this._createNormalFrame(batchStreamBuilder());
         return this;
     };
 
@@ -246,6 +272,7 @@ class Bus {
 
         this._ASSERT_HAS_HEAD();
         this._createNormalFrame(resetStreamBuilder(this._head));
+        return this;
 
     }
 
@@ -457,12 +484,12 @@ class Bus {
 
     };
 
-    run(func) {
+    run(f) {
 
-        F.ASSERT_IS_FUNCTION(func);
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame(new WaveDef('tap', func));
+        this._createNormalFrame(tapStreamBuilder(f));
         return this;
 
     };

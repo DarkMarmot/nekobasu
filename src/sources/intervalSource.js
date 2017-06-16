@@ -34,3 +34,4 @@ IntervalSource.prototype.destroy = function destroy(){
 
 NOOP_SOURCE.addStubs(IntervalSource);
 
+export default IntervalSource;

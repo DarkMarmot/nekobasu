@@ -5,7 +5,7 @@ class Frame {
     constructor(bus) {
 
         this.bus = bus;
-        this.index = bus.frames.length;
+        this.index = bus._frames.length;
         this.streams = [];
 
     };

@@ -51,3 +51,4 @@ SubscribeSource.prototype.destroy = function destroy(){
 
 NOOP_SOURCE.addStubs(SubscribeSource);
 
+export default SubscribeSource;
