@@ -1,10 +1,27 @@
 
+import PassStream from './streams/passStream.js';
+import ForkStream from './streams/forkStream.js';
+import BatchStream from './streams/batchStream.js';
+import ResetStream from './streams/resetStream.js';
+
 import Frame from './frame.js';
 import F from './flib.js';
 import Wire from './wire.js';
 import WaveDef from './waveDef.js';
 import Nyan from './nyan.js';
 import NyanRunner from './nyanRunner.js';
+
+const batchStreamBuilder = function() {
+    return function(name) {
+        return new BatchStream(name);
+    }
+};
+
+const resetStreamBuilder = function(head) {
+    return function(name) {
+        return new ResetStream(name, head);
+    }
+};
 
 class Bus {
 
@@ -16,7 +33,10 @@ class Bus {
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
+
+        // temporary api states (used for interactively building the bus)
         this._holding = false;
+        this._head = null;
 
         if(scope)
             scope._busList.push(this);
@@ -69,11 +89,72 @@ class Bus {
         return this._scope;
     }
 
-    _createFrame() {
+    _createMergingFrame() {
 
-        const f = this._currentFrame = new Frame(this);
-        this._frames.push(f);
-        return f;
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const merged_stream = new PassStream();
+        target_streams.push(merged_stream);
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            s1.next = merged_stream;
+        }
+
+        return f2;
+
+    };
+
+    _createNormalFrame(streamBuilder) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            s1.next = s2;
+            target_streams.push(s2);
+        }
+
+        return f2;
+
+    };
+
+    _createForkingFrame(forkedTargetFrame) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const forked_streams = forkedTargetFrame.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+
+            const s1 = source_streams[i];
+            const s3 = new PassStream(s1.name);
+            const s2 = new ForkStream(s1.name, s3);
+
+            s1.next = s2;
+
+            target_streams.push(s2);
+            forked_streams.push(s3);
+        }
+
+        return f2;
 
     };
 
@@ -85,6 +166,11 @@ class Bus {
     _ASSERT_IS_HOLDING(){
         if(!this.holding)
             throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    };
+
+    _ASSERT_HAS_HEAD(){
+        if(!this._head)
+            throw new Error('Cannot reset without an upstream accumulator.');
     };
 
     process(nyan, context, target){
@@ -103,8 +189,7 @@ class Bus {
         this._ASSERT_NOT_HOLDING();
         const fork = new Bus(this.scope);
         fork.parent = this;
-        this._addFrame()
-        this._currentFrame.target(fork._currentFrame);
+        this._createForkingFrame(fork._currentFrame);
 
         return fork;
     };
@@ -128,35 +213,41 @@ class Bus {
 
     add(bus) {
 
-        const frame = this._createFrame(); // wire from current bus
-        bus._currentFrame.target(frame); // wire from outside bus
+        const nf = this._createNormalFrame(); // extend this bus
+        bus._createForkingFrame(nf); // outside bus then forks into this bus
         return this;
 
     };
 
-    defer() {
-        return this.timer(F.getDeferTimer);
-    };
+    // defer() {
+    //     return this.timer(F.getDeferTimer);
+    // };
 
     batch() {
-        return this.timer(F.getBatchTimer);
+        this._createNormalFrame(batchStreamBuilder);
+        return this;
     };
 
-    sync() {
-        return this.timer(F.getSyncTimer);
-    };
 
-    throttle(fNum) {
-        return this.timer(F.getThrottleTimer, fNum);
-    };
+    // throttle(fNum) {
+    //     return this.timer(F.getThrottleTimer, fNum);
+    // };
 
     hold() {
 
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrameHold();
+        this._ASSERT_NOT_HOLDING();
+        this._holding = true;
+        this._head = this._createNormalFrame();
         return this;
 
     };
+
+    reset() {
+
+        this._ASSERT_HAS_HEAD();
+        this._createNormalFrame(resetStreamBuilder(this._head));
+
+    }
 
     pull() {
 

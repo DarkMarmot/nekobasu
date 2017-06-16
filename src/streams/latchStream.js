@@ -18,7 +18,9 @@ LatchStream.prototype.handle = function handle(msg, source, topic) {
 
     if(this.latched){
         this.next.handle(msg, n, topic);
+        return;
     }
+
     const f = this.f;
     const v = f(msg, source, topic);
 
@@ -28,8 +30,9 @@ LatchStream.prototype.handle = function handle(msg, source, topic) {
     }
 };
 
-LatchStream.prototype.reset = function(){
+LatchStream.prototype.reset = function(seed){
     this.latched = false;
+    this.next.reset(seed);
 };
 
 export default LatchStream;

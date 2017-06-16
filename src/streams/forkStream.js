@@ -2,11 +2,11 @@
 import NOOP_STREAM from './noopStream.js';
 
 
-function ForkStream(name) {
+function ForkStream(name, fork) {
 
     this.name = name;
     this.next = NOOP_STREAM;
-    this.fork = NOOP_STREAM;
+    this.fork = fork;
 
 }
 

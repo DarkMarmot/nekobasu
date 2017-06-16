@@ -4,18 +4,10 @@ class Frame {
 
     constructor(bus) {
 
-        this._bus = bus;
-        this._index = bus._frames.length;
-        this._streams = [];
+        this.bus = bus;
+        this.index = bus.frames.length;
+        this.streams = [];
 
-    };
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
     };
 
 

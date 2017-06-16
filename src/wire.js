@@ -1,60 +1,40 @@
-import F from './flib.js';
 
-let _id = 0;
-
-// const FRAME_CAP = {
-//     handle: function(wire, msg, source, topic){}
-// };
+import PassStream from './streams/passStream.js';
 
 class Wire {
 
-    constructor(name){
+    constructor(name, source){
 
-        this._id = ++_id + '';
-        this.target = null; // a frame in a bus
-        this.dead = false;
         this.name = name;
-        this.cleanupMethod = F.NOOP; // to cleanup subscriptions
-        this.pull = F.NOOP; // to retrieve and emit stored values from a source
+        this.source = source; // implements init, destroy, pull, pushes to wire.handle
+        this.stream = new PassStream(name);
+        this.dead = false;
+        source.init();
 
     };
 
     handle(msg, source, topic) {
 
-        // if(this.target)
-            this.target.handle(this, msg, this.name, topic);
+        const n = source || this.name;
+        this.stream.handle(msg, n, topic);
 
+    };
+
+    pull(){
+        this.source.pull();
     };
 
     destroy(){
 
-        if(!this.dead && this.target){
+        if(!this.dead){
             this.dead = true;
-            this.cleanupMethod();
+            this.source.destroy();
         }
 
     };
 
 }
 
-
-Wire.fromInterval = function(delay, name){
-
-    const wire = new Wire(name);
-
-    const toWire = function(msg){
-        wire.handle(msg);
-    };
-
-    const id = setInterval(toWire, delay);
-
-    wire.cleanupMethod = function(){
-        clearInterval(id);
-    };
-
-    return wire;
-
-};
 
 
 Wire.fromMonitor = function(data, name){

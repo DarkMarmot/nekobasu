@@ -4,10 +4,10 @@ import NOOP_STREAM from './noopStream.js';
 function IDENTITY(msg, source, topic) { return msg; }
 
 
-function MsgStream(name) {
+function MsgStream(name, f) {
 
     this.name = name;
-    this.f = IDENTITY;
+    this.f = f || IDENTITY;
     this.next = NOOP_STREAM;
 
 }
