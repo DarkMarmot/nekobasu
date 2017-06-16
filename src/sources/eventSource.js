@@ -5,6 +5,10 @@ import PassStream from '../streams/passStream.js';
 
 function EventSource(name, target, eventName, useCapture){
 
+    function toStream(msg){
+        stream.handle(msg, eventName, null);
+    }
+
     this.name = name;
     this.target = target;
     this.eventName = eventName;
@@ -12,12 +16,8 @@ function EventSource(name, target, eventName, useCapture){
     this.on = target.addEventListener || target.addListener || target.on;
     this.off = target.removeEventListener || target.removeListener || target.off;
     this.stream = new PassStream(name);
-
+    this.callback = toStream;
     const stream = this.stream;
-
-    function toStream(msg){
-        stream.handle(msg, eventName, null);
-    }
 
     this.on.call(target, eventName, toStream, useCapture);
 
@@ -27,7 +27,7 @@ function EventSource(name, target, eventName, useCapture){
 
 EventSource.prototype.destroy = function destroy(){
 
-    this.off.call(target, this.eventName, callback, this.useCapture);
+    this.off.call(this.target, this.eventName, this.callback, this.useCapture);
     this.dead = true;
 
 };

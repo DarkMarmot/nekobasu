@@ -4,16 +4,18 @@ import NOOP_STREAM from './noopStream.js';
 function IDENTITY(d) { return d; }
 
 
-function TapStream() {
-    this.f = IDENTITY;
+function TapStream(name, f) {
+    this.name = name;
+    this.f = f || IDENTITY;
     this.next = NOOP_STREAM;
 }
 
 TapStream.prototype.handle = function handle(msg, source, topic) {
 
+    const n = this.name;
     const f = this.f;
-    f(msg, source, topic);
-    this.next.handle(msg, source, topic);
+    f(msg, n, topic);
+    this.next.handle(msg, n, topic);
 
 };
 

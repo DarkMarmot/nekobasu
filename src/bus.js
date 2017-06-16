@@ -4,11 +4,17 @@ import ForkStream from './streams/forkStream.js';
 import BatchStream from './streams/batchStream.js';
 import ResetStream from './streams/resetStream.js';
 import TapStream from './streams/tapStream.js';
+import MsgStream from './streams/msgStream.js';
+import FilterStream from './streams/filterStream.js';
 
 import Frame from './frame.js';
 
 import Nyan from './nyan.js';
 import NyanRunner from './nyanRunner.js';
+
+const FUNCTOR = function(d) {
+    return typeof d === 'function' ? d : function(d) { return d;};
+};
 
 const batchStreamBuilder = function() {
     return function(name) {
@@ -25,6 +31,18 @@ const resetStreamBuilder = function(head) {
 const tapStreamBuilder = function(f) {
     return function(name) {
         return new TapStream(name, f);
+    }
+};
+
+const msgStreamBuilder = function(f) {
+    return function(name) {
+        return new MsgStream(name, f);
+    }
+};
+
+const filterStreamBuilder = function(f) {
+    return function(name) {
+        return new FilterStream(name, f);
     }
 };
 
@@ -504,11 +522,13 @@ class Bus {
 
     msg(fAny) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
+        const f = FUNCTOR(fAny);
 
-        this.addFrame(new WaveDef('msg', F.FUNCTOR(fAny)));
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(msgStreamBuilder(f));
         return this;
+
 
     };
 
@@ -524,13 +544,12 @@ class Bus {
     };
 
 
-    filter(func) {
+    filter(f) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_IS_FUNCTION(func);
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame(new WaveDef('filter', func));
+        this._createNormalFrame(filterStreamBuilder(f));
         return this;
 
 
@@ -573,14 +592,13 @@ class Bus {
 
         this._dead = true;
 
-        const wires = this._wires;
-        const len = wires.length;
+        const sources = this._sources;
+        const len = sources.length;
         for (let i = 0; i < len; i++) {
-            const wire = wires[i];
-            wire.destroy();
+            const s = sources[i];
+            s.destroy();
         }
 
-        this._wires = null;
         return this;
 
     };
