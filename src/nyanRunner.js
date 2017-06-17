@@ -439,36 +439,12 @@ function applyMsgProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.msg(f);
+        bus.msg(method, context);
 
     }
 
 }
 
-
-function applyRunProcess(bus, phrase, context){
-
-    const len = phrase.length;
-
-    for(let i = 0; i < len; i++) {
-
-        const word = phrase[i];
-        const name = word.name;
-        const method = context[name];
-
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.run(f);
-
-    }
-
-}
 
 function applySourceProcess(bus, word){
 
@@ -487,11 +463,7 @@ function applyFilterProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.filter(f);
+        bus.filter(method, context);
 
     }
 

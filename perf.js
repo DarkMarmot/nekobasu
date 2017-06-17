@@ -23,7 +23,7 @@ const b = world.bus('~castle').split().process(' >even | *add1', fs).scan(fs.sum
 
 const n = Date.now();
 
-for(let i = 0; i < 45; i++) {
+for(let i = 0; i < 170; i++) {
 
     d.write(arr);
     b._frames[0].streams[0].reset();

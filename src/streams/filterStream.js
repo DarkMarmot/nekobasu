@@ -4,10 +4,11 @@ import NOOP_STREAM from './noopStream.js';
 function IDENTITY(d) { return d; }
 
 
-function FilterStream(name, f) {
+function FilterStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY;
+    this.context = context || null;
     this.next = NOOP_STREAM;
 
 }
@@ -15,7 +16,7 @@ function FilterStream(name, f) {
 FilterStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
-    f(msg, source, topic) && this.next.handle(msg, source, topic);
+    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
 
 };
 

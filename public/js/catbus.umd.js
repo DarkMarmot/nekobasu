@@ -582,10 +582,11 @@ NOOP_STREAM.addStubs(TapStream);
 function IDENTITY$2(msg, source, topic) { return msg; }
 
 
-function MsgStream(name, f) {
+function MsgStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY$2;
+    this.context = context || null;
     this.next = NOOP_STREAM;
 
 }
@@ -593,8 +594,7 @@ function MsgStream(name, f) {
 MsgStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
-    const v = f(msg, source, topic);
-    // const n = this.name || source;
+    const v = f.call(this.context, msg, source, topic);
 
     this.next.handle(v, source, topic);
 
@@ -605,10 +605,11 @@ NOOP_STREAM.addStubs(MsgStream);
 function IDENTITY$3(d) { return d; }
 
 
-function FilterStream(name, f) {
+function FilterStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY$3;
+    this.context = context || null;
     this.next = NOOP_STREAM;
 
 }
@@ -616,7 +617,7 @@ function FilterStream(name, f) {
 FilterStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
-    f(msg, source, topic) && this.next.handle(msg, source, topic);
+    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
 
 };
 
@@ -853,49 +854,73 @@ LatchStream.prototype.reset = function(seed){
 
 NOOP_STREAM.addStubs(LatchStream);
 
-const FUNCTOR$4 = function(d) {
-    return typeof d === 'function' ? d : function() { return d;};
-};
-
-function ScanStream(name, f, seed) {
+function ScanStream(name, f) {
 
     this.name = name;
     this.f = f;
-    this.seed = FUNCTOR$4(seed);
-    this.hasSeed = arguments.length === 3;
-    this.hasValue = this.hasSeed || false;
+    this.hasValue = false;
     this.next = NOOP_STREAM;
-    this.topic = null;
-    this.value = this.seed();
+    this.value = undefined;
 
 }
 
 ScanStream.prototype.handle = function handle(msg, source, topic) {
 
-    const hasValue = this.hasValue;
-
-    if(!hasValue){
-        this.value = msg;
-        this.hasValue = true;
-    } else {
-        const f = this.f;
-        this.value = f(this.value, msg, source, topic);
-    }
-
-
+    this.value = this.hasValue ? this.f(this.value, msg, source, topic) : msg;
     this.next.handle(this.value, source, topic);
 
 };
 
 ScanStream.prototype.reset = function reset(msg) {
 
-    const m = this.value = this.seed(msg);
-    this.topic = null;
-    this.next.reset(m);
+    this.hasValue = false;
+    this.value = undefined;
+    this.next.reset();
 
 };
 
 NOOP_STREAM.addStubs(ScanStream);
+
+const FUNCTOR$4 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function ScanWithSeedStream(name, f, seed, context) {
+
+    this.name = name;
+    this.f = f;
+    this.seed = FUNCTOR$4(seed);
+    this.context = context || null;
+    this.next = NOOP_STREAM;
+    this.value = this.seed();
+
+}
+
+ScanWithSeedStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.value = this.f.call(this.context, this.value, msg, source, topic);
+    this.next.handle(this.value, source, topic);
+
+};
+
+ScanWithSeedStream.prototype.reset = function reset(msg) {
+
+    const v = this.value = this.seed(msg);
+    this.next.reset(v);
+
+};
+
+NOOP_STREAM.addStubs(ScanWithSeedStream);
+
+
+
+
+// const scanStreamBuilder = function(f, seed) {
+//     const hasSeed = arguments.length === 2;
+//     return function(name) {
+//         return hasSeed? new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
+//     }
+// };
 
 function SplitStream(name) {
 
@@ -1883,11 +1908,7 @@ function applyMsgProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.msg(f);
+        bus.msg(method, context);
 
     }
 
@@ -1911,11 +1932,7 @@ function applyFilterProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.filter(f);
+        bus.filter(method, context);
 
     }
 
@@ -2049,9 +2066,11 @@ const latchStreamBuilder = function(f) {
     }
 };
 
-const scanStreamBuilder = function(f, seed) {
+const scanStreamBuilder = function(f, seed, context) {
+    const hasSeed = arguments.length === 2;
     return function(name) {
-        return new ScanStream(name, f, seed);
+        return hasSeed ?
+            new ScanWithSeedStream(name, f, seed, context) : new ScanStream(name, f, context);
     }
 };
 

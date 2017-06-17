@@ -1,45 +1,29 @@
 
 import NOOP_STREAM from './noopStream.js';
 
-const FUNCTOR = function(d) {
-    return typeof d === 'function' ? d : function() { return d;};
-};
 
-function ScanStream(name, f, seed) {
+function ScanStream(name, f) {
 
     this.name = name;
     this.f = f;
-    this.seed = FUNCTOR(seed);
-    this.hasSeed = arguments.length === 3;
-    this.hasValue = this.hasSeed || false;
+    this.hasValue = false;
     this.next = NOOP_STREAM;
-    this.topic = null;
-    this.value = this.seed();
+    this.value = undefined;
 
 }
 
 ScanStream.prototype.handle = function handle(msg, source, topic) {
 
-    const hasValue = this.hasValue;
-
-    if(!hasValue){
-        this.value = msg;
-        this.hasValue = true;
-    } else {
-        const f = this.f;
-        this.value = f(this.value, msg, source, topic);
-    }
-
-
+    this.value = this.hasValue ? this.f(this.value, msg, source, topic) : msg;
     this.next.handle(this.value, source, topic);
 
 };
 
 ScanStream.prototype.reset = function reset(msg) {
 
-    const m = this.value = this.seed(msg);
-    this.topic = null;
-    this.next.reset(m);
+    this.hasValue = false;
+    this.value = undefined;
+    this.next.reset();
 
 };
 

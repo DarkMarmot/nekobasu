@@ -16,6 +16,7 @@ import DelayStream from './streams/delayStream.js';
 import GroupStream from './streams/groupStream.js';
 import LatchStream from './streams/latchStream.js';
 import ScanStream from './streams/scanStream.js';
+import ScanWithSeedStream from './streams/scanWithSeedStream.js';
 import SplitStream from './streams/splitStream.js';
 
 
@@ -110,9 +111,11 @@ const latchStreamBuilder = function(f) {
     }
 };
 
-const scanStreamBuilder = function(f, seed) {
+const scanStreamBuilder = function(f, seed, context) {
+    const hasSeed = arguments.length === 2;
     return function(name) {
-        return new ScanStream(name, f, seed);
+        return hasSeed ?
+            new ScanWithSeedStream(name, f, seed, context) : new ScanStream(name, f, context);
     }
 };
 
