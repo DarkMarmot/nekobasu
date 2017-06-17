@@ -16,9 +16,9 @@ MsgStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
     const v = f(msg, source, topic);
-    const n = this.name || source;
+    // const n = this.name || source;
 
-    this.next.handle(v, n, topic);
+    this.next.handle(v, source, topic);
 
 };
 

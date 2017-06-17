@@ -13,8 +13,8 @@ function ScanStream(name, f, seed) {
     this.hasSeed = arguments.length === 3;
     this.hasValue = this.hasSeed || false;
     this.next = NOOP_STREAM;
-    this.topic = undefined;
-    this.msg = this.seed();
+    this.topic = null;
+    this.value = this.seed();
 
 }
 
@@ -23,22 +23,22 @@ ScanStream.prototype.handle = function handle(msg, source, topic) {
     const hasValue = this.hasValue;
 
     if(!hasValue){
-        this.msg = msg;
+        this.value = msg;
         this.hasValue = true;
     } else {
         const f = this.f;
-        this.msg = f(this.msg, msg, source, topic);
+        this.value = f(this.value, msg, source, topic);
     }
 
-    const m = this.msg;
-    this.next.handle(m, source, topic);
+
+    this.next.handle(this.value, source, topic);
 
 };
 
 ScanStream.prototype.reset = function reset(msg) {
 
-    const m = this.msg = this.seed(msg);
-    this.topic = undefined;
+    const m = this.value = this.seed(msg);
+    this.topic = null;
     this.next.reset(m);
 
 };

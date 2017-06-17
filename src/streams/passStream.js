@@ -13,8 +13,7 @@ function PassStream(name) {
 
 PassStream.prototype.handle = function handle(msg, source, topic) {
 
-    const name = this.name;
-    const n = name || source;
+    const n = this.name || source;
     this.next.handle(msg, n, topic);
 
 };

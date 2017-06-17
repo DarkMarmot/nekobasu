@@ -422,8 +422,7 @@ function PassStream(name) {
 
 PassStream.prototype.handle = function handle(msg, source, topic) {
 
-    const name = this.name;
-    const n = name || source;
+    const n = this.name || source;
     this.next.handle(msg, n, topic);
 
 };
@@ -595,9 +594,9 @@ MsgStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
     const v = f(msg, source, topic);
-    const n = this.name || source;
+    // const n = this.name || source;
 
-    this.next.handle(v, n, topic);
+    this.next.handle(v, source, topic);
 
 };
 
@@ -617,11 +616,7 @@ function FilterStream(name, f) {
 FilterStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
-    const v = !!f(msg, source, topic);
-    const n = source;
-    const next = this.next;
-
-    v && next.handle(msg, n, topic);
+    f(msg, source, topic) && this.next.handle(msg, source, topic);
 
 };
 
@@ -870,8 +865,8 @@ function ScanStream(name, f, seed) {
     this.hasSeed = arguments.length === 3;
     this.hasValue = this.hasSeed || false;
     this.next = NOOP_STREAM;
-    this.topic = undefined;
-    this.msg = this.seed();
+    this.topic = null;
+    this.value = this.seed();
 
 }
 
@@ -880,22 +875,22 @@ ScanStream.prototype.handle = function handle(msg, source, topic) {
     const hasValue = this.hasValue;
 
     if(!hasValue){
-        this.msg = msg;
+        this.value = msg;
         this.hasValue = true;
     } else {
         const f = this.f;
-        this.msg = f(this.msg, msg, source, topic);
+        this.value = f(this.value, msg, source, topic);
     }
 
-    const m = this.msg;
-    this.next.handle(m, source, topic);
+
+    this.next.handle(this.value, source, topic);
 
 };
 
 ScanStream.prototype.reset = function reset(msg) {
 
-    const m = this.msg = this.seed(msg);
-    this.topic = undefined;
+    const m = this.value = this.seed(msg);
+    this.topic = null;
     this.next.reset(m);
 
 };
