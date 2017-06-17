@@ -1,4 +1,6 @@
 
+import SubscribeSource from './sources/subscribeSource.js';
+
 import PassStream from './streams/passStream.js';
 import ForkStream from './streams/forkStream.js';
 import BatchStream from './streams/batchStream.js';
@@ -12,6 +14,9 @@ import FirstNStream from './streams/firstNStream.js';
 import AllStream from './streams/allStream.js';
 import DelayStream from './streams/delayStream.js';
 import GroupStream from './streams/groupStream.js';
+import LatchStream from './streams/latchStream.js';
+import ScanStream from './streams/scanStream.js';
+import SplitStream from './streams/splitStream.js';
 
 
 import Frame from './frame.js';
@@ -21,6 +26,10 @@ import NyanRunner from './nyanRunner.js';
 
 const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
+};
+
+const TO_TOPIC = function(msg, source, topic){
+    return topic;
 };
 
 const batchStreamBuilder = function() {
@@ -92,6 +101,24 @@ const groupStreamBuilder = function(by) {
 const nameStreamBuilder = function(name) {
     return function() {
         return new PassStream(name);
+    }
+};
+
+const latchStreamBuilder = function(f) {
+    return function(name) {
+        return new LatchStream(name, f);
+    }
+};
+
+const scanStreamBuilder = function(f, seed) {
+    return function(name) {
+        return new ScanStream(name, f, seed);
+    }
+};
+
+const splitStreamBuilder = function() {
+    return function(name) {
+        return new SplitStream(name);
     }
 };
 
@@ -346,11 +373,11 @@ class Bus {
 
     pull() {
 
-        const len = this._wires.length;
+        const len = this._sources.length;
 
         for(let i = 0; i < len; i++) {
-            const wire = this._wires[i];
-            wire.pull();
+            const s = this._sources[i];
+            s.pull();
         }
 
         return this;
@@ -397,29 +424,13 @@ class Bus {
     };
 
 
-    scan(func, seed){
+    scan(f, seed){
 
-        if(!this.holding) {
-            this.addFrame(new WaveDef('scan', func, true, 0));
-            return this;
-        }
-
-        return this.reduce(F.getScan, func, seed);
+        this._createNormalFrame(scanStreamBuilder(f, seed));
+        return this;
 
     };
 
-
-
-    scan2(func, seed){
-
-        if(!this.holding) {
-            this.addFrame(new WaveDef('scan', func, false, 0));
-            return this;
-        }
-
-        return this.reduce(F.getScan, func, seed);
-
-    };
 
 
     delay(fNum) {
@@ -436,9 +447,25 @@ class Bus {
 
     }
 
-    whenKeys(keys) {
+    hasKeys(keys) {
 
-        return this.when(F.getWhenKeys, true, keys);
+        const len = keys.length;
+        function _hasKeys(msg, source, topic){
+
+            if(typeof msg !== 'object')
+                return false;
+
+            for(let i = 0; i < len; i++){
+                const k = keys[i];
+                if(!msg.hasOwnProperty(k))
+                    return false;
+            }
+
+            return true;
+        }
+
+        this._createNormalFrame(latchStreamBuilder(_hasKeys));
+        return this;
 
     };
 
@@ -471,71 +498,6 @@ class Bus {
         return this;
     };
 
-    clear(factory, ...args) {
-        return this._currentFrame.clear(factory, ...args);
-    };
-
-    reduce(factory, ...args) {
-
-        const holding = this.holding;
-
-        if(!holding){
-
-            this.addFrame(new WaveDef('msg', factory, true, ...args));
-
-        } else {
-
-            const frame = this._currentFrame;
-            const def = frame._processDef;
-            def.keep = [factory, true, ...args];
-
-        }
-
-        return this;
-
-    };
-
-    timer(factory, stateful, ...args) {
-
-        const holding = this.holding;
-        const frame = holding ? this._currentFrame : this.addFrameHold();
-        const def = frame._processDef;
-        def.timer = [factory, stateful, ...args];
-        this._currentFrame._holding = false; // timer ends hold
-
-        return this;
-
-    };
-
-    until(factory, ...args) {
-
-        this.holding ?
-            this._currentFrame.until(factory, ...args) :
-            this.addFrameHold().reduce(F.getKeepLast).until(factory, ...args).timer(F.getSyncTimer);
-        return this;
-
-    };
-
-    when(factory, stateful, ...args) {
-
-        const holding = this.holding;
-
-        if(!holding){
-
-            this.addFrame(new WaveDef('filter', factory, stateful, ...args));
-
-        } else {
-
-            const frame = this._currentFrame;
-            const def = frame._processDef;
-            def.when = [factory, stateful, ...args];
-
-        }
-
-        return this;
-
-    };
-
     run(f) {
 
         this._ASSERT_IS_FUNCTION(f);
@@ -549,6 +511,7 @@ class Bus {
 
         this._createMergingFrame();
         return this;
+
     };
 
     msg(fAny) {
@@ -589,26 +552,26 @@ class Bus {
 
     split() {
 
-        F.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('split'));
+        this._createNormalFrame(splitStreamBuilder());
         return this;
 
     };
 
-    hasKeys(keys) {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame(new WaveDef('filter', F.getHasKeys(keys)));
-        return this;
-
-    };
 
     skipDupes() {
 
         this._ASSERT_NOT_HOLDING();
 
         this._createNormalFrame(skipStreamBuilder());
+        return this;
+
+    };
+
+    addSubscribe(name, data, topic){
+
+        const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
         return this;
 
     };

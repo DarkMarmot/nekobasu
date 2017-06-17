@@ -1,6 +1,7 @@
 
 import Scope from './scope.js';
 import EventSource from './sources/eventSource.js';
+import IntervalSource from './sources/intervalSource.js';
 import SubscribeSource from './sources/subscribeSource.js';
 import Bus from './bus.js';
 
@@ -14,6 +15,16 @@ Catbus.bus = function(){
     return new Bus();
 };
 
+
+Catbus.fromInterval = function(name, delay, msg){
+
+    const bus = new Bus();
+    const source = new IntervalSource(name, delay, msg);
+    bus.addSource(source);
+
+    return bus;
+
+};
 
 Catbus.fromEvent = function(target, eventName, useCapture){
 

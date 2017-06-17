@@ -32,6 +32,8 @@ LastNStream.prototype.reset = function(msg, source, topic){
 
 };
 
+NOOP_STREAM.addStubs(LastNStream);
+
 export default LastNStream;
 
 

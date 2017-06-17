@@ -11,7 +11,7 @@ function callback(source){
 
     const n = source.name;
     const msg = source.msg();
-    this.stream.handle(msg, n, null);
+    source.stream.handle(msg, n, null);
 
 }
 
@@ -21,7 +21,7 @@ function IntervalSource(name, delay, msg) {
     this.delay = delay;
     this.dead = false;
     this.stream = new PassStream(name);
-    this.intervalId = setInterval(callback, delay, this);;
+    this.intervalId = setInterval(callback, delay, this);
     this.msg = FUNCTOR(msg);
 
 }

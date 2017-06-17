@@ -6,15 +6,6 @@ const world = Catbus.createChild();
 const d = world.data('castle');
 const e = world.data('moo');
 
-const fs = {
-
-    add1: function(x) { return x + 1; },
-    even: function(x) { return x % 2 === 0;},
-
-
-};
-
-function sum(x, y) { return x + y;}
 
 const arr = [];
 for(let i = 0; i < 1000000; i++){
@@ -22,15 +13,22 @@ for(let i = 0; i < 1000000; i++){
 }
 
 
-const b = world.bus('~castle').split().process(' >even | *add1', fs).scan(sum).process('=moo');
+const fs = {
+    add1: function(x) { return x + 1; },
+    even: function(x) { return x % 2 === 0;},
+    sum: function(x, y) { return x + y;}
+};
 
-const n = new Date();
+const b = world.bus('~castle').split().process(' >even | *add1', fs).scan(fs.sum, 0);//.process('=moo');
 
-for(let j = 0; j < 10; j++) {
+const n = Date.now();
+
+for(let i = 0; i < 40; i++) {
+
     d.write(arr);
+    b._frames[0].streams[0].reset();
+    //console.log('e', e.read());
+
 }
 
-
-console.log('e', e.read());
-
-console.log('t', new Date() - n);
+console.log('t', Date.now() - n);

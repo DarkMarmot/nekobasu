@@ -26,503 +26,6 @@ function isValid(type){
     return reverseLookup.hasOwnProperty(type);
 }
 
-function ALWAYS_TRUE(){
-    return true;
-}
-
-function ALWAYS_FALSE(){
-    return false;
-}
-
-
-function TO_SOURCE(msg, source) {
-    return source;
-}
-
-function TO_TOPIC(msg, source, topic) {
-    return topic;
-}
-
-function TO_MSG(msg) {
-    return msg;
-}
-
-function NOOP(){
-
-}
-
-
-function FUNCTOR(val) {
-    return (typeof val === 'function') ? val : function() { return val; };
-}
-
-const Func = {
-
-
-    ASSERT_NEED_ONE_ARGUMENT: function(args){
-        if(args.length < 1)
-            throw new Error('Method requires at least one argument.');
-    },
-
-    ASSERT_IS_FUNCTION: function(func){
-        if(typeof func !== 'function')
-            throw new Error('Argument [func] is not of type function.');
-    },
-
-    getAlwaysTrue: function(){
-       return function(){ return true;}
-    },
-
-    getBatchTimer: function(pool){
-
-            Catbus$1.enqueue(pool);
-
-    },
-
-    getSyncTimer: function(){
-        return function(pool) {
-            pool.release(pool);
-        }
-    },
-
-    getDeferTimer: function(){
-        return function(pool) {
-            setTimeout(pool.release, 0, pool);
-        }
-    },
-
-    getThrottleTimer: function(fNum){
-
-        const pool = this;
-        fNum = FUNCTOR(fNum);
-        let wasEmpty = false;
-        let timeoutId = null;
-        let msgDuringTimer = false;
-        const auto = pool.keep.auto;
-
-        function timedRelease(fromTimeout){
-
-            if(pool.stream.dead)
-                return;
-
-            const nowEmpty = pool.keep.isEmpty;
-
-            if(!fromTimeout){
-                if(!timeoutId) {
-                    pool.release(pool);
-                    wasEmpty = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                } else {
-                    msgDuringTimer = true;
-                }
-                return;
-            }
-
-            if(nowEmpty){
-                if(wasEmpty){
-                    // throttle becomes inactive
-                } else {
-                    // try one more time period to maintain throttle
-                    wasEmpty = true;
-                    msgDuringTimer = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                }
-            } else {
-                pool.release(pool);
-                wasEmpty = false;
-                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-            }
-
-        }
-
-        return timedRelease;
-
-    },
-
-    getQueue: function(n){
-
-        n = n || Infinity;
-
-        const buffer = [];
-
-        const f = function(msg, source){
-            if(buffer.length < n)
-                buffer.push(msg);
-            return buffer;
-        };
-
-        f.isBuffer = ALWAYS_TRUE;
-
-        f.next = function(){
-            return buffer.shift();
-        };
-
-        f.isEmpty = function(){
-            return buffer.length === 0;
-        };
-
-        f.content = function(){
-            return buffer;
-        };
-
-        return f;
-
-    },
-
-    getScan: function(func, seed){
-
-        const hasSeed = arguments.length === 2;
-        let acc;
-        let initMsg = true;
-
-        const f = function(msg, source){
-
-            if(initMsg){
-                initMsg = false;
-                if(hasSeed){
-                    acc = func(seed, msg, source);
-                } else {
-                    acc = msg;
-                }
-            } else {
-                acc = func(acc, msg, source);
-            }
-
-            return acc;
-
-        };
-
-        f.reset = NOOP;
-
-        f.next = f.content = function(){
-            return acc;
-        };
-
-
-        return f;
-    },
-
-    // getScan: function(func, seed){
-    //
-    //     let acc = seed;
-    //
-    //     const f = function(msg, source){
-    //
-    //         return acc = func(acc, msg, source);
-    //     };
-    //
-    //     f.reset = NOOP;
-    //
-    //     f.next = f.content = function(){
-    //         return acc;
-    //     };
-    //
-    //
-    //     return f;
-    // },
-
-    getGroup: function(groupBy){
-
-        groupBy = groupBy || TO_SOURCE;
-        const hash = {};
-
-        const f = function(msg, source){
-
-            const g = groupBy(msg, source);
-            if(g) {
-                hash[g] = msg;
-            } else { // no source, copy message props into hash to merge nameless streams of key data
-                for(const k in msg){
-                    hash[k] = msg[k];
-                }
-            }
-
-            return hash;
-
-        };
-
-        f.reset = function(){
-            for(const k in hash){
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function(){
-            return hash;
-        };
-
-        return f;
-
-    },
-
-    getHash: function(groupBy){
-
-        groupBy = groupBy || TO_SOURCE;
-        const hash = {};
-
-        const f = function(msg, source){
-
-            const g = groupBy(msg, source);
-            hash[g] = msg;
-            return hash;
-
-        };
-
-        f.reset = function(){
-            for(const k in hash){
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function(){
-            return hash;
-        };
-
-        return f;
-
-    },
-
-
-    getKeepLast: function(n){
-
-        if(!n || n < 0) {
-
-            let last;
-
-            const f = function(msg, source){
-                return last = msg;
-            };
-
-            f.reset = function(){
-                f.isEmpty = true;
-            };
-
-            f.next = f.content = function(){
-                return last;
-            };
-
-            return f;
-
-        }
-
-        const buffer = [];
-
-        const f = function(msg, source){
-            buffer.push(msg);
-            if(buffer.length > n)
-                buffer.shift();
-            return buffer;
-        };
-
-        f.reset = function(){
-            while(buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function(){
-            return buffer;
-        };
-
-        return f;
-
-    },
-
-
-
-    getKeepFirst: function(n){
-
-        if(!n || n < 0) {
-
-            let firstMsg;
-            let hasFirst = false;
-            const f = function (msg, source) {
-                return hasFirst ? firstMsg : firstMsg = msg;
-            };
-
-            f.reset = function(){
-                firstMsg = false;
-                f.isEmpty = true;
-            };
-
-            f.next = f.content = function(){
-                return firstMsg;
-            };
-
-            return f;
-        }
-
-        const buffer = [];
-
-        const f = function(msg, source){
-
-            if(buffer.length < n)
-                buffer.push(msg);
-            return buffer;
-
-        };
-
-        f.reset = function(){
-            while(buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function(){
-            return buffer;
-        };
-
-        return f;
-
-    },
-
-    getKeepAll: function(){
-
-        const buffer = [];
-
-        const f = function(msg, source){
-            buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function(){
-            while(buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function(){
-            return buffer;
-        };
-
-        return f;
-
-    },
-
-    getWhenCount: function(n) {
-
-        let latched = false;
-
-        const f = function(messages){
-            latched = latched || messages.length >= n;
-            return latched;
-        };
-
-        f.reset = function(){
-            latched = false;
-        };
-
-        return f;
-
-    },
-
-    getWhenKeys: function(keys) {
-
-        const keyHash = {};
-        const len = keys.length;
-
-        for(let i = 0; i < len; i++){
-            const k = keys[i];
-            keyHash[k] = true;
-        }
-
-        let latched = false;
-
-        const f = function (messagesByKey) {
-
-            if(latched)
-                return true;
-
-            for (let i = 0; i < len; i++) {
-                const k = keys[i];
-                if (!messagesByKey.hasOwnProperty(k))
-                    return false;
-            }
-
-            return latched = true;
-
-        };
-
-        f.reset = function(){
-            latched = false;
-            for(const k in keyHash){
-                delete keyHash[k];
-            }
-        };
-
-        return f;
-
-    },
-
-    getHasKeys: function(keys, noLatch) {
-
-        let latched = false;
-        const len = keys.length;
-
-        return function (msg) {
-
-            if(latched || !len)
-                return true;
-
-            for(let i = 0; i < len; i++) {
-
-                const k = keys[i];
-                if(!msg.hasOwnProperty(k))
-                    return false;
-            }
-
-            if(!noLatch)
-                latched = true;
-
-            return true;
-
-        }
-
-    },
-
-
-    getSkipDupes: function() {
-
-        let hadMsg = false;
-        let lastMsg;
-
-        return function (msg) {
-
-            const diff = !hadMsg || msg !== lastMsg;
-            lastMsg = msg;
-            hadMsg = true;
-            return diff;
-
-        }
-
-    },
-
-
-    ASSERT_NOT_HOLDING: function(bus){
-        if(bus.holding)
-            throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
-
-    ASSERT_IS_HOLDING: function(bus){
-        if(!bus.holding)
-            throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
-
-};
-
-Func.TO_SOURCE = TO_SOURCE;
-Func.TO_TOPIC = TO_TOPIC;
-Func.To_MSG = TO_MSG;
-Func.FUNCTOR = FUNCTOR;
-Func.ALWAYS_TRUE = ALWAYS_TRUE;
-Func.ALWAYS_FALSE = ALWAYS_FALSE;
-Func.NOOP = NOOP;
-
 function callMany(list, msg, source, topic){
 
     const len = list.length;
@@ -857,953 +360,601 @@ class Data {
 
 }
 
-class Pool {
-
-    constructor(frame, wire, def){
-
-        this.frame = frame;
-        this.wire = wire;
-
-        function fromDef(name){
-
-            if(!def[name])
-                return null;
-
-            const [factory, stateful, ...args] = def[name];
-
-            return stateful ? factory.call(this, ...args) : factory;
-
-        }
-
-        this.keep = fromDef('keep') || Func.getKeepLast();
-        this.when = fromDef('when') || Func.ALWAYS_TRUE;
-        this.until = fromDef('until') || Func.ALWAYS_TRUE;
-        this.timer = fromDef('timer');  // throttle, debounce, defer, batch, sync
-        this.clear = fromDef('clear') || Func.ALWAYS_FALSE;
-
-        this.isPrimed = false;
-
-
-    };
-
-    handle(frame, wire, msg, source, topic) {
-
-        this.keep(msg, source, topic);
-        if(!this.isPrimed){
-            const content = this.keep.content();
-            if(this.when(content)){
-                this.isPrimed = true;
-                this.timer(this);
-            }
-        }
-
-    };
-
-    build(prop, factory, ...args){
-        this[prop] = factory.call(this, ...args);
-    };
-
-    release(pool) {
-
-        pool = pool || this;
-        const hasContent = !pool.keep.isEmpty;
-        const msg = hasContent && pool.keep.next();
-
-        if(pool.clear()){
-            pool.keep.reset();
-            pool.when.reset();
-        }
-
-        pool.isPrimed = false;
-
-        if(hasContent)
-            pool.frame.emit(pool.wire, msg, pool.wire.name);
-
-    };
-
+function NoopSource() {
+    this.name = '';
 }
 
-class Tap {
+NoopSource.prototype.init = function init() {};
+NoopSource.prototype.pull = function pull() {};
+NoopSource.prototype.destroy = function destroy() {};
 
-    constructor(def, frame){
 
-        this.action = def.action;
-        this.value = null;
-        this.stateful = false;
-        this.frame = frame;
+const stubs = {init:'init', pull:'pull', destroy:'destroy'};
 
+NoopSource.prototype.addStubs = function addStubs(sourceClass) {
+
+    for(const name in stubs){
+        const ref = stubs[name];
+        const f = NoopSource.prototype[ref];
+        if(typeof sourceClass.prototype[name] !== 'function'){
+            sourceClass.prototype[name] = f;
+        }
     }
-
-    handle(frame, wire, msg, source, topic){
-
-        this.action(msg, source, topic);
-        frame.emit(wire, msg, source, topic);
-
-    }
-
-}
-
-function Msg(def) {
-
-        this.action = def.action;
-        this.value = null;
-        this.stateful = false;
-
-}
-
-Msg.prototype.handle = function handle(frame, wire, msg, source, topic){
-
-        const nextMsg = this.action(msg, source, topic);
-        frame.emit(wire, nextMsg, source, topic);
 
 };
 
-class Source {
+const NOOP_SOURCE = new NoopSource();
 
-    constructor(def){
-
-        this.action = def.action;
-        this.value = null;
-        this.stateful = false;
-
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        const nextSource = this.action(msg, source, topic);
-        frame.emit(wire, msg, nextSource, topic);
-
-    }
-
+function NoopStream() {
+    this.name = '';
 }
 
-function Filter(def) {
+NoopStream.prototype.handle = function handle(msg, source, topic) {};
+NoopStream.prototype.reset = function reset() {};
+NoopStream.prototype.emit = function emit() {};
 
-    this.action = def.action;
-    this.value = null;
-    this.stateful = false;
+NoopStream.prototype.resetDefault = function reset() {
+    this.next.reset();
+};
 
-}
+const stubs$1 = {handle:'handle', reset:'resetDefault', emit:'emit'};
 
-Filter.prototype.handle = function handle(frame, wire, msg, source, topic){
+NoopStream.prototype.addStubs = function addStubs(streamClass) {
 
-        const f = this.action;
-        f(msg, source, topic) && frame.emit(wire, msg, source, topic);
+    for(const name in stubs$1){
+        const ref = stubs$1[name];
+        const f = NoopStream.prototype[ref];
+        if(typeof streamClass.prototype[name] !== 'function'){
+            streamClass.prototype[name] = f;
+        }
+    }
 
 };
 
-function callback(frame, wire, msg, source, topic){
+const NOOP_STREAM = new NoopStream();
 
-    frame.emit(wire, msg, source, topic);
+function PassStream(name) {
 
-}
-
-
-
-class Delay {
-
-    constructor(def){
-
-        this.action = def.action;
-        this.value = null;
-
-    }
-
-
-    handle(frame, wire, msg, source, topic){
-
-        setTimeout(callback, this.action(msg, source, topic) || 0, frame, wire, msg, source, topic);
-
-    }
-
+    this.name = name;
+    this.next = NOOP_STREAM;
 
 }
 
-function Scan(def) {
+PassStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.action = def.action;
-    this.value = 0;
-    this.stateful = true;
+    const name = this.name;
+    const n = name || source;
+    this.next.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(PassStream);
+
+function SubscribeSource(name, data, topic, canPull){
+
+    this.name = name;
+    this.data = data;
+    this.topic = topic;
+    this.canPull = canPull;
+    this.stream = new PassStream(name);
+    data.subscribe(this.stream, topic);
 
 }
 
-Scan.prototype.handle = function (frame, wire, msg, source, topic){
+SubscribeSource.prototype.pull = function pull(){
 
-        this.value = this.action(this.value, msg, source, topic);
-        frame.emit(wire, this.value, source, topic);
+    !this.dead && this.canPull && this.emit();
 
 };
 
 
 
-// export default Scan;
-//
-//
-// class Scan {
-//
-//     constructor(def){
-//
-//         this.action = def.action;
-//         this.value = 0;
-//         this.stateful = true;
-//
-//     }
-//
-//     handle(frame, wire, msg, source, topic){
-//
-//         const v = this.value = this.action.call(null, this.value, msg);
-//         frame.emit(wire, v, source, topic);
-//
-//     }
-//
-// }
+SubscribeSource.prototype.emit = function emit(){
 
-// export default Scan;
+    const data = this.data;
+    const topic = this.topic;
 
+    const present = data.present(topic);
 
-//
-// class Scan {
-//
-//     constructor(func){
-//
-//         this.hadFirstMsg = false;
-//         this.func = func;
-//         this.value = null;
-//
-//     }
-//
-//     handle(msg, source, topic){
-//
-//         if(!this.hadFirstMsg){
-//             this.hadFirstMsg = true;
-//             this.value = msg;
-//             return;
-//         }
-//
-//         this.value = this.func(this.value, msg, source, topic);
-//
-//     }
-//
-//     next(){
-//         return this.value;
-//     }
-//
-//     content(){
-//         return this.value;
-//     }
-//
-//     reset(){
-//
-//     }
-// }
-//
-//
-// export default Scan;
-
-class SkipDupes {
-
-    constructor(){
-
-        this.value = null;
-        this.hadValue = false;
-
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        if(!this.hadValue || this.value !== msg) {
-            frame.emit(wire, msg, source, topic);
-            this.hadValue = true;
-            this.value = msg;
-        }
-
-    }
-
-}
-
-class LastN {
-
-    constructor(n){
-
-        this.value = [];
-        this.max = n;
-
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        const list = this.value;
-        list.push(msg);
-        if(list.length > this.max)
-            list.shift();
-
-        frame.emit(wire, list, source, topic);
-
-    }
-
-    reset(){
-        this.value = [];
-    }
-
-    next(){
-        return this.value;
-    }
-
-    content(){
-        return this.value;
-    }
-
-}
-
-class FirstN {
-
-    constructor(n){
-
-        this.value = [];
-        this.max = n;
-
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        const list = this.value;
-        if(list.length < this.max)
-            list.push(msg);
-
-        frame.emit(wire, list, source, topic);
-
-    }
-
-    reset(){
-        this.value = [];
-    }
-
-    next(){
-        return this.value;
-    }
-
-    content(){
-        return this.value;
-    }
-
-}
-
-class All {
-
-    constructor(){
-
-        this.value = [];
-        this.hasValue = false;
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        const list = this.value;
-        list.push(msg);
-        frame.emit(wire, list, source, topic);
-
-    }
-
-    reset(){
-        this.value = [];
-    }
-
-    next(){
-        return this.value;
-    }
-
-    content(){
-        return this.value;
-    }
-
-}
-
-function TO_SOURCE$1(msg, source, topic) {
-    return source;
-}
-
-class Group {
-
-    constructor(def){
-
-        this.action = def.action || TO_SOURCE$1;
-        this.value = {};
-
-    }
-
-    handle(frame, wire, msg, source, topic){
-
-        const g = this.action(msg, source);
-        const hash = this.value;
-
-        if(g) {
-            hash[g] = msg;
-        } else { // no source, copy message props into hash to merge nameless streams of key data
-            for(const k in msg){
-                hash[k] = msg[k];
-            }
-        }
-
-        frame.emit(wire, hash, source, topic);
-
-    }
-
-    reset(){
-        this.value = {};
-    }
-
-    next(){
-        return this.value;
-    }
-
-    content(){
-        return this.value;
-    }
-
-}
-
-function Pass() {}
-
-Pass.prototype.handle = function(frame, wire, msg, source, topic){
-
-    frame.emit(wire, msg, source, topic);
-
-};
-
-// const PASS = {
-//
-//     handle: function(frame, wire, msg, source, topic) {
-//         frame.emit(wire, msg, source, topic);
-//     }
-//
-// };
-
-const PASS = new Pass();
-
-const SPLIT = {
-
-    handle: function(frame, wire, msg, source, topic) {
-
-        const len = msg.length || 0;
-        for(let i = 0; i < len; i++){
-            const chunk = msg[i];
-            frame.emit(wire, chunk, source, topic);
-        }
-
+    if(present) {
+        const stream = this.stream;
+        const msg = data.read(topic);
+        const source = this.name;
+        stream.handle(msg, source, topic);
     }
 
 };
 
+SubscribeSource.prototype.destroy = function destroy(){
 
-class Handler {
+    const stream = this.stream;
+    const topic = this.topic;
 
-    constructor(def){
+    this.data.unsubscribe(stream, topic);
+    this.dead = true;
 
-        this.process = (def && def.process) ? this[def.process](def) : PASS;
-
-    };
-
-    handle(frame, wire, msg, source, topic) {
-        this.process.handle(frame, wire, msg, source, topic);
-    };
-
-    pass(def) {
-        return new Pass(def);
-    }
-
-    tap(def) {
-        return new Tap(def);
-    };
-
-    msg(def) {
-        return new Msg(def);
-    }
-
-    source(def) {
-        return new Source(def);
-    }
-
-    filter(def) {
-        return new Filter(def);
-    };
-
-    skipDupes(def) {
-        return new SkipDupes(def);
-    };
-
-    delay(def) {
-        return new Delay(def);
-    };
-
-    scan(def) {
-        return new Scan(def);
-    };
-
-    group(def) {
-        return new Group(def);
-    };
-
-    lastN(def) {
-        return new LastN(def.args[0]);
-    };
-
-    firstN(def) {
-        return new FirstN(def.args[0]);
-    };
-
-    all() {
-        return new All();
-    };
+};
 
 
-    split() {
-        return SPLIT;
-    };
+NOOP_SOURCE.addStubs(SubscribeSource);
 
+function ForkStream(name, fork) {
 
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.fork = fork;
 
 }
+
+ForkStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name;
+    this.next.handle(msg, n, topic);
+    this.fork.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(ForkStream);
+
+function BatchStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.msg = undefined;
+    this.topic = null;
+    this.latched = false;
+
+}
+
+BatchStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.msg = msg;
+    this.topic = topic;
+
+    if(!this.latched){
+        this.latched = true;
+        Catbus$1.enqueue(this);
+    }
+
+};
+
+BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
+
+    const msg = this.msg;
+    const topic = this.topic;
+    const source = this.name;
+
+    this.next.handle(msg, source, topic);
+
+};
+
+
+BatchStream.prototype.reset = function reset() {
+
+    this.latched = false;
+    this.msg = undefined;
+    this.topic = null;
+
+    // doesn't continue on as in default
+
+};
+
+NOOP_STREAM.addStubs(BatchStream);
+
+function ResetStream(name, head) {
+
+    this.head = head; // stream at the head of the reset process
+    this.name = name;
+    this.next = NOOP_STREAM;
+
+}
+
+ResetStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.next.handle(msg, source, topic);
+    this.head.reset(msg, source, topic);
+
+};
+
+ResetStream.prototype.reset = function(){
+    // catch reset from head, does not continue
+};
+
+function IDENTITY$1(d) { return d; }
+
+
+function TapStream(name, f) {
+    this.name = name;
+    this.f = f || IDENTITY$1;
+    this.next = NOOP_STREAM;
+}
+
+TapStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name || source;
+    const f = this.f;
+    f(msg, n, topic);
+    this.next.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(TapStream);
+
+function IDENTITY$2(msg, source, topic) { return msg; }
+
+
+function MsgStream(name, f) {
+
+    this.name = name;
+    this.f = f || IDENTITY$2;
+    this.next = NOOP_STREAM;
+
+}
+
+MsgStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+    const n = this.name || source;
+
+    this.next.handle(v, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(MsgStream);
+
+function IDENTITY$3(d) { return d; }
+
+
+function FilterStream(name, f) {
+
+    this.name = name;
+    this.f = f || IDENTITY$3;
+    this.next = NOOP_STREAM;
+
+}
+
+FilterStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    const v = !!f(msg, source, topic);
+    const n = source;
+    const next = this.next;
+
+    v && next.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(FilterStream);
+
+function IS_EQUAL(a, b) { return a === b; }
+
+
+function SkipStream(name) {
+
+    this.name = name;
+    this.msg = undefined;
+    this.hasValue = true;
+    this.next = NOOP_STREAM;
+
+}
+
+SkipStream.prototype.handle = function handle(msg, source, topic) {
+
+    if(!this.hasValue) {
+
+        this.hasValue = true;
+        this.msg = msg;
+        this.next.handle(msg, source, topic);
+
+    } else if (!IS_EQUAL(this.msg, msg)) {
+
+        this.msg = msg;
+        this.next.handle(msg, source, topic);
+
+    }
+};
+
+NOOP_STREAM.addStubs(SkipStream);
+
+function LastNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 1;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+LastNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const m = this.msg;
+    const n = this.name || source;
+
+    m.push(msg);
+    if(m.length > c)
+        m.shift();
+
+    this.next.handle(m, n, topic);
+
+};
+
+LastNStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(LastNStream);
+
+function FirstNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 1;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+FirstNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const m = this.msg;
+    const n = this.name || source;
+
+    if(m.length < c)
+        m.push(msg);
+
+    this.next.handle(m, n, topic);
+
+};
+
+FirstNStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+
+};
+
+NOOP_STREAM.addStubs(FirstNStream);
+
+function AllStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+AllStream.prototype.handle = function handle(msg, source, topic) {
+
+    const m = this.msg;
+    const n = this.name || source;
+
+    m.push(msg);
+
+    this.next.handle(m, n, topic);
+
+};
+
+AllStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+
+};
+
+NOOP_STREAM.addStubs(AllStream);
+
+const FUNCTOR$2 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function IMMEDIATE(msg, source, topic) { return 0; }
+
+function callback(stream, msg, source, topic){
+    const n = stream.name || source;
+    stream.next.handle(msg, n, topic);
+}
+
+function DelayStream(name, f) {
+
+    this.name = name;
+    this.f = arguments.length ? FUNCTOR$2(f) : IMMEDIATE;
+    this.next = NOOP_STREAM;
+
+}
+
+DelayStream.prototype.handle = function handle(msg, source, topic) {
+
+    const delay = this.f(msg, source, topic);
+    setTimeout(callback, delay, this, msg, source, topic);
+
+};
+
+NOOP_STREAM.addStubs(DelayStream);
+
+function BY_SOURCE(msg, source, topic) { return source; }
+
+const FUNCTOR$3 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function GroupStream(name, f, seed) {
+
+    this.name = name;
+    this.f = f || BY_SOURCE;
+    this.seed = arguments.length === 3 ? FUNCTOR$3(seed) : FUNCTOR$3({});
+    this.next = NOOP_STREAM;
+    this.topic = undefined;
+    this.msg = this.seed();
+
+}
+
+GroupStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+    const n = this.name || source;
+    const m = this.msg;
+
+    if(v){
+        m[v] = msg;
+    } else {
+        for(const k in msg){
+            m[k] = msg[k];
+        }
+    }
+
+    this.next.handle(m, n, topic);
+
+};
+
+GroupStream.prototype.reset = function reset(msg) {
+
+    const m = this.msg = this.seed(msg);
+    this.topic = undefined;
+    this.next.reset(m);
+
+};
+
+NOOP_STREAM.addStubs(GroupStream);
+
+function TRUE() { return true; }
+
+
+function LatchStream(name, f) {
+
+    this.name = name;
+    this.f = f || TRUE;
+    this.next = NOOP_STREAM;
+    this.latched = false;
+
+}
+
+LatchStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name;
+
+    if(this.latched){
+        this.next.handle(msg, n, topic);
+        return;
+    }
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+
+    if(v) {
+        this.latched = true;
+        this.next.handle(msg, n, topic);
+    }
+
+};
+
+LatchStream.prototype.reset = function(seed){
+    this.latched = false;
+    this.next.reset(seed);
+};
+
+NOOP_STREAM.addStubs(LatchStream);
+
+const FUNCTOR$4 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function ScanStream(name, f, seed) {
+
+    this.name = name;
+    this.f = f;
+    this.seed = FUNCTOR$4(seed);
+    this.hasSeed = arguments.length === 3;
+    this.hasValue = this.hasSeed || false;
+    this.next = NOOP_STREAM;
+    this.topic = undefined;
+    this.msg = this.seed();
+
+}
+
+ScanStream.prototype.handle = function handle(msg, source, topic) {
+
+    const hasValue = this.hasValue;
+
+    if(!hasValue){
+        this.msg = msg;
+        this.hasValue = true;
+    } else {
+        const f = this.f;
+        this.msg = f(this.msg, msg, source, topic);
+    }
+
+    const m = this.msg;
+    this.next.handle(m, source, topic);
+
+};
+
+ScanStream.prototype.reset = function reset(msg) {
+
+    const m = this.msg = this.seed(msg);
+    this.topic = undefined;
+    this.next.reset(m);
+
+};
+
+NOOP_STREAM.addStubs(ScanStream);
+
+function SplitStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+
+}
+
+
+
+SplitStream.prototype.handle = function handle(msg, source, topic) {
+
+    if(Array.isArray(msg)){
+        this.thruArray(msg, source, topic);
+    } else {
+        this.thruIterable(msg, source, topic);
+    }
+
+};
+
+SplitStream.prototype.thruArray = function(msg, source, topic){
+
+    const len = msg.length;
+    const next = this.next;
+
+    for(let i = 0; i < len; i++){
+        const m = msg[i];
+        next.handle(m, source, topic);
+    }
+
+};
+
+SplitStream.prototype.thruIterable = function(msg, source, topic){
+
+    const next = this.next;
+
+    for(const m of msg){
+        next.handle(m, source, topic);
+    }
+
+};
+
+NOOP_STREAM.addStubs(SplitStream);
 
 class Frame {
 
-    constructor(bus, def) {
-
-        this._bus = bus;
-        this._nextFrame = null; // frames to join or fork into
-        this._index = bus._frames.length;
-        this._wireMap = {}; //new WeakMap(); // wires as keys, handlers/pools as values
-        this._holding = false; // begins pools allowing multiple method calls -- must close with a time operation
-        this._processDef = def; // wave or pool definition
-
-    };
-
-
-    handle(wire, msg, source, topic){
-
-        const wireId = wire._id;
-        const hasWire = this._wireMap.hasOwnProperty(wireId);//this._wireMap.has(wire); //this._wireMap.hasOwnProperty(wireId); //
-        if(!hasWire)
-            this._wireMap[wireId] = this._createHandler(wire);
-            // this._wireMap.set(wire, this._createHandler(wire));
-
-        const handler = this._wireMap[wireId]; // this._wireMap.get(wire);
-        handler.handle(this, wire, msg, source , topic);
-        // handler.handle(this, wire, msg, source || wire.name , topic); //todo safe to use just source?
-
-    };
-
-    emit(wire, msg, source, topic){
-
-        if(this._nextFrame)
-            this._nextFrame.handle(wire, msg, source, topic);
-
-    };
-
-    _createHandler(wire){
-
-        const def = this._processDef;
-        return (def && def.name === 'pool') ? new Pool(this, wire, def) : new Handler(def);
-
-    };
-
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
-    };
-
-    get holding() {
-        return this._holding;
-    };
-
-    target(frame) {
-
-        this._nextFrame = frame;
-
-    };
-
-    destroy() {
-
-    };
-
-
-}
-
-let _id = 0;
-
-// const FRAME_CAP = {
-//     handle: function(wire, msg, source, topic){}
-// };
-
-class Wire {
-
-    constructor(name){
-
-        this._id = ++_id + '';
-        this.target = null; // a frame in a bus
-        this.dead = false;
-        this.name = name;
-        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.pull = Func.NOOP; // to retrieve and emit stored values from a source
-
-    };
-
-    handle(msg, source, topic) {
-
-        // if(this.target)
-            this.target.handle(this, msg, this.name, topic);
-
-    };
-
-    destroy(){
-
-        if(!this.dead && this.target){
-            this.dead = true;
-            this.cleanupMethod();
-        }
-
-    };
-
-}
-
-
-Wire.fromInterval = function(delay, name){
-
-    const wire = new Wire(name);
-
-    const toWire = function(msg){
-        wire.handle(msg);
-    };
-
-    const id = setInterval(toWire, delay);
-
-    wire.cleanupMethod = function(){
-        clearInterval(id);
-    };
-
-    return wire;
-
-};
-
-
-Wire.fromMonitor = function(data, name){
-
-    const wire = new Wire(name);
-
-    const toWire = function(msg, source, topic){
-        wire.handle(msg, source, topic);
-    };
-
-    wire.cleanupMethod = function(){
-        data.unsubscribe(toWire);
-    };
-
-    data.monitor(toWire);
-
-    return wire;
-
-};
-
-
-
-Wire.fromSubscribe = function(data, topic, name, canPull){
-
-    const wire = new Wire(name || topic || data.name);
-
-    // const toWire = function(msg, source, topic){
-    //     wire.handle(msg, source, topic);
-    // };
-
-    wire.cleanupMethod = function(){
-        data.unsubscribe(wire, topic);
-    };
-
-    if(canPull){
-        wire.pull = function(){
-            const present = data.present(topic);
-            if(present) {
-                const msg = data.read(topic);
-                const source = wire.name;
-                wire.handle(msg, source, topic);
-            }
-        };
-    }
-
-   // data.subscribe(toWire, topic);
-    data.subscribe(wire, topic);
-
-    return wire;
-
-};
-
-
-
-Wire.fromEvent = function(target, eventName, useCapture){
-
-    useCapture = !!useCapture;
-
-    const wire = new Wire(eventName);
-
-    const on = target.addEventListener || target.addListener || target.on;
-    const off = target.removeEventListener || target.removeListener || target.off;
-
-    const toWire = function(msg){
-        wire.handle(msg, eventName);
-    };
-
-    wire.cleanupMethod = function(){
-        off.call(target, eventName, toWire, useCapture);
-    };
-
-    on.call(target, eventName, toWire, useCapture);
-
-    return wire;
-
-};
-
-class FrameMerger {
-
     constructor(bus) {
 
-        this._bus = bus;
-        this._nextFrame = null;
-        this._index = bus._frames.length;
-        this._mergingWire = new Wire();
+        this.bus = bus;
+        this.index = bus._frames.length;
+        this.streams = [];
 
     };
 
-
-    handle(wire, msg, source, topic){
-
-        this.emit(this._mergingWire, msg, source, topic);
-
-    };
-
-    emit(wire, msg, source, topic){
-
-        if(this._nextFrame)
-            this._nextFrame.handle(wire, msg, source, topic);
-
-    };
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
-    };
-
-    get holding() {
-        return false;
-    };
-
-
-    target(frame) {
-
-        this._nextFrame = frame;
-
-    };
-
-    destroy() {
-
-    };
-
-
-}
-
-class FrameStateless {
-
-    constructor(bus, def) {
-
-        this._bus = bus;
-        this._nextFrame = null;
-        this._index = bus._frames.length;
-        this._process = new Handler(def);
-
-    };
-
-
-    handle(wire, msg, source, topic){
-
-        this._process.handle(this, wire, msg, source , topic);
-
-    };
-
-    emit(wire, msg, source, topic){
-
-        if(this._nextFrame)
-            this._nextFrame.handle(wire, msg, source, topic);
-
-    };
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
-    };
-
-    get holding() {
-        return false;
-    };
-
-    target(frame) {
-
-        this._nextFrame = frame;
-
-    };
-
-    destroy() {
-
-    };
-
-
-}
-
-class PoolDef {
-
-    constructor(){
-
-        this.name = 'pool';
-        this.keep  = null;
-        this.when  = null;
-        this.until = null;
-        this.timer = null;
-        this.clear = null;
-
-    };
-
-}
-
-class FrameHold {
-
-    constructor(bus) {
-
-        this._bus = bus;
-        this._nextFrame = null;
-        this._index = bus._frames.length;
-        this._wireMap = new WeakMap(); // wires as keys, handlers/pools as values
-        this._processDef = new PoolDef(); // pool definition
-        this._holding = true;
-
-    };
-
-    handle(wire, msg, source, topic){
-
-        //const wireId = wire._id;
-        const hasWire = this._wireMap.has(wire); //this._wireMap.hasOwnProperty(wireId); //
-        if(!hasWire)
-            // this._wireMap[wireId] = this._createHandler(wire);
-            this._wireMap.set(wire, this._createHandler(wire));
-
-        const handler = this._wireMap.get(wire);
-        handler.handle(this, wire, msg, source || wire.name , topic);
-
-    };
-
-    emit(wire, msg, source, topic){
-
-        if(this._nextFrame)
-            this._nextFrame.handle(wire, msg, source, topic);
-
-    };
-
-    _createHandler(wire){
-
-        const def = this._processDef;
-        return new Pool(this, wire, def);
-
-    };
-
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
-    };
-
-    get holding() {
-        return this._holding;
-    };
-
-    target(frame) {
-
-        this._nextFrame = frame;
-
-    };
-
-    destroy() {
-
-    };
-
-
-}
-
-class FrameForker {
-
-    constructor(bus) {
-
-        this._bus = bus;
-        this._targets = []; // frames to join or fork into
-        this._index = bus._frames.length;
-
-    };
-
-    // handle is a multi-emit
-
-    handle(wire, msg, source, topic){
-
-        const len = this._targets.length;
-        for(let i = 0; i < len; i++){
-            const frame = this._targets[i];
-            frame.handle(wire, msg, source, topic);
-        }
-
-    };
-
-    get bus() {
-        return this._bus;
-    };
-
-    get index() {
-        return this._index;
-    };
-
-    get holding() {
-        return false;
-    };
-
-    target(frame) {
-
-        this._targets.push(frame);
-
-    };
-
-    destroy() {
-
-    };
-
-
-}
-
-class WaveDef {
-
-    constructor(process, action, stateful, ...args){
-
-        this.name = 'wave';
-        this.process = process;
-        this.action = action;
-        this.stateful = stateful;
-        this.args = args;
-
-    };
 
 }
 
@@ -2190,6 +1341,117 @@ function parsePhrase(str) {
 
 Nyan.parse = parse;
 
+class Wire$1 {
+
+    constructor(name, source){
+
+        this.name = name;
+        this.source = source; // implements init, destroy, pull, pushes to wire.handle
+        this.stream = new PassStream(name);
+        this.dead = false;
+        source.init();
+
+    };
+
+    handle(msg, source, topic) {
+
+        const n = source || this.name;
+        this.stream.handle(msg, n, topic);
+
+    };
+
+    pull(){
+        this.source.pull();
+    };
+
+    destroy(){
+
+        if(!this.dead){
+            this.dead = true;
+            this.source.destroy();
+        }
+
+    };
+
+}
+
+
+
+Wire$1.fromMonitor = function(data, name){
+
+    const wire = new Wire$1(name);
+
+    const toWire = function(msg, source, topic){
+        wire.handle(msg, source, topic);
+    };
+
+    wire.cleanupMethod = function(){
+        data.unsubscribe(toWire);
+    };
+
+    data.monitor(toWire);
+
+    return wire;
+
+};
+
+
+
+Wire$1.fromSubscribe = function(data, topic, name, canPull){
+
+    const wire = new Wire$1(name || topic || data.name);
+
+    // const toWire = function(msg, source, topic){
+    //     wire.handle(msg, source, topic);
+    // };
+
+    wire.cleanupMethod = function(){
+        data.unsubscribe(wire, topic);
+    };
+
+    if(canPull){
+        wire.pull = function(){
+            const present = data.present(topic);
+            if(present) {
+                const msg = data.read(topic);
+                const source = wire.name;
+                wire.handle(msg, source, topic);
+            }
+        };
+    }
+
+   // data.subscribe(toWire, topic);
+    data.subscribe(wire, topic);
+
+    return wire;
+
+};
+
+
+
+Wire$1.fromEvent = function(target, eventName, useCapture){
+
+    useCapture = !!useCapture;
+
+    const wire = new Wire$1(eventName);
+
+    const on = target.addEventListener || target.addListener || target.on;
+    const off = target.removeEventListener || target.removeListener || target.off;
+
+    const toWire = function(msg){
+        wire.handle(msg, eventName);
+    };
+
+    wire.cleanupMethod = function(){
+        off.call(target, eventName, toWire, useCapture);
+    };
+
+    on.call(target, eventName, toWire, useCapture);
+
+    return wire;
+
+};
+
 function getSurveyFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
@@ -2371,14 +1633,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataWire(scope, word, canPull) {
+function addDataSource(bus, scope, word, canPull) {
 
     const data = scope.find(word.name, !word.maybe);
-    if(word.monitor){
-        return Wire.fromMonitor(data, word.alias, canPull);
-    } else {
-        return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
-    }
+    bus.addSubscribe(word.alias, data, word.topic);
+
+    // if(word.monitor){
+    //     return Wire.fromMonitor(data, word.alias, canPull);
+    // } else {
+    //     return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
+    // }
 
 }
 
@@ -2391,7 +1655,7 @@ function isObject(v) {
 
 function getEventWire(word, target){
 
-    return Wire.fromEvent(target, word.topic, word.useCapture, word.alias);
+    return Wire$1.fromEvent(target, word.topic, word.useCapture, word.alias);
 
 }
 
@@ -2468,7 +1732,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
         const word = phrase[0];
-        bus.wire(getDataWire(scope, word, false));
+        addDataSource(bus, scope, word);
         return;
     }
 
@@ -2478,11 +1742,11 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         const operation = word.operation;
 
         if(operation === 'WATCH') {
-            bus.wire(getDataWire(scope, word, true));
+            addDataSource(bus, scope, word);
             skipDupes.push(word.alias);
         }
         else if(operation === 'WIRE'){
-            bus.wire(getDataWire(scope, word, true));
+            addDataSource(bus, scope, word);
         }
         else if(operation === 'EVENT') {
             bus.wire(getEventWire(word, target));
@@ -2498,7 +1762,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     // transformations are applied via named hashes for performance
 
-    if(bus._wires.length > 1) {
+    if(bus._sources.length > 1) {
 
         bus.merge().group().batch();
 
@@ -2708,21 +1972,121 @@ const NyanRunner = {
     createBus: createBus
 };
 
+const FUNCTOR$1 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+const batchStreamBuilder = function() {
+    return function(name) {
+        return new BatchStream(name);
+    }
+};
+
+const resetStreamBuilder = function(head) {
+    return function(name) {
+        return new ResetStream(name, head);
+    }
+};
+
+const tapStreamBuilder = function(f) {
+    return function(name) {
+        return new TapStream(name, f);
+    }
+};
+
+const msgStreamBuilder = function(f) {
+    return function(name) {
+        return new MsgStream(name, f);
+    }
+};
+
+const filterStreamBuilder = function(f) {
+    return function(name) {
+        return new FilterStream(name, f);
+    }
+};
+
+const skipStreamBuilder = function(f) {
+    return function(name) {
+        return new SkipStream(name, f);
+    }
+};
+
+const lastNStreamBuilder = function(count) {
+    return function(name) {
+        return new LastNStream(name, count);
+    }
+};
+
+const firstNStreamBuilder = function(count) {
+    return function(name) {
+        return new FirstNStream(name, count);
+    }
+};
+
+const allStreamBuilder = function() {
+    return function(name) {
+        return new AllStream(name);
+    }
+};
+
+const delayStreamBuilder = function(delay) {
+    return function(name) {
+        return new DelayStream(name, delay);
+    }
+};
+
+const groupStreamBuilder = function(by) {
+    return function(name) {
+        return new GroupStream(name, by);
+    }
+};
+
+const nameStreamBuilder = function(name) {
+    return function() {
+        return new PassStream(name);
+    }
+};
+
+const latchStreamBuilder = function(f) {
+    return function(name) {
+        return new LatchStream(name, f);
+    }
+};
+
+const scanStreamBuilder = function(f, seed) {
+    return function(name) {
+        return new ScanStream(name, f, seed);
+    }
+};
+
+const splitStreamBuilder = function() {
+    return function(name) {
+        return new SplitStream(name);
+    }
+};
+
 class Bus {
 
     constructor(scope) {
 
         this._frames = [];
-        this._wires = [];
+        this._sources = [];
         this._dead = false;
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
 
+        // temporary api states (used for interactively building the bus)
+
+        this._holding = false; // multiple commands until duration function
+        this._head = null; // point to reset accumulators
+        this._locked = false; // prevents additional sources from being added
+
         if(scope)
             scope._busList.push(this);
 
-        const f = new FrameStateless(this);
+        const f = new Frame(this);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -2763,56 +2127,115 @@ class Bus {
     };
 
     get holding() {
-        return this._currentFrame._holding;
+        return this._holding;
     };
 
     get scope() {
         return this._scope;
     }
 
-    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
+    _createMergingFrame() {
 
-    addFrame(def) {
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
 
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = (def && def.stateful) ? new Frame(this, def) : new FrameStateless(this, def);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const merged_stream = new PassStream();
+        target_streams.push(merged_stream);
 
-    };
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            s1.next = merged_stream;
+        }
 
-    addFrameHold() {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameHold(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
-
-    };
-
-
-    addFrameMerger() {
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameMerger(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
+        return f2;
 
     };
 
-    addFrameForker() {
+    _createNormalFrame(streamBuilder) {
 
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new FrameForker(this);
-        this._frames.push(nextFrame);
-        lastFrame.target(nextFrame);
-        return nextFrame;
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            s1.next = s2;
+            target_streams.push(s2);
+        }
+
+        return f2;
 
     };
 
+    _createForkingFrame(forkedTargetFrame) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const forked_streams = forkedTargetFrame.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+
+            const s1 = source_streams[i];
+            const s3 = new PassStream(s1.name);
+            const s2 = new ForkStream(s1.name, s3);
+
+            s1.next = s2;
+
+            target_streams.push(s2);
+            forked_streams.push(s3);
+        }
+
+        return f2;
+
+    };
+
+    _ASSERT_IS_FUNCTION(f) {
+        if(typeof f !== 'function')
+            throw new Error('Argument must be a function.');
+    };
+
+    _ASSERT_NOT_HOLDING() {
+        if (this.holding)
+            throw new Error('Method cannot be invoked while holding messages in the frame.');
+    };
+
+    _ASSERT_IS_HOLDING(){
+        if(!this.holding)
+            throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    };
+
+    _ASSERT_HAS_HEAD(){
+        if(!this._head)
+            throw new Error('Cannot reset without an upstream accumulator.');
+    };
+
+    _ASSERT_NOT_LOCKED(){
+        if(this._locked)
+            throw new Error('Cannot add sources after other operations.');
+    };
+
+    addSource(source){
+
+        this._ASSERT_NOT_LOCKED();
+        this._sources.push(source);
+        this._currentFrame.streams.push(source.stream);
+        return this;
+
+    }
 
     process(nyan, context, target){
 
@@ -2824,19 +2247,13 @@ class Bus {
 
     }
 
-    // create stream
-    spawn(){
-
-    }
-
 
     fork() {
 
-        Func.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_NOT_HOLDING();
         const fork = new Bus(this.scope);
         fork.parent = this;
-        this.addFrameForker();
-        this._currentFrame.target(fork._currentFrame);
+        this._createForkingFrame(fork._currentFrame);
 
         return fork;
     };
@@ -2860,43 +2277,51 @@ class Bus {
 
     add(bus) {
 
-        const frame = this.addFrame(); // wire from current bus
-        bus._currentFrame.target(frame); // wire from outside bus
+        const nf = this._createNormalFrame(); // extend this bus
+        bus._createForkingFrame(nf); // outside bus then forks into this bus
         return this;
 
     };
 
-    defer() {
-        return this.timer(Func.getDeferTimer);
-    };
+    // defer() {
+    //     return this.timer(F.getDeferTimer);
+    // };
 
     batch() {
-        return this.timer(Func.getBatchTimer);
+        this._createNormalFrame(batchStreamBuilder());
+        this._holding = false;
+        return this;
     };
 
-    sync() {
-        return this.timer(Func.getSyncTimer);
-    };
 
-    throttle(fNum) {
-        return this.timer(Func.getThrottleTimer, fNum);
-    };
+    // throttle(fNum) {
+    //     return this.timer(F.getThrottleTimer, fNum);
+    // };
 
     hold() {
 
-        Func.ASSERT_NOT_HOLDING(this);
-        this.addFrameHold();
+        this._ASSERT_NOT_HOLDING();
+        this._holding = true;
+        this._head = this._createNormalFrame();
         return this;
 
     };
 
+    reset() {
+
+        this._ASSERT_HAS_HEAD();
+        this._createNormalFrame(resetStreamBuilder(this._head));
+        return this;
+
+    }
+
     pull() {
 
-        const len = this._wires.length;
+        const len = this._sources.length;
 
         for(let i = 0; i < len; i++) {
-            const wire = this._wires[i];
-            wire.pull();
+            const s = this._sources[i];
+            s.pull();
         }
 
         return this;
@@ -2943,208 +2368,127 @@ class Bus {
     };
 
 
-    scan(func, seed){
+    scan(f, seed){
 
-        if(!this.holding) {
-            this.addFrame(new WaveDef('scan', func, true, 0));
-            return this;
-        }
-
-        return this.reduce(Func.getScan, func, seed);
+        this._createNormalFrame(scanStreamBuilder(f, seed));
+        return this;
 
     };
 
-
-
-    scan2(func, seed){
-
-        if(!this.holding) {
-            this.addFrame(new WaveDef('scan', func, false, 0));
-            return this;
-        }
-
-        return this.reduce(Func.getScan, func, seed);
-
-    };
 
 
     delay(fNum) {
 
-        Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        Func.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('delay', Func.FUNCTOR(fNum)));
+        this._createNormalFrame(delayStreamBuilder(fNum));
         return this;
 
     };
 
     willReset(){
 
-        Func.ASSERT_IS_HOLDING(this);
-        return this.clear(Func.getAlwaysTrue);
+        F.ASSERT_IS_HOLDING(this);
+        return this.clear(F.getAlwaysTrue);
 
     }
 
-    whenKeys(keys) {
+    hasKeys(keys) {
 
-        return this.when(Func.getWhenKeys, true, keys);
+        const len = keys.length;
+        function _hasKeys(msg, source, topic){
+
+            if(typeof msg !== 'object')
+                return false;
+
+            for(let i = 0; i < len; i++){
+                const k = keys[i];
+                if(!msg.hasOwnProperty(k))
+                    return false;
+            }
+
+            return true;
+        }
+
+        this._createNormalFrame(latchStreamBuilder(_hasKeys));
+        return this;
 
     };
 
     group(by) {
 
-        if(!this.holding) {
-             this.addFrame(new WaveDef('group', null, true));
-             return this;
-        }
-        this.reduce(Func.getGroup, by);
+        this._createNormalFrame(groupStreamBuilder(by));
         return this;
 
     };
 
     groupByTopic() {
 
-        Func.ASSERT_NOT_HOLDING(this);
-        this.hold().reduce(Func.getGroup, Func.TO_TOPIC);
+        F.ASSERT_NOT_HOLDING(this);
+        this.hold().reduce(F.getGroup, F.TO_TOPIC);
         return this;
     };
 
     all() {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('all', null, true));
-            return this;
-        }
-        return this.reduce(Func.getKeepAll);
-    };
-
-    first(n) {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('firstN', null, true, n));
-            return this;
-        }
-        return this.reduce(Func.getKeepFirst, n);
-    };
-
-    last(n) {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('lastN', null, true, n));
-            return this;
-        }
-        return this.reduce(Func.getKeepLast, n);
-    };
-
-    clear(factory, ...args) {
-        return this._currentFrame.clear(factory, ...args);
-    };
-
-    reduce(factory, ...args) {
-
-        const holding = this.holding;
-
-        if(!holding){
-
-            this.addFrame(new WaveDef('msg', factory, true, ...args));
-
-        } else {
-
-            const frame = this._currentFrame;
-            const def = frame._processDef;
-            def.keep = [factory, true, ...args];
-
-        }
-
+        this._createNormalFrame(allStreamBuilder());
         return this;
-
     };
 
-    timer(factory, stateful, ...args) {
-
-        const holding = this.holding;
-        const frame = holding ? this._currentFrame : this.addFrameHold();
-        const def = frame._processDef;
-        def.timer = [factory, stateful, ...args];
-        this._currentFrame._holding = false; // timer ends hold
-
+    first(count) {
+        this._createNormalFrame(firstNStreamBuilder(count));
         return this;
-
     };
 
-    until(factory, ...args) {
-
-        this.holding ?
-            this._currentFrame.until(factory, ...args) :
-            this.addFrameHold().reduce(Func.getKeepLast).until(factory, ...args).timer(Func.getSyncTimer);
+    last(count) {
+        this._createNormalFrame(lastNStreamBuilder(count));
         return this;
-
     };
 
-    when(factory, stateful, ...args) {
+    run(f) {
 
-        const holding = this.holding;
+        this._ASSERT_IS_FUNCTION(f);
 
-        if(!holding){
-
-            this.addFrame(new WaveDef('filter', factory, stateful, ...args));
-
-        } else {
-
-            const frame = this._currentFrame;
-            const def = frame._processDef;
-            def.when = [factory, stateful, ...args];
-
-        }
-
-        return this;
-
-    };
-
-    run(func) {
-
-        Func.ASSERT_IS_FUNCTION(func);
-        Func.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('tap', func));
+        this._createNormalFrame(tapStreamBuilder(f));
         return this;
 
     };
 
     merge() {
 
-        Func.ASSERT_NOT_HOLDING(this);
-
-        this.addFrameMerger();
+        this._createMergingFrame();
         return this;
+
     };
 
     msg(fAny) {
 
-        Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        Func.ASSERT_NOT_HOLDING(this);
+        const f = FUNCTOR$1(fAny);
 
-        this.addFrame(new WaveDef('msg', Func.FUNCTOR(fAny)));
+        this._createNormalFrame(msgStreamBuilder(f));
+        return this;
+
+
+    };
+
+    name(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
+        return this;
+
+    };
+
+    source(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
         return this;
 
     };
 
 
-    source(fStr) {
+    filter(f) {
 
-        Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        Func.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame(new WaveDef('source', Func.FUNCTOR(fStr)));
-        return this;
-
-    };
-
-
-    filter(func) {
-
-        Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        Func.ASSERT_IS_FUNCTION(func);
-        Func.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('filter', func));
+        this._createNormalFrame(filterStreamBuilder(f));
         return this;
 
 
@@ -3152,26 +2496,26 @@ class Bus {
 
     split() {
 
-        Func.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('split'));
+        this._createNormalFrame(splitStreamBuilder());
         return this;
 
     };
 
-    hasKeys(keys) {
-
-        Func.ASSERT_NOT_HOLDING(this);
-        this.addFrame(new WaveDef('filter', Func.getHasKeys(keys)));
-        return this;
-
-    };
 
     skipDupes() {
 
-        Func.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame(new WaveDef('skipDupes', null, true));
+        this._createNormalFrame(skipStreamBuilder());
+        return this;
+
+    };
+
+    addSubscribe(name, data, topic){
+
+        const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
         return this;
 
     };
@@ -3187,14 +2531,13 @@ class Bus {
 
         this._dead = true;
 
-        const wires = this._wires;
-        const len = wires.length;
+        const sources = this._sources;
+        const len = sources.length;
         for (let i = 0; i < len; i++) {
-            const wire = wires[i];
-            wire.destroy();
+            const s = sources[i];
+            s.destroy();
         }
 
-        this._wires = null;
         return this;
 
     };
@@ -3612,6 +2955,69 @@ class Scope{
 
 }
 
+function EventSource(name, target, eventName, useCapture){
+
+    function toStream(msg){
+        stream.handle(msg, eventName, null);
+    }
+
+    this.name = name;
+    this.target = target;
+    this.eventName = eventName;
+    this.useCapture = !!useCapture;
+    this.on = target.addEventListener || target.addListener || target.on;
+    this.off = target.removeEventListener || target.removeListener || target.off;
+    this.stream = new PassStream(name);
+    this.callback = toStream;
+    const stream = this.stream;
+
+    this.on.call(target, eventName, toStream, useCapture);
+
+}
+
+
+
+EventSource.prototype.destroy = function destroy(){
+
+    this.off.call(this.target, this.eventName, this.callback, this.useCapture);
+    this.dead = true;
+
+};
+
+
+NOOP_SOURCE.addStubs(EventSource);
+
+const FUNCTOR$5 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function callback$1(source){
+
+    const n = source.name;
+    const msg = source.msg();
+    source.stream.handle(msg, n, null);
+
+}
+
+function IntervalSource(name, delay, msg) {
+
+    this.name = name;
+    this.delay = delay;
+    this.dead = false;
+    this.stream = new PassStream(name);
+    this.intervalId = setInterval(callback$1, delay, this);
+    this.msg = FUNCTOR$5(msg);
+
+}
+
+IntervalSource.prototype.destroy = function destroy(){
+    clearInterval(this.intervalId);
+    this.dead = true;
+};
+
+
+NOOP_SOURCE.addStubs(IntervalSource);
+
 const Catbus$1 = {};
 
 let _batchQueue = [];
@@ -3622,13 +3028,36 @@ Catbus$1.bus = function(){
 };
 
 
-Catbus$1.fromEvent = function(target, eventName, useCapture){
+Catbus$1.fromInterval = function(name, delay, msg){
 
     const bus = new Bus();
-    bus.event(target, eventName, useCapture);
+    const source = new IntervalSource(name, delay, msg);
+    bus.addSource(source);
+
     return bus;
 
 };
+
+Catbus$1.fromEvent = function(target, eventName, useCapture){
+
+    const bus = new Bus();
+    const source = new EventSource(eventName, target, eventName, useCapture);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
+Catbus$1.fromSubscribe = function(name, data, topic){
+
+    const bus = new Bus();
+    const source = new SubscribeSource(name, data, topic, true);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
 
 // todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
@@ -3664,7 +3093,7 @@ Catbus$1.flush = function(){
 
         while (q.length) {
             const pool = q.shift();
-            pool.release();
+            pool.emit();
         }
 
         q = _batchQueue;

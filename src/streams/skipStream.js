@@ -29,6 +29,8 @@ SkipStream.prototype.handle = function handle(msg, source, topic) {
     }
 };
 
+NOOP_STREAM.addStubs(SkipStream);
+
 export default SkipStream;
 
 

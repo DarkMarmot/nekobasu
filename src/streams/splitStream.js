@@ -8,27 +8,41 @@ function SplitStream(name) {
 
 }
 
+
+
 SplitStream.prototype.handle = function handle(msg, source, topic) {
+
+    if(Array.isArray(msg)){
+        this.thruArray(msg, source, topic);
+    } else {
+        this.thruIterable(msg, source, topic);
+    }
+
+};
+
+SplitStream.prototype.thruArray = function(msg, source, topic){
+
+    const len = msg.length;
+    const next = this.next;
+
+    for(let i = 0; i < len; i++){
+        const m = msg[i];
+        next.handle(m, source, topic);
+    }
+
+};
+
+SplitStream.prototype.thruIterable = function(msg, source, topic){
 
     const next = this.next;
 
-    if(Array.isArray(msg)){
-
-        const len = msg.length;
-        for(let i = 0; i < len; i++){
-            const m = msg[i];
-            next.handle(m, source, topic);
-        }
-
-    } else {
-
-        for(const m of msg){
-            next.handle(m, source, topic);
-        }
+    for(const m of msg){
+        next.handle(m, source, topic);
     }
 
-
 };
+
+NOOP_STREAM.addStubs(SplitStream);
 
 
 export default SplitStream;

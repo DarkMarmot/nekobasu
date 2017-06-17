@@ -30,6 +30,9 @@ FirstNStream.prototype.reset = function(msg, source, topic){
 
 };
 
+NOOP_STREAM.addStubs(FirstNStream);
+
+
 export default FirstNStream;
 
 

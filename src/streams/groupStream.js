@@ -45,6 +45,8 @@ GroupStream.prototype.reset = function reset(msg) {
 
 };
 
+NOOP_STREAM.addStubs(GroupStream);
+
 
 export default GroupStream;
 

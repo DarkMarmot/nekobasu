@@ -18,6 +18,8 @@ ForkStream.prototype.handle = function handle(msg, source, topic) {
 
 };
 
+NOOP_STREAM.addStubs(ForkStream);
+
 export default ForkStream;
 
 

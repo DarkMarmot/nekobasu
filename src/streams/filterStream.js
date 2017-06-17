@@ -15,13 +15,15 @@ function FilterStream(name, f) {
 FilterStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
-    const v = f(msg, source, topic);
-    const n = this.name || source;
+    const v = !!f(msg, source, topic);
+    const n = source;
+    const next = this.next;
 
-    v && this.next.handle(msg, n, topic);
+    v && next.handle(msg, n, topic);
 
 };
 
+NOOP_STREAM.addStubs(FilterStream);
 
 export default FilterStream;
 

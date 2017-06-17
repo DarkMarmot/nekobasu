@@ -39,6 +39,8 @@ FirstStream.prototype.reset = function(){
 
 };
 
+NOOP_STREAM.addStubs(FirstStream);
+
 export default FirstStream;
 
 

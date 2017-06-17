@@ -184,14 +184,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataWire(scope, word, canPull) {
+function addDataSource(bus, scope, word, canPull) {
 
     const data = scope.find(word.name, !word.maybe);
-    if(word.monitor){
-        return Wire.fromMonitor(data, word.alias, canPull);
-    } else {
-        return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
-    }
+    bus.addSubscribe(word.alias, data, word.topic);
+
+    // if(word.monitor){
+    //     return Wire.fromMonitor(data, word.alias, canPull);
+    // } else {
+    //     return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
+    // }
 
 }
 
@@ -281,7 +283,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
         const word = phrase[0];
-        bus.wire(getDataWire(scope, word, false));
+        addDataSource(bus, scope, word);
         return;
     }
 
@@ -291,11 +293,11 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         const operation = word.operation;
 
         if(operation === 'WATCH') {
-            bus.wire(getDataWire(scope, word, true));
+            addDataSource(bus, scope, word);
             skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
-            bus.wire(getDataWire(scope, word, true));
+            addDataSource(bus, scope, word);
         }
         else if(operation === 'EVENT') {
             bus.wire(getEventWire(word, target));
@@ -311,7 +313,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     // transformations are applied via named hashes for performance
 
-    if(bus._wires.length > 1) {
+    if(bus._sources.length > 1) {
 
         bus.merge().group().batch();
 

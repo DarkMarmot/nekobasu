@@ -27,6 +27,8 @@ AllStream.prototype.reset = function(msg, source, topic){
 
 };
 
+NOOP_STREAM.addStubs(AllStream);
+
 export default AllStream;
 
 

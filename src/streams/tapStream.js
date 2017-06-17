@@ -19,6 +19,9 @@ TapStream.prototype.handle = function handle(msg, source, topic) {
 
 };
 
+NOOP_STREAM.addStubs(TapStream);
+
+
 export default TapStream;
 
 

@@ -22,6 +22,8 @@ MsgStream.prototype.handle = function handle(msg, source, topic) {
 
 };
 
+NOOP_STREAM.addStubs(MsgStream);
+
 export default MsgStream;
 
 

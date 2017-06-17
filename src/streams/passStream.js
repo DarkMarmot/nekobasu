@@ -13,10 +13,13 @@ function PassStream(name) {
 
 PassStream.prototype.handle = function handle(msg, source, topic) {
 
-    const n = this.name || source;
+    const name = this.name;
+    const n = name || source;
     this.next.handle(msg, n, topic);
 
 };
+
+NOOP_STREAM.addStubs(PassStream);
 
 export default PassStream;
 

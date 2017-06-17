@@ -27,6 +27,8 @@ DelayStream.prototype.handle = function handle(msg, source, topic) {
 
 };
 
+NOOP_STREAM.addStubs(DelayStream);
+
 export default DelayStream;
 
 
