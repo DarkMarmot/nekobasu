@@ -4,7 +4,7 @@ import PassStream from '../streams/passStream.js';
 
 
 const FUNCTOR = function(d) {
-    return typeof d === 'function' ? d : function(d) { return d;};
+    return typeof d === 'function' ? d : function() { return d;};
 };
 
 function callback(source){

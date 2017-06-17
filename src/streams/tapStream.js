@@ -12,7 +12,7 @@ function TapStream(name, f) {
 
 TapStream.prototype.handle = function handle(msg, source, topic) {
 
-    const n = this.name;
+    const n = this.name || source;
     const f = this.f;
     f(msg, n, topic);
     this.next.handle(msg, n, topic);

@@ -4,8 +4,9 @@ import NOOP_STREAM from './noopStream.js';
 function IS_EQUAL(a, b) { return a === b; }
 
 
-function SkipStream() {
+function SkipStream(name) {
 
+    this.name = name;
     this.msg = undefined;
     this.hasValue = true;
     this.next = NOOP_STREAM;
@@ -13,10 +14,6 @@ function SkipStream() {
 }
 
 SkipStream.prototype.handle = function handle(msg, source, topic) {
-
-    const f = this.f;
-    f(msg, source, topic);
-    this.next.handle(msg, source, topic);
 
     if(!this.hasValue) {
 

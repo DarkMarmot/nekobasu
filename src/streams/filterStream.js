@@ -16,7 +16,7 @@ FilterStream.prototype.handle = function handle(msg, source, topic) {
 
     const f = this.f;
     const v = f(msg, source, topic);
-    const n = this.name;
+    const n = this.name || source;
 
     v && this.next.handle(msg, n, topic);
 

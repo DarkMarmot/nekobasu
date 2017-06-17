@@ -6,6 +6,13 @@ import ResetStream from './streams/resetStream.js';
 import TapStream from './streams/tapStream.js';
 import MsgStream from './streams/msgStream.js';
 import FilterStream from './streams/filterStream.js';
+import SkipStream from './streams/skipStream.js';
+import LastNStream from './streams/lastNStream.js';
+import FirstNStream from './streams/firstNStream.js';
+import AllStream from './streams/allStream.js';
+import DelayStream from './streams/delayStream.js';
+import GroupStream from './streams/groupStream.js';
+
 
 import Frame from './frame.js';
 
@@ -13,7 +20,7 @@ import Nyan from './nyan.js';
 import NyanRunner from './nyanRunner.js';
 
 const FUNCTOR = function(d) {
-    return typeof d === 'function' ? d : function(d) { return d;};
+    return typeof d === 'function' ? d : function() { return d;};
 };
 
 const batchStreamBuilder = function() {
@@ -43,6 +50,48 @@ const msgStreamBuilder = function(f) {
 const filterStreamBuilder = function(f) {
     return function(name) {
         return new FilterStream(name, f);
+    }
+};
+
+const skipStreamBuilder = function(f) {
+    return function(name) {
+        return new SkipStream(name, f);
+    }
+};
+
+const lastNStreamBuilder = function(count) {
+    return function(name) {
+        return new LastNStream(name, count);
+    }
+};
+
+const firstNStreamBuilder = function(count) {
+    return function(name) {
+        return new FirstNStream(name, count);
+    }
+};
+
+const allStreamBuilder = function() {
+    return function(name) {
+        return new AllStream(name);
+    }
+};
+
+const delayStreamBuilder = function(delay) {
+    return function(name) {
+        return new DelayStream(name, delay);
+    }
+};
+
+const groupStreamBuilder = function(by) {
+    return function(name) {
+        return new GroupStream(name, by);
+    }
+};
+
+const nameStreamBuilder = function(name) {
+    return function() {
+        return new PassStream(name);
     }
 };
 
@@ -269,6 +318,7 @@ class Bus {
 
     batch() {
         this._createNormalFrame(batchStreamBuilder());
+        this._holding = false;
         return this;
     };
 
@@ -374,10 +424,7 @@ class Bus {
 
     delay(fNum) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame(new WaveDef('delay', F.FUNCTOR(fNum)));
+        this._createNormalFrame(delayStreamBuilder(fNum));
         return this;
 
     };
@@ -397,11 +444,7 @@ class Bus {
 
     group(by) {
 
-        if(!this.holding) {
-             this.addFrame(new WaveDef('group', null, true));
-             return this;
-        }
-        this.reduce(F.getGroup, by);
+        this._createNormalFrame(groupStreamBuilder(by));
         return this;
 
     };
@@ -414,27 +457,18 @@ class Bus {
     };
 
     all() {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('all', null, true));
-            return this;
-        }
-        return this.reduce(F.getKeepAll);
+        this._createNormalFrame(allStreamBuilder());
+        return this;
     };
 
-    first(n) {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('firstN', null, true, n));
-            return this;
-        }
-        return this.reduce(F.getKeepFirst, n);
+    first(count) {
+        this._createNormalFrame(firstNStreamBuilder(count));
+        return this;
     };
 
-    last(n) {
-        if(!this.holding) {
-            this.addFrame(new WaveDef('lastN', null, true, n));
-            return this;
-        }
-        return this.reduce(F.getKeepLast, n);
+    last(count) {
+        this._createNormalFrame(lastNStreamBuilder(count));
+        return this;
     };
 
     clear(factory, ...args) {
@@ -505,7 +539,6 @@ class Bus {
     run(f) {
 
         this._ASSERT_IS_FUNCTION(f);
-        this._ASSERT_NOT_HOLDING();
 
         this._createNormalFrame(tapStreamBuilder(f));
         return this;
@@ -514,9 +547,7 @@ class Bus {
 
     merge() {
 
-        F.ASSERT_NOT_HOLDING(this);
-
-        this.addFrameMerger();
+        this._createMergingFrame();
         return this;
     };
 
@@ -524,21 +555,22 @@ class Bus {
 
         const f = FUNCTOR(fAny);
 
-        this._ASSERT_NOT_HOLDING();
-
         this._createNormalFrame(msgStreamBuilder(f));
         return this;
 
 
     };
 
+    name(str) {
 
-    source(fStr) {
+        this._createNormalFrame(nameStreamBuilder(str));
+        return this;
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
+    };
 
-        this.addFrame(new WaveDef('source', F.FUNCTOR(fStr)));
+    source(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
         return this;
 
     };
@@ -574,9 +606,9 @@ class Bus {
 
     skipDupes() {
 
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame(new WaveDef('skipDupes', null, true));
+        this._createNormalFrame(skipStreamBuilder());
         return this;
 
     };

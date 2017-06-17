@@ -1,6 +1,7 @@
 
 import Scope from './scope.js';
 import EventSource from './sources/eventSource.js';
+import SubscribeSource from './sources/subscribeSource.js';
 import Bus from './bus.js';
 
 
@@ -23,6 +24,17 @@ Catbus.fromEvent = function(target, eventName, useCapture){
     return bus;
 
 };
+
+Catbus.fromSubscribe = function(name, data, topic){
+
+    const bus = new Bus();
+    const source = new SubscribeSource(name, data, topic, true);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
 
 // todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
@@ -58,7 +70,7 @@ Catbus.flush = function(){
 
         while (q.length) {
             const pool = q.shift();
-            pool.release();
+            pool.emit();
         }
 
         q = _batchQueue;
