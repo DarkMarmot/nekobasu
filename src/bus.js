@@ -18,6 +18,7 @@ import LatchStream from './streams/latchStream.js';
 import ScanStream from './streams/scanStream.js';
 import ScanWithSeedStream from './streams/scanWithSeedStream.js';
 import SplitStream from './streams/splitStream.js';
+import WriteStream from './streams/writeStream.js';
 
 
 import Frame from './frame.js';
@@ -124,6 +125,32 @@ const splitStreamBuilder = function() {
         return new SplitStream(name);
     }
 };
+
+const writeStreamBuilder = function(dataTopic) {
+    return function(name) {
+        return new WriteStream(name, dataTopic);
+    }
+};
+
+
+function getHasKeys(keys){
+
+    const len = keys.length;
+    return function _hasKeys(msg, source, topic){
+
+        if(typeof msg !== 'object')
+            return false;
+
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            if(!msg.hasOwnProperty(k))
+                return false;
+        }
+
+        return true;
+    }
+
+}
 
 class Bus {
 
@@ -342,6 +369,19 @@ class Bus {
 
     };
 
+    addMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+        }
+        return this;
+
+    };
+
     // defer() {
     //     return this.timer(F.getDeferTimer);
     // };
@@ -452,22 +492,8 @@ class Bus {
 
     hasKeys(keys) {
 
-        const len = keys.length;
-        function _hasKeys(msg, source, topic){
-
-            if(typeof msg !== 'object')
-                return false;
-
-            for(let i = 0; i < len; i++){
-                const k = keys[i];
-                if(!msg.hasOwnProperty(k))
-                    return false;
-            }
-
-            return true;
-        }
-
-        this._createNormalFrame(latchStreamBuilder(_hasKeys));
+        const f = getHasKeys(keys);
+        this._createNormalFrame(latchStreamBuilder(f));
         return this;
 
     };
@@ -477,13 +503,6 @@ class Bus {
         this._createNormalFrame(groupStreamBuilder(by));
         return this;
 
-    };
-
-    groupByTopic() {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.hold().reduce(F.getGroup, F.TO_TOPIC);
-        return this;
     };
 
     all() {
@@ -541,6 +560,12 @@ class Bus {
 
     };
 
+    write(dataTopic) {
+
+        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        return this;
+
+    };
 
     filter(f) {
 
@@ -562,8 +587,6 @@ class Bus {
 
 
     skipDupes() {
-
-        this._ASSERT_NOT_HOLDING();
 
         this._createNormalFrame(skipStreamBuilder());
         return this;

@@ -5,7 +5,7 @@ function FirstStream(name) {
 
     this.name = name;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
     this.next = NOOP_STREAM;
     this.hasValue = false;
 
@@ -33,7 +33,7 @@ FirstStream.prototype.reset = function(){
 
     this.hasValue = false;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
 
     this.next.reset();
 

@@ -8,7 +8,7 @@ function BatchStream(name) {
     this.name = name;
     this.next = NOOP_STREAM;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
     this.latched = false;
 
 }
@@ -40,7 +40,7 @@ BatchStream.prototype.reset = function reset() {
 
     this.latched = false;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
 
     // doesn't continue on as in default
 

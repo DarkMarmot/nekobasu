@@ -148,6 +148,19 @@ class SubscriberList {
 
 }
 
+function DataTopic(data, topic, silently){
+    this.data = data;
+    this.topic = topic;
+    this.silently = !!silently;
+    this.topicSubscriberList = data._demandSubscriberList(topic);
+    this.wildcardSubscriberList = data._wildcardSubscriberList;
+}
+
+DataTopic.prototype.handle = function(msg){
+    this.topicSubscriberList.handle(msg, this.topic, this.silently);
+    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
+};
+
 class Data {
 
     constructor(scope, name, type) {
@@ -162,8 +175,8 @@ class Data {
         this._type       = type;
         this._dead       = false;
 
-        this._noTopicList = new SubscriberList(null, this);
-        this._wildcardSubscriberList = new SubscriberList(null, this);
+        this._noTopicList = new SubscriberList('', this);
+        this._wildcardSubscriberList = new SubscriberList('', this);
         this._subscriberListsByTopic = {};
 
     };
@@ -188,7 +201,7 @@ class Data {
     
     _demandSubscriberList(topic){
 
-        topic = topic || null;
+        topic = topic || '';
         let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
 
         if(list)
@@ -249,7 +262,7 @@ class Data {
         // if(this.dead)
         //     this._throwDead();
 
-        topic = topic || null;
+        topic = topic || '';
         this._demandSubscriberList(topic).remove(watcher);
         this._wildcardSubscriberList.remove(watcher);
 
@@ -298,6 +311,9 @@ class Data {
 
     };
 
+    dataTopic(topic, silently){
+        return new DataTopic(this, topic, silently);
+    }
 
     silentWrite(msg, topic){
 
@@ -324,6 +340,7 @@ class Data {
         this._wildcardSubscriberList.handle(msg, topic, silently);
 
     };
+
 
 
     refresh(topic){
@@ -415,12 +432,12 @@ const NOOP_STREAM = new NoopStream();
 
 function PassStream(name) {
 
-    this.name = name;
+    this.name = name || '';
     this.next = NOOP_STREAM;
 
 }
 
-PassStream.prototype.handle = function handle(msg, source, topic) {
+PassStream.prototype.handle = function passHandle(msg, source, topic) {
 
     const n = this.name || source;
     this.next.handle(msg, n, topic);
@@ -500,7 +517,7 @@ function BatchStream(name) {
     this.name = name;
     this.next = NOOP_STREAM;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
     this.latched = false;
 
 }
@@ -532,7 +549,7 @@ BatchStream.prototype.reset = function reset() {
 
     this.latched = false;
     this.msg = undefined;
-    this.topic = null;
+    this.topic = '';
 
     // doesn't continue on as in default
 
@@ -591,7 +608,9 @@ function MsgStream(name, f, context) {
 
 }
 
-MsgStream.prototype.handle = function handle(msg, source, topic) {
+
+
+MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
     const v = f.call(this.context, msg, source, topic);
@@ -614,7 +633,7 @@ function FilterStream(name, f, context) {
 
 }
 
-FilterStream.prototype.handle = function handle(msg, source, topic) {
+FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
 
     const f = this.f;
     f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
@@ -864,6 +883,7 @@ function ScanStream(name, f) {
 
 }
 
+
 ScanStream.prototype.handle = function handle(msg, source, topic) {
 
     this.value = this.hasValue ? this.f(this.value, msg, source, topic) : msg;
@@ -896,7 +916,9 @@ function ScanWithSeedStream(name, f, seed, context) {
 
 }
 
-ScanWithSeedStream.prototype.handle = function handle(msg, source, topic) {
+
+
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
     this.value = this.f.call(this.context, this.value, msg, source, topic);
     this.next.handle(this.value, source, topic);
@@ -931,7 +953,7 @@ function SplitStream(name) {
 
 
 
-SplitStream.prototype.handle = function handle(msg, source, topic) {
+SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
     if(Array.isArray(msg)){
         this.thruArray(msg, source, topic);
@@ -941,17 +963,22 @@ SplitStream.prototype.handle = function handle(msg, source, topic) {
 
 };
 
+function toNext(next, msg, source, topic){
+    next.handle(msg, source, topic);
+}
+
 SplitStream.prototype.thruArray = function(msg, source, topic){
 
     const len = msg.length;
     const next = this.next;
 
     for(let i = 0; i < len; i++){
-        const m = msg[i];
-        next.handle(m, source, topic);
+        toNext(next, msg[i], source, topic);
     }
 
 };
+
+
 
 SplitStream.prototype.thruIterable = function(msg, source, topic){
 
@@ -964,6 +991,21 @@ SplitStream.prototype.thruIterable = function(msg, source, topic){
 };
 
 NOOP_STREAM.addStubs(SplitStream);
+
+function WriteStream(name, dataTopic) {
+    this.name = name;
+    this.dataTopic = dataTopic;
+    this.next = NOOP_STREAM;
+}
+
+WriteStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.dataTopic.handle(msg);
+    this.next.handle(msg, source, topic);
+
+};
+
+NOOP_STREAM.addStubs(WriteStream);
 
 class Frame {
 
@@ -1507,17 +1549,6 @@ function getDoSkipNamedDupes(names){
 }
 
 
-function getDoWrite(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-
-    return function doWrite(msg) {
-        data.write(msg, word.topic);
-    };
-
-}
-
-
 function getDoSpray(scope, phrase){
 
     const wordByAlias = {};
@@ -1873,12 +1904,12 @@ function applyProcess(scope, bus, phrase, context, node) {
         bus.msg(getDoRead(scope, phrase));
         const needs = getNeedsArray(phrase);
         if(needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
         const needs = getNeedsArray(phrase);
         if (needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
@@ -1888,8 +1919,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
-        bus.run(getDoWrite(scope, phrase[0]));
+        applyWriteProcess(bus, scope, phrase[0]);
     } else if (operation === 'SPRAY') {
+
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
 
     }
@@ -1897,6 +1929,13 @@ function applyProcess(scope, bus, phrase, context, node) {
 }
 
 
+function applyWriteProcess(bus, scope, word){
+
+    const data = scope.find(word.name, !word.maybe);
+    const dataTopic = data.dataTopic(word.topic);
+    bus.write(dataTopic);
+
+}
 
 function applyMsgProcess(bus, phrase, context){
 
@@ -1913,6 +1952,9 @@ function applyMsgProcess(bus, phrase, context){
     }
 
 }
+
+
+
 
 
 function applySourceProcess(bus, word){
@@ -2079,6 +2121,32 @@ const splitStreamBuilder = function() {
         return new SplitStream(name);
     }
 };
+
+const writeStreamBuilder = function(dataTopic) {
+    return function(name) {
+        return new WriteStream(name, dataTopic);
+    }
+};
+
+
+function getHasKeys(keys){
+
+    const len = keys.length;
+    return function _hasKeys(msg, source, topic){
+
+        if(typeof msg !== 'object')
+            return false;
+
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            if(!msg.hasOwnProperty(k))
+                return false;
+        }
+
+        return true;
+    }
+
+}
 
 class Bus {
 
@@ -2297,6 +2365,19 @@ class Bus {
 
     };
 
+    addMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+        }
+        return this;
+
+    };
+
     // defer() {
     //     return this.timer(F.getDeferTimer);
     // };
@@ -2407,22 +2488,8 @@ class Bus {
 
     hasKeys(keys) {
 
-        const len = keys.length;
-        function _hasKeys(msg, source, topic){
-
-            if(typeof msg !== 'object')
-                return false;
-
-            for(let i = 0; i < len; i++){
-                const k = keys[i];
-                if(!msg.hasOwnProperty(k))
-                    return false;
-            }
-
-            return true;
-        }
-
-        this._createNormalFrame(latchStreamBuilder(_hasKeys));
+        const f = getHasKeys(keys);
+        this._createNormalFrame(latchStreamBuilder(f));
         return this;
 
     };
@@ -2432,13 +2499,6 @@ class Bus {
         this._createNormalFrame(groupStreamBuilder(by));
         return this;
 
-    };
-
-    groupByTopic() {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.hold().reduce(F.getGroup, F.TO_TOPIC);
-        return this;
     };
 
     all() {
@@ -2496,6 +2556,12 @@ class Bus {
 
     };
 
+    write(dataTopic) {
+
+        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        return this;
+
+    };
 
     filter(f) {
 
@@ -2517,8 +2583,6 @@ class Bus {
 
 
     skipDupes() {
-
-        this._ASSERT_NOT_HOLDING();
 
         this._createNormalFrame(skipStreamBuilder());
         return this;

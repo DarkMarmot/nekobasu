@@ -16,7 +16,9 @@ function ScanWithSeedStream(name, f, seed, context) {
 
 }
 
-ScanWithSeedStream.prototype.handle = function handle(msg, source, topic) {
+
+
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
     this.value = this.f.call(this.context, this.value, msg, source, topic);
     this.next.handle(this.value, source, topic);

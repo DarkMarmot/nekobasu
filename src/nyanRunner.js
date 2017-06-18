@@ -41,9 +41,11 @@ function getDoSkipNamedDupes(names){
 function getDoWrite(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
+    const dataTopic = data.dataTopic(word.topic);
 
     return function doWrite(msg) {
-        data.write(msg, word.topic);
+        dataTopic.write(msg);
+        //data.write(msg, word.topic);
     };
 
 }
@@ -404,12 +406,12 @@ function applyProcess(scope, bus, phrase, context, node) {
         bus.msg(getDoRead(scope, phrase));
         const needs = getNeedsArray(phrase);
         if(needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
         const needs = getNeedsArray(phrase);
         if (needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
@@ -419,8 +421,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
-        bus.run(getDoWrite(scope, phrase[0]));
+        applyWriteProcess(bus, scope, phrase[0]);
     } else if (operation === 'SPRAY') {
+
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
 
     }
@@ -428,6 +431,13 @@ function applyProcess(scope, bus, phrase, context, node) {
 }
 
 
+function applyWriteProcess(bus, scope, word){
+
+    const data = scope.find(word.name, !word.maybe);
+    const dataTopic = data.dataTopic(word.topic);
+    bus.write(dataTopic);
+
+}
 
 function applyMsgProcess(bus, phrase, context){
 
@@ -444,6 +454,9 @@ function applyMsgProcess(bus, phrase, context){
     }
 
 }
+
+
+
 
 
 function applySourceProcess(bus, word){

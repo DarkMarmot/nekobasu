@@ -4,6 +4,19 @@ import {isValid, DATA_TYPES} from './dataTypes.js';
 
 const NO_TOPIC = '___NO_TOPIC___';
 
+function DataTopic(data, topic, silently){
+    this.data = data;
+    this.topic = topic;
+    this.silently = !!silently;
+    this.topicSubscriberList = data._demandSubscriberList(topic);
+    this.wildcardSubscriberList = data._wildcardSubscriberList;
+}
+
+DataTopic.prototype.handle = function(msg){
+    this.topicSubscriberList.handle(msg, this.topic, this.silently);
+    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
+};
+
 class Data {
 
     constructor(scope, name, type) {
@@ -18,8 +31,8 @@ class Data {
         this._type       = type;
         this._dead       = false;
 
-        this._noTopicList = new SubscriberList(null, this);
-        this._wildcardSubscriberList = new SubscriberList(null, this);
+        this._noTopicList = new SubscriberList('', this);
+        this._wildcardSubscriberList = new SubscriberList('', this);
         this._subscriberListsByTopic = {};
 
     };
@@ -44,7 +57,7 @@ class Data {
     
     _demandSubscriberList(topic){
 
-        topic = topic || null;
+        topic = topic || '';
         let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
 
         if(list)
@@ -105,7 +118,7 @@ class Data {
         // if(this.dead)
         //     this._throwDead();
 
-        topic = topic || null;
+        topic = topic || '';
         this._demandSubscriberList(topic).remove(watcher);
         this._wildcardSubscriberList.remove(watcher);
 
@@ -154,6 +167,9 @@ class Data {
 
     };
 
+    dataTopic(topic, silently){
+        return new DataTopic(this, topic, silently);
+    }
 
     silentWrite(msg, topic){
 
@@ -180,6 +196,7 @@ class Data {
         this._wildcardSubscriberList.handle(msg, topic, silently);
 
     };
+
 
 
     refresh(topic){

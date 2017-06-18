@@ -13,7 +13,9 @@ function MsgStream(name, f, context) {
 
 }
 
-MsgStream.prototype.handle = function handle(msg, source, topic) {
+
+
+MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
     const v = f.call(this.context, msg, source, topic);
