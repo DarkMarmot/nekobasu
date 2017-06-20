@@ -13,9 +13,9 @@ function SplitStream(name) {
 SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
     if(Array.isArray(msg)){
-        this.thruArray(msg, source, topic);
+        this.withArray(msg, source, topic);
     } else {
-        this.thruIterable(msg, source, topic);
+        this.withIteration(msg, source, topic);
     }
 
 };
@@ -24,7 +24,7 @@ function toNext(next, msg, source, topic){
     next.handle(msg, source, topic);
 }
 
-SplitStream.prototype.thruArray = function(msg, source, topic){
+SplitStream.prototype.withArray = function(msg, source, topic){
 
     const len = msg.length;
     const next = this.next;
@@ -37,7 +37,7 @@ SplitStream.prototype.thruArray = function(msg, source, topic){
 
 
 
-SplitStream.prototype.thruIterable = function(msg, source, topic){
+SplitStream.prototype.withIteration = function(msg, source, topic){
 
     const next = this.next;
 

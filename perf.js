@@ -12,9 +12,9 @@ for(let i = 0; i < 1000000; i++){
     arr.push(i);
 }
 
-// const arr = new Array(1000000);
-// for(let i = 0, j = 0; i< arr.length; i+=2, ++j) {
-//     arr[i] = arr[i+1] = j;
+// const a2 = new Array(1000000);
+// for(let i = 0, j = 0; i< a2.length; i+=2, ++j) {
+//     a2[i] = a2[i+1] = j;
 // }
 
 const fs = {
@@ -33,8 +33,9 @@ function Answer(){
     this.value = 0;
 }
 
+let r;
 function moo(d){
-
+  r = d;
 }
 
 Answer.prototype.got = function(d){
@@ -44,8 +45,17 @@ Answer.prototype.got = function(d){
 
 //const b = world.bus('~castle').split().process(' >even | *add1', fs).scan(fs.sum, 0);//.process('=moo');
 
- const b = world.bus('~castle').split().filter(even).msg(add1).scan(sum, 0).process('=moo');
-// const buses = [];
+ // const b = world.bus('~castle').split().filter(even).msg(add1).scan(sum, 0).process('=moo');
+//const b = world.bus('~castle').split().skipDupes().scan(sum, 0).run(moo);
+
+//const b = world.bus('~castle').spork().filter(even).msg(add1).reduce(sum, 0).process('=moo');
+
+//const b = world.bus('~castle').spork().skipDupes().reduce(sum, 0).process('=moo');
+
+const b = world.bus('~castle').spork().skip(250000).take(500000).reduce(sum, 0).process('=moo');
+
+
+ // const buses = [];
 // for(let i = 0; i < 1000; i++) {
 //     const b = world.bus('~castle').split();//.process('=moo');
 //     buses.push(b);
@@ -56,31 +66,22 @@ Answer.prototype.got = function(d){
 
 const n = Date.now();
 const dt = d.dataTopic();
-let ii = 0;
 
-function runit(){
-    dt.handle(arr);
-    ii++;
-    //console.log('moo!', ii);
-
-}
-function ff(){
-    dt.handle(arr);
-    console.log('t',  Date.now() - n);
-}
-for(let i = 0; i < 160; i++) {
+for(let i = 0; i < 210; i++) {
 
    // setTimeout(runit, 0);
     dt.handle(arr);
     //Promise.resolve().then(ff);
 
-    console.log(i);
-     console.log('e', e.read());
-  //  console.log(b._frames[b._frames.length - 1].streams[0].value);
-     b._frames[b._frames.length - 2].streams[0].value = 0;
+    //console.log(i);
+    //console.log(r);
+   //  console.log('e', e.read());
+   // console.log(b._frame s[b._frames.length - 1].streams[0].value);
+  //   b._frames[b._frames.length - 2].streams[0].value = 0;
 
 }
 
+console.log(e.read());
 
 console.log('t',  Date.now() - n);
 

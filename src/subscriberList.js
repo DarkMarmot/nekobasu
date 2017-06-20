@@ -78,7 +78,6 @@ class SubscriberList {
     };
 
 
-
     destroy(){
 
         // if(this.dead)

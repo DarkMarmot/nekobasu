@@ -101,7 +101,6 @@ class SubscriberList {
     };
 
 
-
     destroy(){
 
         // if(this.dead)
@@ -956,9 +955,9 @@ function SplitStream(name) {
 SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
     if(Array.isArray(msg)){
-        this.thruArray(msg, source, topic);
+        this.withArray(msg, source, topic);
     } else {
-        this.thruIterable(msg, source, topic);
+        this.withIteration(msg, source, topic);
     }
 
 };
@@ -967,7 +966,7 @@ function toNext(next, msg, source, topic){
     next.handle(msg, source, topic);
 }
 
-SplitStream.prototype.thruArray = function(msg, source, topic){
+SplitStream.prototype.withArray = function(msg, source, topic){
 
     const len = msg.length;
     const next = this.next;
@@ -980,7 +979,7 @@ SplitStream.prototype.thruArray = function(msg, source, topic){
 
 
 
-SplitStream.prototype.thruIterable = function(msg, source, topic){
+SplitStream.prototype.withIteration = function(msg, source, topic){
 
     const next = this.next;
 
@@ -1006,6 +1005,190 @@ WriteStream.prototype.handle = function handle(msg, source, topic) {
 };
 
 NOOP_STREAM.addStubs(WriteStream);
+
+function FUNCTOR$5(d) {
+    return typeof d === 'function' ? d : function() { return d; };
+}
+
+function ReduceStream(name, f, seed) {
+
+    this.name = name;
+    this.seed = FUNCTOR$5(seed);
+    this.v = this.seed() || 0;
+    this.f = f;
+    this.next = NOOP_STREAM;
+
+}
+
+
+ReduceStream.prototype.reset = function(){
+
+    this.v = this.seed() || 0;
+    this.next.reset();
+
+};
+
+ReduceStream.prototype.handle = function(msg, topic, source){
+
+    const f = this.f;
+    this.v = f(msg, this.v);
+
+};
+
+NOOP_STREAM.addStubs(ReduceStream);
+
+function SkipNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 0;
+    this.next = NOOP_STREAM;
+    this.seen = 0;
+
+}
+
+SkipNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const s = this.seen;
+
+    if(this.seen < c){
+        this.seen = s + 1;
+    } else {
+        this.next.handle(msg, source, topic);
+    }
+
+};
+
+SkipNStream.prototype.reset = function(msg, source, topic){
+
+    this.seen = 0;
+
+};
+
+NOOP_STREAM.addStubs(SkipNStream);
+
+function TakeNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 0;
+    this.next = NOOP_STREAM;
+    this.seen = 0;
+
+}
+
+TakeNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const s = this.seen;
+
+    if(this.seen < c){
+        this.seen = s + 1;
+        this.next.handle(msg, source, topic);
+    }
+
+};
+
+TakeNStream.prototype.reset = function(msg, source, topic){
+
+    this.seen = 0;
+
+};
+
+NOOP_STREAM.addStubs(TakeNStream);
+
+function Spork(bus) {
+
+    this.bus = bus;
+    this.streams = [];
+    this.first = NOOP_STREAM;
+    this.last = NOOP_STREAM;
+    this.initialized = false;
+
+}
+
+Spork.prototype.handle = function(msg, topic, source) {
+
+    this.first.reset();
+    this._split(msg, source, topic);
+    this.next.handle(this.last.v, source, topic);
+
+};
+
+
+Spork.prototype.withArray = function withArray(msg, source, topic){
+
+    const len = msg.length;
+
+    for(let i = 0; i < len; i++){
+        this.first.handle(msg[i], source, topic);
+    }
+
+};
+
+Spork.prototype.withIteration = function withIteration(msg, source, topic){
+
+    const first = this.first;
+    for(const i of msg){
+        first.handle(i, source, topic);
+    }
+
+};
+
+Spork.prototype._split = function(msg, source, topic){
+
+    if(Array.isArray(msg)){
+        this.withArray(msg, source, topic);
+    } else {
+        this.withIteration(msg, source, topic);
+    }
+
+};
+
+Spork.prototype._extend = function(stream) {
+
+    if(!this.initialized){
+        this.initialized = true;
+        this.first = stream;
+        this.last = stream;
+    } else {
+        this.streams.push(stream);
+        this.last.next = stream;
+        this.last = stream;
+    }
+
+};
+
+Spork.prototype.msg = function msg(f) {
+    this._extend(new MsgStream('', f));
+    return this;
+};
+
+Spork.prototype.skipDupes = function skipDupes() {
+    this._extend(new SkipStream(''));
+    return this;
+};
+
+Spork.prototype.skip = function skip(n) {
+    this._extend(new SkipNStream('', n));
+    return this;
+};
+
+Spork.prototype.take = function take(n) {
+    this._extend(new TakeNStream('', n));
+    return this;
+};
+
+
+Spork.prototype.reduce = function reduce(f, seed) {
+    this._extend(new ReduceStream('', f, seed));
+    this.bus._spork = null;
+    return this.bus;
+};
+
+Spork.prototype.filter = function filter(f) {
+    this._extend(new FilterStream('', f));
+    return this;
+};
 
 class Frame {
 
@@ -2161,6 +2344,8 @@ class Bus {
 
         // temporary api states (used for interactively building the bus)
 
+
+        this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
         this._head = null; // point to reset accumulators
         this._locked = false; // prevents additional sources from being added
@@ -2258,6 +2443,29 @@ class Bus {
 
     };
 
+    _createDisconnectedFrame(streamBuilder) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            target_streams.push(s2);
+        }
+
+        return f2;
+
+    };
+
+
+
+
     _createForkingFrame(forkedTargetFrame) {
 
         const f1 = this._currentFrame;
@@ -2313,6 +2521,7 @@ class Bus {
     addSource(source){
 
         this._ASSERT_NOT_LOCKED();
+
         this._sources.push(source);
         this._currentFrame.streams.push(source.stream);
         return this;
@@ -2378,9 +2587,24 @@ class Bus {
 
     };
 
+    spork() {
+
+        const spork = new Spork(this);
+
+        function sporkBuilder(){
+            return spork;
+        }
+
+        this._createNormalFrame(sporkBuilder);
+        return this._spork = spork;
+
+    };
+
     // defer() {
     //     return this.timer(F.getDeferTimer);
     // };
+
+
 
     batch() {
         this._createNormalFrame(batchStreamBuilder());
@@ -3065,7 +3289,7 @@ EventSource.prototype.destroy = function destroy(){
 
 NOOP_SOURCE.addStubs(EventSource);
 
-const FUNCTOR$5 = function(d) {
+const FUNCTOR$6 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
@@ -3084,7 +3308,7 @@ function IntervalSource(name, delay, msg) {
     this.dead = false;
     this.stream = new PassStream(name);
     this.intervalId = setInterval(callback$1, delay, this);
-    this.msg = FUNCTOR$5(msg);
+    this.msg = FUNCTOR$6(msg);
 
 }
 

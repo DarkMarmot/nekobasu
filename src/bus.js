@@ -20,7 +20,7 @@ import ScanWithSeedStream from './streams/scanWithSeedStream.js';
 import SplitStream from './streams/splitStream.js';
 import WriteStream from './streams/writeStream.js';
 
-
+import Spork from './spork.js';
 import Frame from './frame.js';
 
 import Nyan from './nyan.js';
@@ -165,6 +165,8 @@ class Bus {
 
         // temporary api states (used for interactively building the bus)
 
+
+        this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
         this._head = null; // point to reset accumulators
         this._locked = false; // prevents additional sources from being added
@@ -262,6 +264,29 @@ class Bus {
 
     };
 
+    _createDisconnectedFrame(streamBuilder) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            target_streams.push(s2);
+        }
+
+        return f2;
+
+    };
+
+
+
+
     _createForkingFrame(forkedTargetFrame) {
 
         const f1 = this._currentFrame;
@@ -317,6 +342,7 @@ class Bus {
     addSource(source){
 
         this._ASSERT_NOT_LOCKED();
+
         this._sources.push(source);
         this._currentFrame.streams.push(source.stream);
         return this;
@@ -382,9 +408,24 @@ class Bus {
 
     };
 
+    spork() {
+
+        const spork = new Spork(this);
+
+        function sporkBuilder(){
+            return spork;
+        }
+
+        this._createNormalFrame(sporkBuilder);
+        return this._spork = spork;
+
+    };
+
     // defer() {
     //     return this.timer(F.getDeferTimer);
     // };
+
+
 
     batch() {
         this._createNormalFrame(batchStreamBuilder());
