@@ -52,7 +52,15 @@ Answer.prototype.got = function(d){
 
 //const b = world.bus('~castle').spork().skipDupes().reduce(sum, 0).process('=moo');
 
-const b = world.bus('~castle').spork().skip(250000).take(500000).reduce(sum, 0).process('=moo');
+//const b = world.bus('~castle').spork().skip(250000).take(500000).reduce(sum, 0).process('=moo');
+//
+// var streams = [[1,2],[2,5],[3,9]].map(Catbus.fromValue);
+// const c = Catbus.fromValues(streams);
+// c.forge(); // multiple streams, split, merged -> ready for reduce
+// c.scan(sum, 0);
+// streams.forEach(function(s){ s.pull();});
+
+const b = Catbus.fromValue(arr).spork().skip(250000).take(500000).reduce(sum, 0);//.msg(function(){});
 
 
  // const buses = [];
@@ -68,9 +76,12 @@ const n = Date.now();
 const dt = d.dataTopic();
 
 for(let i = 0; i < 210; i++) {
+//dt.handle(arr);
+
+    b.pull();
 
    // setTimeout(runit, 0);
-    dt.handle(arr);
+
     //Promise.resolve().then(ff);
 
     //console.log(i);

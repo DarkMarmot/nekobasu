@@ -9,7 +9,6 @@ function SplitStream(name) {
 }
 
 
-
 SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
     if(Array.isArray(msg)){
@@ -20,17 +19,13 @@ SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
 };
 
-function toNext(next, msg, source, topic){
-    next.handle(msg, source, topic);
-}
 
 SplitStream.prototype.withArray = function(msg, source, topic){
 
     const len = msg.length;
-    const next = this.next;
 
-    for(let i = 0; i < len; i++){
-        toNext(next, msg[i], source, topic);
+    for(let i = 0; i < len; ++i){
+        this.next.handle(msg[i], source, topic);
     }
 
 };

@@ -3,6 +3,8 @@ import Scope from './scope.js';
 import EventSource from './sources/eventSource.js';
 import IntervalSource from './sources/intervalSource.js';
 import SubscribeSource from './sources/subscribeSource.js';
+import ValueSource from './sources/valueSource.js';
+
 import Bus from './bus.js';
 
 
@@ -35,6 +37,29 @@ Catbus.fromEvent = function(target, eventName, useCapture){
     return bus;
 
 };
+
+Catbus.fromValues = function(values){
+
+    const bus = new Bus();
+    const len = values.length;
+    for(let i = 0; i < len; ++i) {
+        const source = new ValueSource('', value);
+        bus.addSource(source);
+    }
+    return bus;
+
+};
+
+Catbus.fromValue = function(value, name){
+
+    const bus = new Bus();
+    const source = new ValueSource(name || '', value);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
 
 Catbus.fromSubscribe = function(name, data, topic){
 

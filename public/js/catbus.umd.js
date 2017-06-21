@@ -137,7 +137,7 @@ class SubscriberList {
         const len = this._subscribers.length;
         if(len === 0){
             this._callback = callNoOne;
-        } else if (len == 1){
+        } else if (len === 1){
             this._callback = callOne;
         } else {
             this._callback = callMany;
@@ -493,6 +493,38 @@ SubscribeSource.prototype.destroy = function destroy(){
 
 NOOP_SOURCE.addStubs(SubscribeSource);
 
+function EventSource(name, target, eventName, useCapture){
+
+    function toStream(msg){
+        stream.handle(msg, eventName, null);
+    }
+
+    this.name = name;
+    this.target = target;
+    this.eventName = eventName;
+    this.useCapture = !!useCapture;
+    this.on = target.addEventListener || target.addListener || target.on;
+    this.off = target.removeEventListener || target.removeListener || target.off;
+    this.stream = new PassStream(name);
+    this.callback = toStream;
+    const stream = this.stream;
+
+    this.on.call(target, eventName, toStream, useCapture);
+
+}
+
+
+
+EventSource.prototype.destroy = function destroy(){
+
+    this.off.call(this.target, this.eventName, this.callback, this.useCapture);
+    this.dead = true;
+
+};
+
+
+NOOP_SOURCE.addStubs(EventSource);
+
 function ForkStream(name, fork) {
 
     this.name = name;
@@ -598,23 +630,19 @@ NOOP_STREAM.addStubs(TapStream);
 function IDENTITY$2(msg, source, topic) { return msg; }
 
 
-function MsgStream(name, f, context) {
+function MsgStream(name, f) {
 
     this.name = name;
     this.f = f || IDENTITY$2;
-    this.context = context || null;
     this.next = NOOP_STREAM;
 
 }
 
 
-
 MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
-    const v = f.call(this.context, msg, source, topic);
-
-    this.next.handle(v, source, topic);
+    this.next.handle(f(msg, source, topic), source, topic);
 
 };
 
@@ -760,7 +788,7 @@ AllStream.prototype.reset = function(msg, source, topic){
 
 NOOP_STREAM.addStubs(AllStream);
 
-const FUNCTOR$2 = function(d) {
+const FUNCTOR$1 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
@@ -774,7 +802,7 @@ function callback(stream, msg, source, topic){
 function DelayStream(name, f) {
 
     this.name = name;
-    this.f = arguments.length ? FUNCTOR$2(f) : IMMEDIATE;
+    this.f = arguments.length ? FUNCTOR$1(f) : IMMEDIATE;
     this.next = NOOP_STREAM;
 
 }
@@ -790,7 +818,7 @@ NOOP_STREAM.addStubs(DelayStream);
 
 function BY_SOURCE(msg, source, topic) { return source; }
 
-const FUNCTOR$3 = function(d) {
+const FUNCTOR$2 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
@@ -798,7 +826,7 @@ function GroupStream(name, f, seed) {
 
     this.name = name;
     this.f = f || BY_SOURCE;
-    this.seed = arguments.length === 3 ? FUNCTOR$3(seed) : FUNCTOR$3({});
+    this.seed = arguments.length === 3 ? FUNCTOR$2(seed) : FUNCTOR$2({});
     this.next = NOOP_STREAM;
     this.topic = undefined;
     this.msg = this.seed();
@@ -885,7 +913,8 @@ function ScanStream(name, f) {
 
 ScanStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.value = this.hasValue ? this.f(this.value, msg, source, topic) : msg;
+    const f = this.f;
+    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
     this.next.handle(this.value, source, topic);
 
 };
@@ -900,16 +929,15 @@ ScanStream.prototype.reset = function reset(msg) {
 
 NOOP_STREAM.addStubs(ScanStream);
 
-const FUNCTOR$4 = function(d) {
+const FUNCTOR$3 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
-function ScanWithSeedStream(name, f, seed, context) {
+function ScanWithSeedStream(name, f, seed) {
 
     this.name = name;
     this.f = f;
-    this.seed = FUNCTOR$4(seed);
-    this.context = context || null;
+    this.seed = FUNCTOR$3(seed);
     this.next = NOOP_STREAM;
     this.value = this.seed();
 
@@ -919,8 +947,8 @@ function ScanWithSeedStream(name, f, seed, context) {
 
 ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
-    this.value = this.f.call(this.context, this.value, msg, source, topic);
-    this.next.handle(this.value, source, topic);
+    const f = this.f;
+    this.next.handle(this.value = f(this.value, msg, source, topic), source, topic);
 
 };
 
@@ -951,7 +979,6 @@ function SplitStream(name) {
 }
 
 
-
 SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
     if(Array.isArray(msg)){
@@ -962,17 +989,13 @@ SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
 
 };
 
-function toNext(next, msg, source, topic){
-    next.handle(msg, source, topic);
-}
 
 SplitStream.prototype.withArray = function(msg, source, topic){
 
     const len = msg.length;
-    const next = this.next;
 
-    for(let i = 0; i < len; i++){
-        toNext(next, msg[i], source, topic);
+    for(let i = 0; i < len; ++i){
+        this.next.handle(msg[i], source, topic);
     }
 
 };
@@ -1006,14 +1029,38 @@ WriteStream.prototype.handle = function handle(msg, source, topic) {
 
 NOOP_STREAM.addStubs(WriteStream);
 
-function FUNCTOR$5(d) {
+function IDENTITY$4(d) { return d; }
+
+
+function FilterMapStream(name, f, m, context) {
+
+    this.name = name || '';
+    this.f = f || IDENTITY$4;
+    this.m = m || IDENTITY$4;
+    this.context = context || null;
+    this.next = NOOP_STREAM;
+
+}
+
+FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
+
+    const f = this.f;
+    const m = this.m;
+    f.call(this.context, msg, source, topic) && this.next.handle(
+        m.call(this.context, msg, source, topic));
+
+};
+
+NOOP_STREAM.addStubs(FilterMapStream);
+
+function FUNCTOR$4(d) {
     return typeof d === 'function' ? d : function() { return d; };
 }
 
 function ReduceStream(name, f, seed) {
 
     this.name = name;
-    this.seed = FUNCTOR$5(seed);
+    this.seed = FUNCTOR$4(seed);
     this.v = this.seed() || 0;
     this.f = f;
     this.next = NOOP_STREAM;
@@ -1028,10 +1075,10 @@ ReduceStream.prototype.reset = function(){
 
 };
 
-ReduceStream.prototype.handle = function(msg, topic, source){
+ReduceStream.prototype.handle = function(msg, source, topic){
 
     const f = this.f;
-    this.v = f(msg, this.v);
+    this.next.handle(this.v = f(msg, this.v), source, topic);
 
 };
 
@@ -1110,7 +1157,7 @@ Spork.prototype.handle = function(msg, topic, source) {
 
     this.first.reset();
     this._split(msg, source, topic);
-    this.next.handle(this.last.v, source, topic);
+    this.last.handle(this.last.v, source, topic);
 
 };
 
@@ -1119,7 +1166,7 @@ Spork.prototype.withArray = function withArray(msg, source, topic){
 
     const len = msg.length;
 
-    for(let i = 0; i < len; i++){
+    for(let i = 0; i < len; ++i){
         this.first.handle(msg[i], source, topic);
     }
 
@@ -1187,6 +1234,11 @@ Spork.prototype.reduce = function reduce(f, seed) {
 
 Spork.prototype.filter = function filter(f) {
     this._extend(new FilterStream('', f));
+    return this;
+};
+
+Spork.prototype.filterMap = function filter(f, m) {
+    this._extend(new FilterMapStream('', f, m));
     return this;
 };
 
@@ -1586,117 +1638,6 @@ function parsePhrase(str) {
 
 Nyan.parse = parse;
 
-class Wire$1 {
-
-    constructor(name, source){
-
-        this.name = name;
-        this.source = source; // implements init, destroy, pull, pushes to wire.handle
-        this.stream = new PassStream(name);
-        this.dead = false;
-        source.init();
-
-    };
-
-    handle(msg, source, topic) {
-
-        const n = source || this.name;
-        this.stream.handle(msg, n, topic);
-
-    };
-
-    pull(){
-        this.source.pull();
-    };
-
-    destroy(){
-
-        if(!this.dead){
-            this.dead = true;
-            this.source.destroy();
-        }
-
-    };
-
-}
-
-
-
-Wire$1.fromMonitor = function(data, name){
-
-    const wire = new Wire$1(name);
-
-    const toWire = function(msg, source, topic){
-        wire.handle(msg, source, topic);
-    };
-
-    wire.cleanupMethod = function(){
-        data.unsubscribe(toWire);
-    };
-
-    data.monitor(toWire);
-
-    return wire;
-
-};
-
-
-
-Wire$1.fromSubscribe = function(data, topic, name, canPull){
-
-    const wire = new Wire$1(name || topic || data.name);
-
-    // const toWire = function(msg, source, topic){
-    //     wire.handle(msg, source, topic);
-    // };
-
-    wire.cleanupMethod = function(){
-        data.unsubscribe(wire, topic);
-    };
-
-    if(canPull){
-        wire.pull = function(){
-            const present = data.present(topic);
-            if(present) {
-                const msg = data.read(topic);
-                const source = wire.name;
-                wire.handle(msg, source, topic);
-            }
-        };
-    }
-
-   // data.subscribe(toWire, topic);
-    data.subscribe(wire, topic);
-
-    return wire;
-
-};
-
-
-
-Wire$1.fromEvent = function(target, eventName, useCapture){
-
-    useCapture = !!useCapture;
-
-    const wire = new Wire$1(eventName);
-
-    const on = target.addEventListener || target.addListener || target.on;
-    const off = target.removeEventListener || target.removeListener || target.off;
-
-    const toWire = function(msg){
-        wire.handle(msg, eventName);
-    };
-
-    wire.cleanupMethod = function(){
-        off.call(target, eventName, toWire, useCapture);
-    };
-
-    on.call(target, eventName, toWire, useCapture);
-
-    return wire;
-
-};
-
 function getSurveyFromDataWord(scope, word){
 
     const data = scope.find(word.name, !word.maybe);
@@ -1872,13 +1813,14 @@ function addDataSource(bus, scope, word, canPull) {
     const data = scope.find(word.name, !word.maybe);
     bus.addSubscribe(word.alias, data, word.topic);
 
-    // if(word.monitor){
-    //     return Wire.fromMonitor(data, word.alias, canPull);
-    // } else {
-    //     return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
-    // }
+}
+
+function addEventSource(bus, word, target) {
+
+    bus.addEvent(word.alias, target, word.topic, word.useCapture);
 
 }
+
 
 function isObject(v) {
     if (v === null)
@@ -1887,11 +1829,6 @@ function isObject(v) {
 }
 
 
-function getEventWire(word, target){
-
-    return Wire$1.fromEvent(target, word.topic, word.useCapture, word.alias);
-
-}
 
 function doExtracts(value, extracts) {
 
@@ -1983,7 +1920,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
             addDataSource(bus, scope, word);
         }
         else if(operation === 'EVENT') {
-            bus.wire(getEventWire(word, target));
+            addEventSource(bus, word, target);
         }
 
         if(word.extracts)
@@ -2209,7 +2146,7 @@ const NyanRunner = {
     createBus: createBus
 };
 
-const FUNCTOR$1 = function(d) {
+const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
@@ -2291,11 +2228,11 @@ const latchStreamBuilder = function(f) {
     }
 };
 
-const scanStreamBuilder = function(f, seed, context) {
+const scanStreamBuilder = function(f, seed) {
     const hasSeed = arguments.length === 2;
     return function(name) {
         return hasSeed ?
-            new ScanWithSeedStream(name, f, seed, context) : new ScanStream(name, f, context);
+            new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
     }
 };
 
@@ -2311,6 +2248,11 @@ const writeStreamBuilder = function(dataTopic) {
     }
 };
 
+const filterMapStreamBuilder = function(f, m, context) {
+    return function(name) {
+        return new FilterMapStream(name, f, m, context);
+    }
+};
 
 function getHasKeys(keys){
 
@@ -2443,28 +2385,6 @@ class Bus {
 
     };
 
-    _createDisconnectedFrame(streamBuilder) {
-
-        const f1 = this._currentFrame;
-        const f2 = this._currentFrame = new Frame(this);
-        this._frames.push(f2);
-
-        const source_streams = f1.streams;
-        const target_streams = f2.streams;
-
-        const len = source_streams.length;
-        for(let i = 0; i < len; i++){
-            const s1 = source_streams[i];
-            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
-            target_streams.push(s2);
-        }
-
-        return f2;
-
-    };
-
-
-
 
     _createForkingFrame(forkedTargetFrame) {
 
@@ -2517,6 +2437,12 @@ class Bus {
         if(this._locked)
             throw new Error('Cannot add sources after other operations.');
     };
+
+    _ASSERT_NOT_SPORKING(){
+        if(this._spork)
+            throw new Error('Cannot do this while sporking.');
+    };
+
 
     addSource(source){
 
@@ -2574,6 +2500,22 @@ class Bus {
 
     };
 
+    fromMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+            // add sources from buses
+            // bus._createTerminalFrame
+        }
+
+        return this;
+
+    };
+
     addMany(buses) {
 
         const nf = this._createNormalFrame(); // extend this bus
@@ -2588,6 +2530,9 @@ class Bus {
     };
 
     spork() {
+
+        this._ASSERT_NOT_HOLDING();
+        this._ASSERT_NOT_SPORKING();
 
         const spork = new Spork(this);
 
@@ -2647,44 +2592,7 @@ class Bus {
 
     };
 
-    event(target, eventName, useCapture) {
 
-        const wire = Wire.fromEvent(target, eventName, useCapture);
-        return this.wire(wire);
-
-    };
-
-    subscribe(data, topic, name, canPull){
-
-        const wire = Wire.fromSubscribe(data, topic, name, canPull);
-        return this.wire(wire);
-
-    };
-
-    interval(delay, name){
-
-        const wire = Wire.fromInterval(delay, name);
-        return this.wire(wire);
-
-    }
-
-    wire(wire, targetFrame) {
-
-        wire.target = targetFrame || this._frames[0];
-        this._wires.push(wire);
-        return this;
-
-    }
-
-    monitor(data, name){
-
-        const wire = Wire.fromMonitor(data, name);
-        wire.target = this._frames[0];
-        this._wires.push(wire);
-
-        return this;
-
-    };
 
 
     scan(f, seed){
@@ -2703,12 +2611,7 @@ class Bus {
 
     };
 
-    willReset(){
 
-        F.ASSERT_IS_HOLDING(this);
-        return this.clear(F.getAlwaysTrue);
-
-    }
 
     hasKeys(keys) {
 
@@ -2758,7 +2661,7 @@ class Bus {
 
     msg(fAny) {
 
-        const f = FUNCTOR$1(fAny);
+        const f = FUNCTOR(fAny);
 
         this._createNormalFrame(msgStreamBuilder(f));
         return this;
@@ -2798,6 +2701,17 @@ class Bus {
 
     };
 
+    filterMap(f, m) {
+
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(filterMapStreamBuilder(f, m));
+        return this;
+
+
+    };
+
     split() {
 
         this._createNormalFrame(splitStreamBuilder());
@@ -2816,6 +2730,15 @@ class Bus {
     addSubscribe(name, data, topic){
 
         const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
+        return this;
+
+    };
+
+    addEvent(name, target, eventName, useCapture){
+
+        const source = new EventSource(name, target, eventName, useCapture);
         this.addSource(source);
 
         return this;
@@ -3257,39 +3180,7 @@ class Scope{
 
 }
 
-function EventSource(name, target, eventName, useCapture){
-
-    function toStream(msg){
-        stream.handle(msg, eventName, null);
-    }
-
-    this.name = name;
-    this.target = target;
-    this.eventName = eventName;
-    this.useCapture = !!useCapture;
-    this.on = target.addEventListener || target.addListener || target.on;
-    this.off = target.removeEventListener || target.removeListener || target.off;
-    this.stream = new PassStream(name);
-    this.callback = toStream;
-    const stream = this.stream;
-
-    this.on.call(target, eventName, toStream, useCapture);
-
-}
-
-
-
-EventSource.prototype.destroy = function destroy(){
-
-    this.off.call(this.target, this.eventName, this.callback, this.useCapture);
-    this.dead = true;
-
-};
-
-
-NOOP_SOURCE.addStubs(EventSource);
-
-const FUNCTOR$6 = function(d) {
+const FUNCTOR$5 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
@@ -3308,7 +3199,7 @@ function IntervalSource(name, delay, msg) {
     this.dead = false;
     this.stream = new PassStream(name);
     this.intervalId = setInterval(callback$1, delay, this);
-    this.msg = FUNCTOR$6(msg);
+    this.msg = FUNCTOR$5(msg);
 
 }
 
@@ -3319,6 +3210,23 @@ IntervalSource.prototype.destroy = function destroy(){
 
 
 NOOP_SOURCE.addStubs(IntervalSource);
+
+function ValueSource(name, value){
+
+    this.name = name;
+    this.value = value;
+    this.stream = new PassStream(name);
+
+}
+
+ValueSource.prototype.pull = function pull(){
+
+    this.stream.handle(this.value, this.name, '');
+
+};
+
+
+NOOP_SOURCE.addStubs(ValueSource);
 
 const Catbus$1 = {};
 
@@ -3349,6 +3257,29 @@ Catbus$1.fromEvent = function(target, eventName, useCapture){
     return bus;
 
 };
+
+Catbus$1.fromValues = function(values){
+
+    const bus = new Bus();
+    const len = values.length;
+    for(let i = 0; i < len; ++i) {
+        const source = new ValueSource('', value);
+        bus.addSource(source);
+    }
+    return bus;
+
+};
+
+Catbus$1.fromValue = function(value, name){
+
+    const bus = new Bus();
+    const source = new ValueSource(name || '', value);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
 
 Catbus$1.fromSubscribe = function(name, data, topic){
 

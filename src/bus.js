@@ -1,5 +1,6 @@
 
 import SubscribeSource from './sources/subscribeSource.js';
+import EventSource from './sources/eventSource.js';
 
 import PassStream from './streams/passStream.js';
 import ForkStream from './streams/forkStream.js';
@@ -19,6 +20,7 @@ import ScanStream from './streams/scanStream.js';
 import ScanWithSeedStream from './streams/scanWithSeedStream.js';
 import SplitStream from './streams/splitStream.js';
 import WriteStream from './streams/writeStream.js';
+import FilterMapStream from './streams/filterMapStream.js';
 
 import Spork from './spork.js';
 import Frame from './frame.js';
@@ -28,10 +30,6 @@ import NyanRunner from './nyanRunner.js';
 
 const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
-};
-
-const TO_TOPIC = function(msg, source, topic){
-    return topic;
 };
 
 const batchStreamBuilder = function() {
@@ -112,11 +110,11 @@ const latchStreamBuilder = function(f) {
     }
 };
 
-const scanStreamBuilder = function(f, seed, context) {
+const scanStreamBuilder = function(f, seed) {
     const hasSeed = arguments.length === 2;
     return function(name) {
         return hasSeed ?
-            new ScanWithSeedStream(name, f, seed, context) : new ScanStream(name, f, context);
+            new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
     }
 };
 
@@ -132,6 +130,11 @@ const writeStreamBuilder = function(dataTopic) {
     }
 };
 
+const filterMapStreamBuilder = function(f, m, context) {
+    return function(name) {
+        return new FilterMapStream(name, f, m, context);
+    }
+};
 
 function getHasKeys(keys){
 
@@ -264,28 +267,6 @@ class Bus {
 
     };
 
-    _createDisconnectedFrame(streamBuilder) {
-
-        const f1 = this._currentFrame;
-        const f2 = this._currentFrame = new Frame(this);
-        this._frames.push(f2);
-
-        const source_streams = f1.streams;
-        const target_streams = f2.streams;
-
-        const len = source_streams.length;
-        for(let i = 0; i < len; i++){
-            const s1 = source_streams[i];
-            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
-            target_streams.push(s2);
-        }
-
-        return f2;
-
-    };
-
-
-
 
     _createForkingFrame(forkedTargetFrame) {
 
@@ -338,6 +319,12 @@ class Bus {
         if(this._locked)
             throw new Error('Cannot add sources after other operations.');
     };
+
+    _ASSERT_NOT_SPORKING(){
+        if(this._spork)
+            throw new Error('Cannot do this while sporking.');
+    };
+
 
     addSource(source){
 
@@ -395,6 +382,22 @@ class Bus {
 
     };
 
+    fromMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+            // add sources from buses
+            // bus._createTerminalFrame
+        }
+
+        return this;
+
+    };
+
     addMany(buses) {
 
         const nf = this._createNormalFrame(); // extend this bus
@@ -409,6 +412,9 @@ class Bus {
     };
 
     spork() {
+
+        this._ASSERT_NOT_HOLDING();
+        this._ASSERT_NOT_SPORKING();
 
         const spork = new Spork(this);
 
@@ -468,44 +474,7 @@ class Bus {
 
     };
 
-    event(target, eventName, useCapture) {
 
-        const wire = Wire.fromEvent(target, eventName, useCapture);
-        return this.wire(wire);
-
-    };
-
-    subscribe(data, topic, name, canPull){
-
-        const wire = Wire.fromSubscribe(data, topic, name, canPull);
-        return this.wire(wire);
-
-    };
-
-    interval(delay, name){
-
-        const wire = Wire.fromInterval(delay, name);
-        return this.wire(wire);
-
-    }
-
-    wire(wire, targetFrame) {
-
-        wire.target = targetFrame || this._frames[0];
-        this._wires.push(wire);
-        return this;
-
-    }
-
-    monitor(data, name){
-
-        const wire = Wire.fromMonitor(data, name);
-        wire.target = this._frames[0];
-        this._wires.push(wire);
-
-        return this;
-
-    };
 
 
     scan(f, seed){
@@ -524,12 +493,7 @@ class Bus {
 
     };
 
-    willReset(){
 
-        F.ASSERT_IS_HOLDING(this);
-        return this.clear(F.getAlwaysTrue);
-
-    }
 
     hasKeys(keys) {
 
@@ -619,6 +583,17 @@ class Bus {
 
     };
 
+    filterMap(f, m) {
+
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(filterMapStreamBuilder(f, m));
+        return this;
+
+
+    };
+
     split() {
 
         this._createNormalFrame(splitStreamBuilder());
@@ -637,6 +612,15 @@ class Bus {
     addSubscribe(name, data, topic){
 
         const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
+        return this;
+
+    };
+
+    addEvent(name, target, eventName, useCapture){
+
+        const source = new EventSource(name, target, eventName, useCapture);
         this.addSource(source);
 
         return this;

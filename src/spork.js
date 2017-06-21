@@ -6,6 +6,7 @@ import FilterStream from './streams/filterStream.js';
 import SkipStream from './streams/skipStream.js';
 import SkipNStream from './streams/skipNStream.js';
 import TakeNStream from './streams/takeNStream.js';
+import FilterMapStream from './streams/filterMapStream.js';
 
 
 function Spork(bus) {
@@ -22,7 +23,7 @@ Spork.prototype.handle = function(msg, topic, source) {
 
     this.first.reset();
     this._split(msg, source, topic);
-    this.next.handle(this.last.v, source, topic);
+    this.last.handle(this.last.v, source, topic);
 
 };
 
@@ -31,7 +32,7 @@ Spork.prototype.withArray = function withArray(msg, source, topic){
 
     const len = msg.length;
 
-    for(let i = 0; i < len; i++){
+    for(let i = 0; i < len; ++i){
         this.first.handle(msg[i], source, topic);
     }
 
@@ -99,6 +100,11 @@ Spork.prototype.reduce = function reduce(f, seed) {
 
 Spork.prototype.filter = function filter(f) {
     this._extend(new FilterStream('', f));
+    return this;
+};
+
+Spork.prototype.filterMap = function filter(f, m) {
+    this._extend(new FilterMapStream('', f, m));
     return this;
 };
 

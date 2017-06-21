@@ -8,9 +8,9 @@ export default {
     dest: './dist/catbus.min.js', // equivalent to --output
     plugins: [
         resolve(),
-        // babel({
-        //     exclude: 'node_modules/**' // only transpile our source code
-        // }),
+        babel({
+            exclude: 'node_modules/**' // only transpile our source code
+        }),
         uglify()
     ],
     moduleName: 'Catbus'

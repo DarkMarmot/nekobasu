@@ -24,10 +24,10 @@ ReduceStream.prototype.reset = function(){
 
 };
 
-ReduceStream.prototype.handle = function(msg, topic, source){
+ReduceStream.prototype.handle = function(msg, source, topic){
 
     const f = this.f;
-    this.v = f(msg, this.v);
+    this.next.handle(this.v = f(msg, this.v), source, topic);
 
 };
 

@@ -5,12 +5,11 @@ const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
-function ScanWithSeedStream(name, f, seed, context) {
+function ScanWithSeedStream(name, f, seed) {
 
     this.name = name;
     this.f = f;
     this.seed = FUNCTOR(seed);
-    this.context = context || null;
     this.next = NOOP_STREAM;
     this.value = this.seed();
 
@@ -20,8 +19,8 @@ function ScanWithSeedStream(name, f, seed, context) {
 
 ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
-    this.value = this.f.call(this.context, this.value, msg, source, topic);
-    this.next.handle(this.value, source, topic);
+    const f = this.f;
+    this.next.handle(this.value = f(this.value, msg, source, topic), source, topic);
 
 };
 

@@ -1,7 +1,6 @@
 
-import Packet from './packet.js';
+
 import { DATA_TYPES } from './dataTypes';
-import F from './flib.js';
 
 function callMany(list, msg, source, topic){
 
@@ -114,7 +113,7 @@ class SubscriberList {
         const len = this._subscribers.length;
         if(len === 0){
             this._callback = callNoOne;
-        } else if (len == 1){
+        } else if (len === 1){
             this._callback = callOne;
         } else {
             this._callback = callMany;

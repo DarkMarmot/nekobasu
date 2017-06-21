@@ -15,7 +15,8 @@ function ScanStream(name, f) {
 
 ScanStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.value = this.hasValue ? this.f(this.value, msg, source, topic) : msg;
+    const f = this.f;
+    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
     this.next.handle(this.value, source, topic);
 
 };

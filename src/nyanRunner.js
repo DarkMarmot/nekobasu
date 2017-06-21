@@ -1,5 +1,3 @@
-import Wire from './wire.js';
-import Nyan from './nyan.js';
 import Bus from './bus.js';
 
 
@@ -35,19 +33,6 @@ function getDoSkipNamedDupes(names){
         return diff;
 
     };
-}
-
-
-function getDoWrite(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-    const dataTopic = data.dataTopic(word.topic);
-
-    return function doWrite(msg) {
-        dataTopic.write(msg);
-        //data.write(msg, word.topic);
-    };
-
 }
 
 
@@ -191,13 +176,14 @@ function addDataSource(bus, scope, word, canPull) {
     const data = scope.find(word.name, !word.maybe);
     bus.addSubscribe(word.alias, data, word.topic);
 
-    // if(word.monitor){
-    //     return Wire.fromMonitor(data, word.alias, canPull);
-    // } else {
-    //     return Wire.fromSubscribe(data, word.topic, word.alias, canPull);
-    // }
+}
+
+function addEventSource(bus, word, target) {
+
+    bus.addEvent(word.alias, target, word.topic, word.useCapture);
 
 }
+
 
 function isObject(v) {
     if (v === null)
@@ -206,11 +192,6 @@ function isObject(v) {
 }
 
 
-function getEventWire(word, target){
-
-    return Wire.fromEvent(target, word.topic, word.useCapture, word.alias);
-
-}
 
 function doExtracts(value, extracts) {
 
@@ -302,7 +283,7 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
             addDataSource(bus, scope, word);
         }
         else if(operation === 'EVENT') {
-            bus.wire(getEventWire(word, target));
+            addEventSource(bus, word, target);
         }
 
         if(word.extracts)
