@@ -11,12 +11,24 @@ function ValueSource(name, value){
 
 }
 
+function tryEmit(source){
+    try{
+        source.emit();
+    } catch(e){
+    }
+}
+
 ValueSource.prototype.pull = function pull(){
+
+    tryEmit(this);
+
+};
+
+ValueSource.prototype.emit = function pull(){
 
     this.stream.handle(this.value, this.name, '');
 
 };
-
 
 NOOP_SOURCE.addStubs(ValueSource);
 

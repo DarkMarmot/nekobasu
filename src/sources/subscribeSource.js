@@ -14,9 +14,16 @@ function SubscribeSource(name, data, topic, canPull){
 
 }
 
+function tryEmit(source){
+    try{
+        source.emit();
+    } catch(e){
+    }
+}
+
 SubscribeSource.prototype.pull = function pull(){
 
-    !this.dead && this.canPull && this.emit();
+    !this.dead && this.canPull && tryEmit(this);
 
 };
 

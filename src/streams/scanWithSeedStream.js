@@ -20,14 +20,15 @@ function ScanWithSeedStream(name, f, seed) {
 ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
     const f = this.f;
-    this.next.handle(this.value = f(this.value, msg, source, topic), source, topic);
+    this.value = f(this.value, msg, source, topic);
+    this.next.handle(this.value, source, topic);
 
 };
 
 ScanWithSeedStream.prototype.reset = function reset(msg) {
 
-    const v = this.value = this.seed(msg);
-    this.next.reset(v);
+    this.value = this.seed(msg);
+    this.next.reset(this.value);
 
 };
 

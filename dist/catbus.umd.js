@@ -456,9 +456,16 @@ function SubscribeSource(name, data, topic, canPull){
 
 }
 
+function tryEmit(source){
+    try{
+        source.emit();
+    } catch(e){
+    }
+}
+
 SubscribeSource.prototype.pull = function pull(){
 
-    !this.dead && this.canPull && this.emit();
+    !this.dead && this.canPull && tryEmit(this);
 
 };
 
@@ -948,14 +955,15 @@ function ScanWithSeedStream(name, f, seed) {
 ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
 
     const f = this.f;
-    this.next.handle(this.value = f(this.value, msg, source, topic), source, topic);
+    this.value = f(this.value, msg, source, topic);
+    this.next.handle(this.value, source, topic);
 
 };
 
 ScanWithSeedStream.prototype.reset = function reset(msg) {
 
-    const v = this.value = this.seed(msg);
-    this.next.reset(v);
+    this.value = this.seed(msg);
+    this.next.reset(this.value);
 
 };
 
@@ -3219,14 +3227,49 @@ function ValueSource(name, value){
 
 }
 
+function tryEmit$1(source){
+    try{
+        source.emit();
+    } catch(e){
+    }
+}
+
 ValueSource.prototype.pull = function pull(){
+
+    tryEmit$1(this);
+
+};
+
+ValueSource.prototype.emit = function pull(){
 
     this.stream.handle(this.value, this.name, '');
 
 };
 
-
 NOOP_SOURCE.addStubs(ValueSource);
+
+function ArraySource(name, value){
+
+    this.name = name;
+    this.value = value;
+    this.stream = new PassStream(name);
+
+}
+
+ArraySource.prototype.pull = function pull(){
+
+    push(this.stream, this.value, this.value.length, this.name);
+
+};
+
+function push(stream, arr, len, name){
+    for(let i = 0; i < len; ++i) {
+        stream.handle(arr[i], name, '');
+    }
+}
+
+
+NOOP_SOURCE.addStubs(ArraySource);
 
 const Catbus$1 = {};
 
@@ -3267,6 +3310,12 @@ Catbus$1.fromValues = function(values){
         bus.addSource(source);
     }
     return bus;
+
+};
+
+Catbus$1.fromArray = function(arr, name){
+
+    return Catbus$1.fromValue(arr, name).split();
 
 };
 

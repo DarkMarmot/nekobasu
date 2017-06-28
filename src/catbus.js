@@ -4,6 +4,7 @@ import EventSource from './sources/eventSource.js';
 import IntervalSource from './sources/intervalSource.js';
 import SubscribeSource from './sources/subscribeSource.js';
 import ValueSource from './sources/valueSource.js';
+import ArraySource from './sources/arraySource.js';
 
 import Bus from './bus.js';
 
@@ -47,6 +48,12 @@ Catbus.fromValues = function(values){
         bus.addSource(source);
     }
     return bus;
+
+};
+
+Catbus.fromArray = function(arr, name){
+
+    return Catbus.fromValue(arr, name).split();
 
 };
 
