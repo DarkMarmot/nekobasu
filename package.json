@@ -1,5 +1,5 @@
 {
-  "name": "ct",
+  "name": "nekobasu",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -21,7 +21,5 @@
     "rollup-watch": "^3.2.2"
   },
   "dependencies": {
-    "sinon": "^2.1.0",
-    "the-answer": "^1.0.0"
   }
 }
