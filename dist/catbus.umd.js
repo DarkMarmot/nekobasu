@@ -2821,7 +2821,6 @@ class Scope{
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        console.log(nyan);
         return NyanRunner.createBus(nyan, this, context, node);
 
     };
