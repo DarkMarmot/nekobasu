@@ -2,7 +2,6 @@
 import SubscriberList from './subscriberList.js';
 import {isValid, DATA_TYPES} from './dataTypes.js';
 
-const NO_TOPIC = '___NO_TOPIC___';
 
 function DataTopic(data, topic, silently){
     this.data = data;

@@ -1,6 +1,6 @@
 {
   "name": "catbus",
-  "version": "4.0.0",
+  "version": "5.1.0",
   "description": "catbus rewrite",
   "main": "index.js",
   "scripts": {
