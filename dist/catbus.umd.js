@@ -1061,6 +1061,39 @@ FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
 
 NOOP_STREAM.addStubs(FilterMapStream);
 
+function PriorStream(name) {
+
+    this.name = name;
+    this.values = [];
+    this.next = NOOP_STREAM;
+
+}
+
+PriorStream.prototype.handle = function handle(msg, source, topic) {
+
+    const arr = this.values;
+
+    arr.push(msg);
+
+    if(arr.length === 1)
+        return;
+
+    if(arr.length > 2)
+        arr.shift();
+
+    this.next.handle(arr[0], source, topic);
+
+};
+
+PriorStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(PriorStream);
+
 function FUNCTOR$4(d) {
     return typeof d === 'function' ? d : function() { return d; };
 }
@@ -2200,6 +2233,12 @@ const lastNStreamBuilder = function(count) {
     }
 };
 
+const priorStreamBuilder = function() {
+    return function(name) {
+        return new PriorStream(name);
+    }
+};
+
 const firstNStreamBuilder = function(count) {
     return function(name) {
         return new FirstNStream(name, count);
@@ -2658,6 +2697,14 @@ class Bus {
     last(count) {
         this._createNormalFrame(lastNStreamBuilder(count));
         return this;
+    };
+
+
+    prior() {
+
+        this._createNormalFrame(priorStreamBuilder());
+        return this;
+
     };
 
     run(f) {

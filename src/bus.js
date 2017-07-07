@@ -21,6 +21,7 @@ import ScanWithSeedStream from './streams/scanWithSeedStream.js';
 import SplitStream from './streams/splitStream.js';
 import WriteStream from './streams/writeStream.js';
 import FilterMapStream from './streams/filterMapStream.js';
+import PriorStream from './streams/priorStream.js';
 
 import Spork from './spork.js';
 import Frame from './frame.js';
@@ -71,6 +72,12 @@ const skipStreamBuilder = function(f) {
 const lastNStreamBuilder = function(count) {
     return function(name) {
         return new LastNStream(name, count);
+    }
+};
+
+const priorStreamBuilder = function() {
+    return function(name) {
+        return new PriorStream(name);
     }
 };
 
@@ -532,6 +539,14 @@ class Bus {
     last(count) {
         this._createNormalFrame(lastNStreamBuilder(count));
         return this;
+    };
+
+
+    prior() {
+
+        this._createNormalFrame(priorStreamBuilder());
+        return this;
+
     };
 
     run(f) {
