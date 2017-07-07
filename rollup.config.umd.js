@@ -3,7 +3,7 @@ import babel from 'rollup-plugin-babel';
 import uglify from 'rollup-plugin-uglify';
 
 export default {
-    entry: 'src/main.js',
+    entry: 'src/catbus.js',
     format: 'umd',
     dest: './dist/catbus.umd.js', // equivalent to --output
     plugins: [
