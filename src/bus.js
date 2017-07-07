@@ -1,23 +1,183 @@
 
-import Frame from './frame.js';
-import F from './flib.js';
-import Stream from './stream.js';
+import SubscribeSource from './sources/subscribeSource.js';
+import EventSource from './sources/eventSource.js';
 
+import PassStream from './streams/passStream.js';
+import ForkStream from './streams/forkStream.js';
+import BatchStream from './streams/batchStream.js';
+import ResetStream from './streams/resetStream.js';
+import TapStream from './streams/tapStream.js';
+import MsgStream from './streams/msgStream.js';
+import FilterStream from './streams/filterStream.js';
+import SkipStream from './streams/skipStream.js';
+import LastNStream from './streams/lastNStream.js';
+import FirstNStream from './streams/firstNStream.js';
+import AllStream from './streams/allStream.js';
+import DelayStream from './streams/delayStream.js';
+import GroupStream from './streams/groupStream.js';
+import LatchStream from './streams/latchStream.js';
+import ScanStream from './streams/scanStream.js';
+import ScanWithSeedStream from './streams/scanWithSeedStream.js';
+import SplitStream from './streams/splitStream.js';
+import WriteStream from './streams/writeStream.js';
+import FilterMapStream from './streams/filterMapStream.js';
+
+import Spork from './spork.js';
+import Frame from './frame.js';
+
+import Nyan from './nyan.js';
+import NyanRunner from './nyanRunner.js';
+
+const FUNCTOR = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+const batchStreamBuilder = function() {
+    return function(name) {
+        return new BatchStream(name);
+    }
+};
+
+const resetStreamBuilder = function(head) {
+    return function(name) {
+        return new ResetStream(name, head);
+    }
+};
+
+const tapStreamBuilder = function(f) {
+    return function(name) {
+        return new TapStream(name, f);
+    }
+};
+
+const msgStreamBuilder = function(f) {
+    return function(name) {
+        return new MsgStream(name, f);
+    }
+};
+
+const filterStreamBuilder = function(f) {
+    return function(name) {
+        return new FilterStream(name, f);
+    }
+};
+
+const skipStreamBuilder = function(f) {
+    return function(name) {
+        return new SkipStream(name, f);
+    }
+};
+
+const lastNStreamBuilder = function(count) {
+    return function(name) {
+        return new LastNStream(name, count);
+    }
+};
+
+const firstNStreamBuilder = function(count) {
+    return function(name) {
+        return new FirstNStream(name, count);
+    }
+};
+
+const allStreamBuilder = function() {
+    return function(name) {
+        return new AllStream(name);
+    }
+};
+
+const delayStreamBuilder = function(delay) {
+    return function(name) {
+        return new DelayStream(name, delay);
+    }
+};
+
+const groupStreamBuilder = function(by) {
+    return function(name) {
+        return new GroupStream(name, by);
+    }
+};
+
+const nameStreamBuilder = function(name) {
+    return function() {
+        return new PassStream(name);
+    }
+};
+
+const latchStreamBuilder = function(f) {
+    return function(name) {
+        return new LatchStream(name, f);
+    }
+};
+
+const scanStreamBuilder = function(f, seed) {
+    const hasSeed = arguments.length === 2;
+    return function(name) {
+        return hasSeed ?
+            new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
+    }
+};
+
+const splitStreamBuilder = function() {
+    return function(name) {
+        return new SplitStream(name);
+    }
+};
+
+const writeStreamBuilder = function(dataTopic) {
+    return function(name) {
+        return new WriteStream(name, dataTopic);
+    }
+};
+
+const filterMapStreamBuilder = function(f, m, context) {
+    return function(name) {
+        return new FilterMapStream(name, f, m, context);
+    }
+};
+
+function getHasKeys(keys){
+
+    const len = keys.length;
+    return function _hasKeys(msg, source, topic){
+
+        if(typeof msg !== 'object')
+            return false;
+
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            if(!msg.hasOwnProperty(k))
+                return false;
+        }
+
+        return true;
+    }
+
+}
 
 class Bus {
 
-    constructor(scope, streams) {
+    constructor(scope) {
 
         this._frames = [];
+        this._sources = [];
         this._dead = false;
-        this._scope = scope; // data scope
+        this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
+
+        // temporary api states (used for interactively building the bus)
+
+
+        this._spork = null; // beginning frame of split sub process
+        this._holding = false; // multiple commands until duration function
+        this._head = null; // point to reset accumulators
+        this._locked = false; // prevents additional sources from being added
 
         if(scope)
             scope._busList.push(this);
 
-        const f = new Frame(this, streams || []);
+        const f = new Frame(this);
         this._frames.push(f);
         this._currentFrame = f;
 
@@ -58,47 +218,141 @@ class Bus {
     };
 
     get holding() {
-        return this._currentFrame._holding;
+        return this._holding;
     };
 
     get scope() {
         return this._scope;
     }
 
-    // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
-    // todo private?
+    _createMergingFrame() {
 
-    addFrame(streams) {
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
 
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this, streams);
-        this._frames.push(nextFrame);
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const merged_stream = new PassStream();
+        target_streams.push(merged_stream);
 
-        _wireFrames(lastFrame, nextFrame);
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            s1.next = merged_stream;
+        }
 
-        return nextFrame;
+        return f2;
+
+    };
+
+    _createNormalFrame(streamBuilder) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            s1.next = s2;
+            target_streams.push(s2);
+        }
+
+        return f2;
+
     };
 
 
-    // create stream
-    spawn(){
+    _createForkingFrame(forkedTargetFrame) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const forked_streams = forkedTargetFrame.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+
+            const s1 = source_streams[i];
+            const s3 = new PassStream(s1.name);
+            const s2 = new ForkStream(s1.name, s3);
+
+            s1.next = s2;
+
+            target_streams.push(s2);
+            forked_streams.push(s3);
+        }
+
+        return f2;
+
+    };
+
+    _ASSERT_IS_FUNCTION(f) {
+        if(typeof f !== 'function')
+            throw new Error('Argument must be a function.');
+    };
+
+    _ASSERT_NOT_HOLDING() {
+        if (this.holding)
+            throw new Error('Method cannot be invoked while holding messages in the frame.');
+    };
+
+    _ASSERT_IS_HOLDING(){
+        if(!this.holding)
+            throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    };
+
+    _ASSERT_HAS_HEAD(){
+        if(!this._head)
+            throw new Error('Cannot reset without an upstream accumulator.');
+    };
+
+    _ASSERT_NOT_LOCKED(){
+        if(this._locked)
+            throw new Error('Cannot add sources after other operations.');
+    };
+
+    _ASSERT_NOT_SPORKING(){
+        if(this._spork)
+            throw new Error('Cannot do this while sporking.');
+    };
+
+
+    addSource(source){
+
+        this._ASSERT_NOT_LOCKED();
+
+        this._sources.push(source);
+        this._currentFrame.streams.push(source.stream);
+        return this;
 
     }
 
-    // convert each stream into a bus, wiring prior streams, dump in array
+    process(nyan, context, target){
 
-    split(){
+        if(typeof nyan === 'string')
+            nyan = Nyan.parse(nyan, true);
 
-        F.ASSERT_NOT_HOLDING(this);
+        NyanRunner.applyNyan(nyan, this, context, target);
+        return this;
 
-    };
+    }
+
 
     fork() {
 
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_NOT_HOLDING();
         const fork = new Bus(this.scope);
         fork.parent = this;
-        _wireFrames(this._currentFrame, fork._currentFrame, true);
+        this._createForkingFrame(fork._currentFrame);
 
         return fork;
     };
@@ -122,256 +376,253 @@ class Bus {
 
     add(bus) {
 
-        const frame = this.addFrame(); // wire from current bus
-        _wireFrames(bus._currentFrame, frame); // wire from outside bus
+        const nf = this._createNormalFrame(); // extend this bus
+        bus._createForkingFrame(nf); // outside bus then forks into this bus
         return this;
 
     };
 
-    defer() {
-        return this.timer(F.getDeferTimer);
+    fromMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+            // add sources from buses
+            // bus._createTerminalFrame
+        }
+
+        return this;
+
     };
+
+    addMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+        }
+        return this;
+
+    };
+
+    spork() {
+
+        this._ASSERT_NOT_HOLDING();
+        this._ASSERT_NOT_SPORKING();
+
+        const spork = new Spork(this);
+
+        function sporkBuilder(){
+            return spork;
+        }
+
+        this._createNormalFrame(sporkBuilder);
+        return this._spork = spork;
+
+    };
+
+    // defer() {
+    //     return this.timer(F.getDeferTimer);
+    // };
+
+
 
     batch() {
-        return this.timer(F.getBatchTimer);
+        this._createNormalFrame(batchStreamBuilder());
+        this._holding = false;
+        return this;
     };
 
-    sync() {
-        return this.timer(F.getSyncTimer);
-    };
 
-    throttle(fNum) {
-        return this.timer(F.getThrottleTimer, fNum);
-    };
+    // throttle(fNum) {
+    //     return this.timer(F.getThrottleTimer, fNum);
+    // };
 
     hold() {
 
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hold();
+        this._ASSERT_NOT_HOLDING();
+        this._holding = true;
+        this._head = this._createNormalFrame();
         return this;
 
     };
 
-    pull() {
+    reset() {
 
-        const frame1 = this._frames[0];
-
-        if(frame1._streams.length > 0){
-            frame1.pull();
-            return this;
-        }
-
-        if(this._frames.length !== 1){
-            const frame2 = this._frames[1];
-            frame2.pull();
-        }
-
+        this._ASSERT_HAS_HEAD();
+        this._createNormalFrame(resetStreamBuilder(this._head));
         return this;
-
-    };
-
-    event(name, target, eventName, useCapture) {
-
-        eventName = eventName || name;
-        F.ASSERT_NOT_HOLDING(this);
-        const stream = Stream.fromEvent(target, eventName, useCapture);
-        stream.name = name;
-        this.addFrame([stream]);
-        return this;
-
-    };
-
-    eventList(list) {
-
-        F.ASSERT_NOT_HOLDING(this);
-
-        const len = list.length;
-        const streams = [];
-
-        for(let i = 0; i < len; i++){
-            const e = list[i];
-            const eventName = e.eventName || e.name;
-            const name = e.name || e.eventName;
-            const s = Stream.fromEvent(e.target, eventName, e.useCapture);
-            s.name = name;
-            streams.push(s);
-        }
-
-        this.addFrame(streams);
-        return this;
-
-    };
-
-    scan(func, seed){
-        return this.reduce(F.getScan, func, seed);
-    };
-
-    delay(num) {
-
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().delay(num);
-        return this;
-
-    };
-
-    willReset(){
-
-        F.ASSERT_IS_HOLDING(this);
-        return this.clear(F.getAlwaysTrue);
 
     }
 
-    whenKeys(keys) {
-        return this.when(F.getWhenKeys, keys);
+    pull() {
+
+        const len = this._sources.length;
+
+        for(let i = 0; i < len; i++) {
+            const s = this._sources[i];
+            s.pull();
+        }
+
+        return this;
+
+    };
+
+
+
+
+    scan(f, seed){
+
+        this._createNormalFrame(scanStreamBuilder(f, seed));
+        return this;
+
+    };
+
+
+
+    delay(fNum) {
+
+        this._createNormalFrame(delayStreamBuilder(fNum));
+        return this;
+
+    };
+
+
+
+    hasKeys(keys) {
+
+        const f = getHasKeys(keys);
+        this._createNormalFrame(latchStreamBuilder(f));
+        return this;
+
     };
 
     group(by) {
 
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hold().reduce(F.getGroup, by);
+        this._createNormalFrame(groupStreamBuilder(by));
         return this;
-    };
 
-    groupByTopic() {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hold().reduce(F.getGroup, F.TO_TOPIC);
-        return this;
     };
 
     all() {
-        return this.reduce(F.getKeepAll);
-    };
-
-    first(n) {
-        return this.reduce(F.getKeepFirst, n);
-    };
-
-    last(n) {
-        return this.reduce(F.getKeepLast, n);
-    };
-
-    clear(factory, ...args) {
-        return this._currentFrame.clear(factory, ...args);
-    };
-
-    reduce(factory, ...args) {
-
-        this.holding ?
-            this._currentFrame.reduce(factory, ...args) :
-            this.addFrame().hold().reduce(factory, ...args).timer(F.getSyncTimer);
+        this._createNormalFrame(allStreamBuilder());
         return this;
-
     };
 
-    timer(factory, ...args) {
-
-        this.holding ?
-            this._currentFrame.timer(factory, ...args) :
-            this.addFrame().hold().reduce(F.getKeepLast).timer(factory, ...args);
+    first(count) {
+        this._createNormalFrame(firstNStreamBuilder(count));
         return this;
-
     };
 
-    until(factory, ...args) {
-
-        this.holding ?
-            this._currentFrame.until(factory, ...args) :
-            this.addFrame().hold().reduce(F.getKeepLast).until(factory, ...args).timer(F.getSyncTimer);
+    last(count) {
+        this._createNormalFrame(lastNStreamBuilder(count));
         return this;
-
     };
 
-    when(factory, ...args) {
+    run(f) {
 
-        this.holding ?
-            this._currentFrame.when(factory, ...args) :
-            this.addFrame().hold().reduce(F.getKeepLast).when(factory, ...args).timer(F.getSyncTimer);
-        return this;
+        this._ASSERT_IS_FUNCTION(f);
 
-    };
-
-    run(func) {
-
-        F.ASSERT_IS_FUNCTION(func);
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().run(func);
+        this._createNormalFrame(tapStreamBuilder(f));
         return this;
 
     };
 
     merge() {
 
-        F.ASSERT_NOT_HOLDING(this);
-
-        const mergedStream = new Stream();
-
-        const lastFrame = this._currentFrame;
-        const nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-        this._frames.push(nextFrame);
-
-        const streams = lastFrame._streams;
-        const len = streams.length;
-        for (let i = 0; i < len; i++) {
-            const s = streams[i];
-            s.addTarget(mergedStream);
-        }
-
+        this._createMergingFrame();
         return this;
+
     };
 
     msg(fAny) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().msg(fAny);
+        const f = FUNCTOR(fAny);
+
+        this._createNormalFrame(msgStreamBuilder(f));
+        return this;
+
+
+    };
+
+    name(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
         return this;
 
     };
 
-    transform(fAny) {
+    source(str) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().transform(fAny);
+        this._createNormalFrame(nameStreamBuilder(str));
         return this;
 
     };
 
-    source(fStr) {
+    write(dataTopic) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_NOT_HOLDING(this);
-
-        this.addFrame().source(fStr);
+        this._createNormalFrame(writeStreamBuilder(dataTopic));
         return this;
 
     };
 
-    filter(func) {
+    filter(f) {
 
-        F.ASSERT_NEED_ONE_ARGUMENT(arguments);
-        F.ASSERT_IS_FUNCTION(func);
-        F.ASSERT_NOT_HOLDING(this);
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
 
-        this.addFrame().filter(func);
+        this._createNormalFrame(filterStreamBuilder(f));
+        return this;
+
+
+    };
+
+    filterMap(f, m) {
+
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(filterMapStreamBuilder(f, m));
+        return this;
+
+
+    };
+
+    split() {
+
+        this._createNormalFrame(splitStreamBuilder());
         return this;
 
     };
 
-    hasKeys(keys) {
-
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().hasKeys(keys);
-        return this;
-
-    };
 
     skipDupes() {
 
-        F.ASSERT_NOT_HOLDING(this);
-        this.addFrame().skipDupes();
+        this._createNormalFrame(skipStreamBuilder());
+        return this;
+
+    };
+
+    addSubscribe(name, data, topic){
+
+        const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
+        return this;
+
+    };
+
+    addEvent(name, target, eventName, useCapture){
+
+        const source = new EventSource(name, target, eventName, useCapture);
+        this.addSource(source);
+
         return this;
 
     };
@@ -387,10 +638,11 @@ class Bus {
 
         this._dead = true;
 
-        const frames = this._frames;
-
-        for (const f of frames) {
-            f.destroy();
+        const sources = this._sources;
+        const len = sources.length;
+        for (let i = 0; i < len; i++) {
+            const s = sources[i];
+            s.destroy();
         }
 
         return this;
@@ -399,30 +651,6 @@ class Bus {
 
 }
 
-// send messages from streams in one frame to new empty streams in another frame
-// injects new streams to frame 2
-
-function _wireFrames(frame1, frame2, isForking) {
-
-    const streams1 = frame1._streams;
-    const streams2 = frame2._streams;
-
-    const len = streams1.length;
-
-    for (let i = 0; i < len; i++) {
-
-        const s1 = streams1[i];
-        const s2 = new Stream(frame2);
-
-        if(!isForking)
-            s2.name = s1.name;
-
-        streams2.push(s2);
-        s1.addTarget(s2);
-
-    }
-
-}
 
 
 export default Bus;

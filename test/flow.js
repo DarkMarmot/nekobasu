@@ -42,12 +42,6 @@ var teardown = function(){
 
 
 reset();
-//
-//
-//var b = Catbus.fromEvent(emitter, 'boo');
-//b.msg(function(msg){ return msg + '-cat';});
-//b.run(log);
-
 
 describe('Catbus', function(){
 
@@ -104,8 +98,6 @@ describe('Catbus', function(){
 
             it('transforms messages', function () {
 
-
-
                 var b = Catbus.fromEvent(dice, 'roll');
                 b.msg(function(msg){ return msg * 2});
                 b.run(log);
@@ -125,8 +117,6 @@ describe('Catbus', function(){
             });
 
             it('filters messages', function () {
-
-
 
                 var b = Catbus.fromEvent(dice, 'roll');
                 b.msg(function(msg){ return msg * 2});
@@ -410,7 +400,7 @@ describe('Catbus', function(){
                 b1.add(b2);
                 b1.last(3);
                 b1.merge()
-                   // .hold()
+                    .hold()
                     .group().batch();
 
                 b1.run(log);
@@ -485,7 +475,7 @@ describe('Catbus', function(){
                 var b2 = Catbus.fromEvent(dice, 'drop').msg(function(msg){ return -msg}).last(3).source('drop');
 
                 b1.add(b2);
-                b1.merge().group().whenKeys(['roll','drop']).batch();
+                b1.merge().group().hasKeys(['roll','drop']).batch();
 
                 b1.run(log);
                 b1.run(function(msg, source){
@@ -544,6 +534,22 @@ describe('Catbus', function(){
 
                 b1.destroy();
                 b2.destroy();
+
+            });
+
+            it('can emit at intervals', function () {
+
+                b1 = Catbus.fromInterval('cat', 100);
+                b1.msg('meow');
+                b1.run(log);
+                clock.tick(350);
+
+                assert.equal(msgLog.length, 3);
+                assert.equal(sourceLog[2], 'cat');
+                assert.equal(msgLog[2], 'meow');
+
+                b1.destroy();
+
 
             });
 

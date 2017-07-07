@@ -9,18 +9,65 @@
 
 <script>
 
-    const up = document.querySelectorAll('#up')[0];
-    const down = document.querySelectorAll('#down')[0];
+//    const up = document.querySelectorAll('#up')[0];
+//    const down = document.querySelectorAll('#down')[0];
+//
+//    const upClicks = Catbus.fromEvent(up, 'click').transform(1);
+//
+//    const downClicks = Catbus.fromEvent(down, 'click').transform(-1);
+//
+//    var b = upClicks
+//        .add(downClicks)
+//        .merge()
+//        .scan(function(total, msg){ return total + msg;}, 0)
+//        .run(function(msg, source){ console.log('total:', msg, source);});
+//
+//
 
-    const upClicks = Catbus.fromEvent(up, 'click').transform(1);
+    const world = Catbus.createChild();
 
-    const downClicks = Catbus.fromEvent(down, 'click').transform(-1);
+    function Watcher(name){
 
-    var b = upClicks
-        .add(downClicks)
-        .merge()
-        .scan(function(total, msg){ return total + msg;}, 0)
-        .run(function(msg, source){ console.log('total:', msg, source);});
+        this.name = name;
+
+    }
+
+
+    Watcher.prototype.add1 = function(msg, source, topic){
+
+        return msg + 1;
+    };
+
+
+    Watcher.prototype.even = function(msg, source, topic){
+
+        return !(msg % 2);
+    };
+
+
+    function sum(x, y) { return x + y;}
+
+const watcher = new Watcher('moo');
+
+
+    const a = [];
+
+    const d = world.data('castle');
+    const e = world.data('moo');
+
+const bus = world.bus('~castle | >even | *add1', watcher).scan(sum, 0).process('=moo'); //.filter(d => d % 2).process('=moo');
+console.log(bus);
+
+const n = new Date();
+
+    for(let i = 0; i < 1000000; i++){
+        d.write(i);
+    }
+
+    console.log('moo', e.read());
+    console.log(new Date() - n);
+
+
 
 </script>
 

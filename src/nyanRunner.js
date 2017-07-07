@@ -1,14 +1,4 @@
-import Stream from './stream.js';
-import Nyan from './nyan.js';
-
-
-function getPacketFromDataWord(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-    const peek = data && data.peek(word.topic);
-    return peek;
-
-}
+import Bus from './bus.js';
 
 
 function getSurveyFromDataWord(scope, word){
@@ -43,17 +33,6 @@ function getDoSkipNamedDupes(names){
         return diff;
 
     };
-}
-
-
-function getDoWrite(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-
-    return function doWrite(msg) {
-        data.write(msg, word.topic);
-    };
-
 }
 
 
@@ -128,10 +107,12 @@ function getDoAnd(scope, phrase) {
 
 function getDoReadSingle(scope, word) {
 
+    const data = scope.find(word.name, !word.maybe);
+    const topic = word.topic;
+
     return function doReadSingle() {
 
-        const packet = getPacketFromDataWord(scope, word);
-        return packet && packet.msg;
+        return data.read(topic);
 
     };
 
@@ -171,10 +152,10 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 
                 } else {
 
-                    const packet = getPacketFromDataWord(scope, word);
+                    const data = scope.find(word.name, !word.maybe);
                     const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
-                    if (packet)
-                        result[prop] = packet.msg;
+                    if (data.present(word.topic))
+                        result[prop] = data.read(word.topic);
 
                 }
 
@@ -190,16 +171,19 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPull) {
+function addDataSource(bus, scope, word, canPull) {
 
     const data = scope.find(word.name, !word.maybe);
-    if(word.monitor){
-        return Stream.fromMonitor(data, word.alias, canPull);
-    } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias, canPull);
-    }
+    bus.addSubscribe(word.alias, data, word.topic);
 
 }
+
+function addEventSource(bus, word, target) {
+
+    bus.addEvent(word.alias, target, word.topic, word.useCapture);
+
+}
+
 
 function isObject(v) {
     if (v === null)
@@ -208,11 +192,6 @@ function isObject(v) {
 }
 
 
-function getEventStream(scope, word, node){
-
-    return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
-
-}
 
 function doExtracts(value, extracts) {
 
@@ -283,11 +262,11 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     const need = [];
     const skipDupes = [];
-    const streams = [];
     const extracts = [];
 
     if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
-        bus.addFrame(getDataStream(scope, phrase[0], false));
+        const word = phrase[0];
+        addDataSource(bus, scope, word);
         return;
     }
 
@@ -297,14 +276,14 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
         const operation = word.operation;
 
         if(operation === 'WATCH') {
-            streams.push(getDataStream(scope, word, true));
+            addDataSource(bus, scope, word);
             skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
-            streams.push(getDataStream(scope, word, true));
+            addDataSource(bus, scope, word);
         }
         else if(operation === 'EVENT') {
-            streams.push(getEventStream(scope, word));
+            addEventSource(bus, word, target);
         }
 
         if(word.extracts)
@@ -315,9 +294,9 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
     }
 
-    bus.addFrame(streams);
+    // transformations are applied via named hashes for performance
 
-    if(streams.length > 1) {
+    if(bus._sources.length > 1) {
 
         bus.merge().group().batch();
 
@@ -343,8 +322,13 @@ function applyReaction(scope, bus, phrase, target) { // target is some event emi
 
 }
 
-function isTruthy(msg){ return !!msg; };
-function isFalsey(msg){ return !msg; };
+function isTruthy(msg){
+    return !!msg;
+}
+
+function isFalsey(msg){
+    return !msg;
+}
 
 
 function applyMethod(bus, word) {
@@ -403,12 +387,12 @@ function applyProcess(scope, bus, phrase, context, node) {
         bus.msg(getDoRead(scope, phrase));
         const needs = getNeedsArray(phrase);
         if(needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
         const needs = getNeedsArray(phrase);
         if (needs.length)
-            bus.whenKeys(needs);
+            bus.hasKeys(needs);
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
@@ -418,8 +402,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
-        bus.run(getDoWrite(scope, phrase[0]));
+        applyWriteProcess(bus, scope, phrase[0]);
     } else if (operation === 'SPRAY') {
+
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
 
     }
@@ -427,6 +412,13 @@ function applyProcess(scope, bus, phrase, context, node) {
 }
 
 
+function applyWriteProcess(bus, scope, word){
+
+    const data = scope.find(word.name, !word.maybe);
+    const dataTopic = data.dataTopic(word.topic);
+    bus.write(dataTopic);
+
+}
 
 function applyMsgProcess(bus, phrase, context){
 
@@ -438,36 +430,15 @@ function applyMsgProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.msg(f);
+        bus.msg(method, context);
 
     }
 
 }
 
 
-function applyRunProcess(bus, phrase, context){
 
-    const len = phrase.length;
 
-    for(let i = 0; i < len; i++) {
-
-        const word = phrase[i];
-        const name = word.name;
-        const method = context[name];
-
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.run(f);
-
-    }
-
-}
 
 function applySourceProcess(bus, word){
 
@@ -486,35 +457,35 @@ function applyFilterProcess(bus, phrase, context){
         const name = word.name;
         const method = context[name];
 
-        const f = function (msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.filter(f);
+        bus.filter(method, context);
 
     }
 
 }
 
+function createBus(nyan, scope, context, target){
 
-function nyanToBus(scope, bus, str, context, target){
+    let bus = new Bus(scope);
+    return applyNyan(nyan, bus, context, target);
 
-    const nyan = Nyan.parse(str);
+}
+
+function applyNyan(nyan, bus, context, target){
+
     const len = nyan.length;
-
+    const scope = bus.scope;
     for(let i = 0; i < len; i++){
 
         const cmd = nyan[i];
         const name = cmd.name;
         const phrase = cmd.phrase;
 
-      //  console.log('----', name, phrase);
-
         if(name === 'JOIN') {
+
             bus = bus.join();
             bus.merge();
             bus.group();
-            bus.sync();
+
         } else if(name === 'FORK'){
             bus = bus.fork();
         } else if (name === 'BACK'){
@@ -533,4 +504,10 @@ function nyanToBus(scope, bus, str, context, target){
 
 }
 
-export default nyanToBus;
+const NyanRunner = {
+    applyNyan: applyNyan,
+    createBus: createBus
+};
+
+
+export default NyanRunner;

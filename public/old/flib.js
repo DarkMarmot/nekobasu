@@ -48,23 +48,20 @@ const Func = {
        return function(){ return true;}
     },
 
-    getBatchTimer: function(){
-        const pool = this;
-        return function() {
+    getBatchTimer: function(pool){
+
             Catbus.enqueue(pool);
-        }
+
     },
 
     getSyncTimer: function(){
-        const pool = this;
-        return function() {
+        return function(pool) {
             pool.release(pool);
         }
     },
 
     getDeferTimer: function(){
-        const pool = this;
-        return function() {
+        return function(pool) {
             setTimeout(pool.release, 0, pool);
         }
     },
@@ -179,6 +176,25 @@ const Func = {
 
         return f;
     },
+
+    // getScan: function(func, seed){
+    //
+    //     let acc = seed;
+    //
+    //     const f = function(msg, source){
+    //
+    //         return acc = func(acc, msg, source);
+    //     };
+    //
+    //     f.reset = NOOP;
+    //
+    //     f.next = f.content = function(){
+    //         return acc;
+    //     };
+    //
+    //
+    //     return f;
+    // },
 
     getGroup: function(groupBy){
 
@@ -462,15 +478,7 @@ const Func = {
     },
 
 
-    ASSERT_NOT_HOLDING: function(bus){
-        if(bus.holding)
-            throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
 
-    ASSERT_IS_HOLDING: function(bus){
-        if(!bus.holding)
-            throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
 
 };
 

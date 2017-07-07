@@ -1,11 +1,10 @@
 
-import F from './flib.js';
+
 import Data from './data.js';
-import { DATA_TYPES, isValid } from './dataTypes.js';
+import { DATA_TYPES } from './dataTypes.js';
 import Bus from './bus.js';
+import NyanRunner from './nyanRunner.js';
 import Nyan from './nyan.js';
-import Stream from './stream.js';
-import nyanToBus from './nyanBus.js';
 
 let idCounter = 0;
 
@@ -45,18 +44,17 @@ class Scope{
 
     };
 
+    bus(strOrNyan, context, node){
 
-    // todo react via nyan (so it can be precompiled and reused
-    react(str, context, node){ // string is Nyan
+        if(!strOrNyan)
+            return new Bus(this);
 
-        if(!str)
-            throw new Error('Need a Nyan phrase!');
-
-        let b = new Bus(this);
-
-        return nyanToBus(this, b, str, context, node);
+        const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
+        console.log(nyan);
+        return NyanRunner.createBus(nyan, this, context, node);
 
     };
+
 
     clear(){
 
@@ -204,9 +202,9 @@ class Scope{
 
         for(const d of dataSet) {
             if (d) {
-                const lastPacket = d.peek();
-                if (lastPacket)
-                    result[d.name] = lastPacket.msg;
+
+                if (d.present())
+                    result[d.name] = d.read();
             }
         }
 

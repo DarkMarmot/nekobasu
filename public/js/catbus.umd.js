@@ -4,2016 +4,1289 @@
 	(global.Catbus = factory());
 }(this, (function () { 'use strict';
 
-function ALWAYS_TRUE() {
-    return true;
-}
-
-function ALWAYS_FALSE() {
-    return false;
-}
-
-function TO_SOURCE(msg, source) {
-    return source;
-}
-
-function TO_TOPIC(msg, source, topic) {
-    return topic;
-}
-
-function TO_MSG(msg) {
-    return msg;
-}
-
-function NOOP() {}
-
-function FUNCTOR(val) {
-    return typeof val === 'function' ? val : function () {
-        return val;
-    };
-}
-
-var Func = {
-
-    ASSERT_NEED_ONE_ARGUMENT: function ASSERT_NEED_ONE_ARGUMENT(args) {
-        if (args.length < 1) throw new Error('Method requires at least one argument.');
-    },
-
-    ASSERT_IS_FUNCTION: function ASSERT_IS_FUNCTION(func) {
-        if (typeof func !== 'function') throw new Error('Argument [func] is not of type function.');
-    },
-
-    getAlwaysTrue: function getAlwaysTrue() {
-        return function () {
-            return true;
-        };
-    },
-
-    getBatchTimer: function getBatchTimer() {
-        var pool = this;
-        return function () {
-            Catbus$1.enqueue(pool);
-        };
-    },
-
-    getSyncTimer: function getSyncTimer() {
-        var pool = this;
-        return function () {
-            pool.release(pool);
-        };
-    },
-
-    getDeferTimer: function getDeferTimer() {
-        var pool = this;
-        return function () {
-            setTimeout(pool.release, 0, pool);
-        };
-    },
-
-    getThrottleTimer: function getThrottleTimer(fNum) {
-
-        var pool = this;
-        fNum = FUNCTOR(fNum);
-        var wasEmpty = false;
-        var timeoutId = null;
-        var msgDuringTimer = false;
-        var auto = pool.keep.auto;
-
-        function timedRelease(fromTimeout) {
-
-            if (pool.stream.dead) return;
-
-            var nowEmpty = pool.keep.isEmpty;
-
-            if (!fromTimeout) {
-                if (!timeoutId) {
-                    pool.release(pool);
-                    wasEmpty = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                } else {
-                    msgDuringTimer = true;
-                }
-                return;
-            }
-
-            if (nowEmpty) {
-                if (wasEmpty) {
-                    // throttle becomes inactive
-                } else {
-                    // try one more time period to maintain throttle
-                    wasEmpty = true;
-                    msgDuringTimer = false;
-                    timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-                }
-            } else {
-                pool.release(pool);
-                wasEmpty = false;
-                timeoutId = setTimeout(timedRelease, fNum.call(pool), true);
-            }
-        }
-
-        return timedRelease;
-    },
-
-    getQueue: function getQueue(n) {
-
-        n = n || Infinity;
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.isBuffer = ALWAYS_TRUE;
-
-        f.next = function () {
-            return buffer.shift();
-        };
-
-        f.isEmpty = function () {
-            return buffer.length === 0;
-        };
-
-        f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getScan: function getScan(func, seed) {
-
-        var hasSeed = arguments.length === 2;
-        var acc = void 0;
-        var initMsg = true;
-
-        var f = function f(msg, source) {
-
-            if (initMsg) {
-                initMsg = false;
-                if (hasSeed) {
-                    acc = func(seed, msg, source);
-                } else {
-                    acc = msg;
-                }
-            } else {
-                acc = func(acc, msg, source);
-            }
-
-            return acc;
-        };
-
-        f.reset = NOOP;
-
-        f.next = f.content = function () {
-            return acc;
-        };
-
-        return f;
-    },
-
-    getGroup: function getGroup(groupBy) {
-
-        groupBy = groupBy || TO_SOURCE;
-        var hash = {};
-
-        var f = function f(msg, source) {
-
-            var g = groupBy(msg, source);
-            if (g) {
-                hash[g] = msg;
-            } else {
-                // no source, copy message props into hash to merge nameless streams of key data
-                for (var k in msg) {
-                    hash[k] = msg[k];
-                }
-            }
-
-            return hash;
-        };
-
-        f.reset = function () {
-            for (var k in hash) {
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return hash;
-        };
-
-        return f;
-    },
-
-    getHash: function getHash(groupBy) {
-
-        groupBy = groupBy || TO_SOURCE;
-        var hash = {};
-
-        var f = function f(msg, source) {
-
-            var g = groupBy(msg, source);
-            hash[g] = msg;
-            return hash;
-        };
-
-        f.reset = function () {
-            for (var k in hash) {
-                delete hash[k];
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return hash;
-        };
-
-        return f;
-    },
-
-    getKeepLast: function getKeepLast(n) {
-
-        if (!n || n < 0) {
-
-            var last = void 0;
-
-            var _f = function _f(msg, source) {
-                return last = msg;
-            };
-
-            _f.reset = function () {
-                _f.isEmpty = true;
-            };
-
-            _f.next = _f.content = function () {
-                return last;
-            };
-
-            return _f;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            if (buffer.length > n) buffer.shift();
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepFirst: function getKeepFirst(n) {
-
-        if (!n || n < 0) {
-
-            var firstMsg = void 0;
-            var hasFirst = false;
-            var _f2 = function _f2(msg, source) {
-                return hasFirst ? firstMsg : firstMsg = msg;
-            };
-
-            _f2.reset = function () {
-                firstMsg = false;
-                _f2.isEmpty = true;
-            };
-
-            _f2.next = _f2.content = function () {
-                return firstMsg;
-            };
-
-            return _f2;
-        }
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-
-            if (buffer.length < n) buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getKeepAll: function getKeepAll() {
-
-        var buffer = [];
-
-        var f = function f(msg, source) {
-            buffer.push(msg);
-            return buffer;
-        };
-
-        f.reset = function () {
-            while (buffer.length) {
-                buffer.shift();
-            }
-            f.isEmpty = true;
-        };
-
-        f.next = f.content = function () {
-            return buffer;
-        };
-
-        return f;
-    },
-
-    getWhenCount: function getWhenCount(n) {
-
-        var latched = false;
-
-        var f = function f(messages) {
-            latched = latched || messages.length >= n;
-            return latched;
-        };
-
-        f.reset = function () {
-            latched = false;
-        };
-
-        return f;
-    },
-
-    getWhenKeys: function getWhenKeys(keys) {
-
-        var keyHash = {};
-        var len = keys.length;
-
-        for (var i = 0; i < len; i++) {
-            var k = keys[i];
-            keyHash[k] = true;
-        }
-
-        var latched = false;
-
-        var f = function f(messagesByKey) {
-
-            if (latched) return true;
-
-            for (var _i = 0; _i < len; _i++) {
-                var _k = keys[_i];
-                if (!messagesByKey.hasOwnProperty(_k)) return false;
-            }
-
-            return latched = true;
-        };
-
-        f.reset = function () {
-            latched = false;
-            for (var _k2 in keyHash) {
-                delete keyHash[_k2];
-            }
-        };
-
-        return f;
-    },
-
-    getHasKeys: function getHasKeys(keys, noLatch) {
-
-        var latched = false;
-        var len = keys.length;
-
-        return function (msg) {
-
-            if (latched || !len) return true;
-
-            for (var i = 0; i < len; i++) {
-
-                var k = keys[i];
-                if (!msg.hasOwnProperty(k)) return false;
-            }
-
-            if (!noLatch) latched = true;
-
-            return true;
-        };
-    },
-
-    getSkipDupes: function getSkipDupes() {
-
-        var hadMsg = false;
-        var lastMsg = void 0;
-
-        return function (msg) {
-
-            var diff = !hadMsg || msg !== lastMsg;
-            lastMsg = msg;
-            hadMsg = true;
-            return diff;
-        };
-    },
-
-    ASSERT_NOT_HOLDING: function ASSERT_NOT_HOLDING(bus) {
-        if (bus.holding) throw new Error('Method cannot be invoked while holding messages in the frame.');
-    },
-
-    ASSERT_IS_HOLDING: function ASSERT_IS_HOLDING(bus) {
-        if (!bus.holding) throw new Error('Method cannot be invoked unless holding messages in the frame.');
-    }
-
-};
-
-Func.TO_SOURCE = TO_SOURCE;
-Func.TO_TOPIC = TO_TOPIC;
-Func.To_MSG = TO_MSG;
-Func.FUNCTOR = FUNCTOR;
-Func.ALWAYS_TRUE = ALWAYS_TRUE;
-Func.ALWAYS_FALSE = ALWAYS_FALSE;
-Func.NOOP = NOOP;
-
-var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) {
-  return typeof obj;
-} : function (obj) {
-  return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj;
-};
-
-
-
-
-
-
-
-
-
-
-
-var classCallCheck = function (instance, Constructor) {
-  if (!(instance instanceof Constructor)) {
-    throw new TypeError("Cannot call a class as a function");
-  }
-};
-
-var createClass = function () {
-  function defineProperties(target, props) {
-    for (var i = 0; i < props.length; i++) {
-      var descriptor = props[i];
-      descriptor.enumerable = descriptor.enumerable || false;
-      descriptor.configurable = true;
-      if ("value" in descriptor) descriptor.writable = true;
-      Object.defineProperty(target, descriptor.key, descriptor);
-    }
-  }
-
-  return function (Constructor, protoProps, staticProps) {
-    if (protoProps) defineProperties(Constructor.prototype, protoProps);
-    if (staticProps) defineProperties(Constructor, staticProps);
-    return Constructor;
-  };
-}();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-var slicedToArray = function () {
-  function sliceIterator(arr, i) {
-    var _arr = [];
-    var _n = true;
-    var _d = false;
-    var _e = undefined;
-
-    try {
-      for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {
-        _arr.push(_s.value);
-
-        if (i && _arr.length === i) break;
-      }
-    } catch (err) {
-      _d = true;
-      _e = err;
-    } finally {
-      try {
-        if (!_n && _i["return"]) _i["return"]();
-      } finally {
-        if (_d) throw _e;
-      }
-    }
-
-    return _arr;
-  }
-
-  return function (arr, i) {
-    if (Array.isArray(arr)) {
-      return arr;
-    } else if (Symbol.iterator in Object(arr)) {
-      return sliceIterator(arr, i);
-    } else {
-      throw new TypeError("Invalid attempt to destructure non-iterable instance");
-    }
-  };
-}();
-
-var Packet = function () {
-    function Packet(msg, topic, source) {
-        classCallCheck(this, Packet);
-
-        this._msg = msg;
-        this._topic = topic;
-        this._source = source;
-        this._timestamp = Date.now();
-    }
-
-    createClass(Packet, [{
-        key: "msg",
-        get: function get$$1() {
-            return this._msg;
-        }
-    }, {
-        key: "topic",
-        get: function get$$1() {
-            return this._topic;
-        }
-    }, {
-        key: "source",
-        get: function get$$1() {
-            return this._source;
-        }
-    }, {
-        key: "timestamp",
-        get: function get$$1() {
-            return this._timestamp;
-        }
-    }]);
-    return Packet;
-}();
-
-var DATA_TYPES = {
-
-    ACTION: 'action',
-    MIRROR: 'mirror',
-    STATE: 'state',
+const DATA_TYPES = {
+
+    ACTION:   'action',
+    MIRROR:   'mirror',
+    STATE:    'state',
     COMPUTED: 'computed',
-    NONE: 'none',
-    ANY: 'any'
+    NONE:     'none',
+    ANY:      'any'
 
 };
 
-var reverseLookup = {};
+const reverseLookup = {};
 
-for (var p in DATA_TYPES) {
-    var v = DATA_TYPES[p];
+for(const p in DATA_TYPES){
+    const v = DATA_TYPES[p];
     reverseLookup[v] = p;
 }
 
-function isValid(type) {
+function isValid(type){
     return reverseLookup.hasOwnProperty(type);
 }
 
-var SubscriberList = function () {
-    function SubscriberList(topic, data) {
-        classCallCheck(this, SubscriberList);
+function callMany(list, msg, source, topic){
 
+    const len = list.length;
+    for (let i = 0; i < len; i++) {
+        let s = list[i];
+        s.call(s, msg, source, topic);
+    }
+
+}
+
+function callNoOne(list, msg, source, topic){}
+
+function callOne(list, msg, source, topic){
+        const s = list[0];
+        s.call(s, msg, source, topic);
+}
+
+class SubscriberList {
+
+    constructor(topic, data) {
 
         this._topic = topic;
         this._subscribers = [];
-        this._lastPacket = null;
+        this._callback = callNoOne;
+        this._used = false; // true after first msg
+        this._lastMsg = null;
+        this._lastTopic = null;
         this._data = data;
         this._name = data._name;
         this._dead = false;
+
+        if(data.type === DATA_TYPES.ACTION) {
+            this.handle = this.handleAction;
+        }
+    };
+
+    get used() { return this._used; };
+    get lastMsg() { return this._lastMsg; };
+    get lastTopic() { return this._lastTopic; };
+    get data() { return this._data; };
+    get name() { return this._name; };
+    get dead() { return this._dead; };
+    get topic() { return this._topic; };
+
+    handle(msg, topic, silently){
+
+        // if(this.dead)
+        //     return;
+
+        this._used = true;
+        topic = topic || this.topic;
+        let source = this.name;
+
+        this._lastMsg = msg;
+        this._lastTopic = topic;
+
+        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
+
+        if(!silently) {
+            this._callback(this._subscribers, msg, source, topic);
+        }
+
+    };
+
+    handleAction(msg, topic){
+
+        topic = topic || this.topic;
+        let source = this.name;
+
+        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
+        this._callback(this._subscribers, msg, source, topic);
+
+    };
+
+
+    destroy(){
+
+        // if(this.dead)
+        //     return;
+
+        this._subscribers = null;
+        this._lastMsg = null;
+        this._dead = true;
+
+    };
+
+    add(watcher){
+
+        const s = typeof watcher === 'function' ? watcher : function(msg, source, topic){ watcher.handle(msg, source, topic);};
+        this._subscribers.push(s);
+        this.determineCaller();
+        return this;
+
+    };
+
+    remove(watcher){
+
+        let i = this._subscribers.indexOf(watcher);
+
+        if(i !== -1)
+            this._subscribers.splice(i, 1);
+
+        this.determineCaller();
+
+        return this;
+    };
+
+    determineCaller(){
+        const len = this._subscribers.length;
+        if(len === 0){
+            this._callback = callNoOne;
+        } else if (len === 1){
+            this._callback = callOne;
+        } else {
+            this._callback = callMany;
+        }
+
     }
 
-    createClass(SubscriberList, [{
-        key: 'handle',
-        value: function handle(msg, topic, silently) {
+}
 
-            if (this.dead) return;
+function DataTopic(data, topic, silently){
+    this.data = data;
+    this.topic = topic;
+    this.silently = !!silently;
+    this.topicSubscriberList = data._demandSubscriberList(topic);
+    this.wildcardSubscriberList = data._wildcardSubscriberList;
+}
 
-            topic = topic || this.topic;
-            var source = this.name;
-            var currentPacket = new Packet(msg, topic, source);
+DataTopic.prototype.handle = function(msg){
+    this.topicSubscriberList.handle(msg, this.topic, this.silently);
+    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
+};
 
-            if (this.data.type !== DATA_TYPES.ACTION) // actions do not store data (ephemeral and immediate)
-                this._lastPacket = currentPacket;
+class Data {
 
-            var subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-            var len = subscribers.length;
-
-            if (!silently) {
-                for (var i = 0; i < len; i++) {
-                    var s = subscribers[i];
-                    typeof s === 'function' ? s.call(s, msg, currentPacket) : s.handle(msg, currentPacket);
-                }
-            }
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return;
-
-            this._subscribers = null;
-            this._lastPacket = null;
-            this._dead = true;
-        }
-    }, {
-        key: 'add',
-        value: function add(watcher) {
-
-            this._subscribers.push(watcher);
-        }
-    }, {
-        key: 'remove',
-        value: function remove(watcher) {
-
-            var i = this._subscribers.indexOf(watcher);
-
-            if (i !== -1) this._subscribers.splice(i, 1);
-        }
-    }, {
-        key: 'lastPacket',
-        get: function get$$1() {
-            return this._lastPacket;
-        }
-    }, {
-        key: 'data',
-        get: function get$$1() {
-            return this._data;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'topic',
-        get: function get$$1() {
-            return this._topic;
-        }
-    }]);
-    return SubscriberList;
-}();
-
-var Data = function () {
-    function Data(scope, name, type) {
-        classCallCheck(this, Data);
-
+    constructor(scope, name, type) {
 
         type = type || DATA_TYPES.NONE;
 
-        if (!isValid(type)) throw new Error('Invalid Data of type: ' + type);
+        if(!isValid(type))
+            throw new Error('Invalid Data of type: ' + type);
 
-        this._scope = scope;
-        this._name = name;
-        this._type = type;
-        this._dead = false;
+        this._scope      = scope;
+        this._name       = name;
+        this._type       = type;
+        this._dead       = false;
 
-        this._wildcardSubscriberList = new SubscriberList(null, this);
-        this._subscriberListsByTopic = new Map();
-    }
+        this._noTopicList = new SubscriberList('', this);
+        this._wildcardSubscriberList = new SubscriberList('', this);
+        this._subscriberListsByTopic = {};
 
-    createClass(Data, [{
-        key: 'destroy',
-        value: function destroy() {
+    };
 
-            if (this.dead) this._throwDead();
+    get scope() { return this._scope; };
+    get name() { return this._name; };
+    get type() { return this._type; };
+    get dead() { return this._dead; };
 
-            var _iteratorNormalCompletion = true;
-            var _didIteratorError = false;
-            var _iteratorError = undefined;
+    destroy(){
 
-            try {
-                for (var _iterator = this._subscriberListsByTopic.values()[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var list = _step.value;
-
-                    list.destroy();
-                }
-            } catch (err) {
-                _didIteratorError = true;
-                _iteratorError = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion && _iterator.return) {
-                        _iterator.return();
-                    }
-                } finally {
-                    if (_didIteratorError) {
-                        throw _iteratorError;
-                    }
-                }
-            }
-
-            this._dead = true;
+        // if(this.dead)
+        //     this._throwDead();
+        
+        for(const list of this._subscriberListsByTopic.values()){
+            list.destroy();
         }
-    }, {
-        key: '_demandSubscriberList',
-        value: function _demandSubscriberList(topic) {
 
-            topic = topic || undefined;
-            var list = this._subscriberListsByTopic.get(topic);
+        this._dead = true;
 
-            if (list) return list;
+    };
+    
+    _demandSubscriberList(topic){
 
-            list = new SubscriberList(topic, this);
-            this._subscriberListsByTopic.set(topic, list);
+        topic = topic || '';
+        let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
 
+        if(list)
             return list;
-        }
-    }, {
-        key: 'verify',
-        value: function verify(expectedType) {
 
-            if (this.type === expectedType) return this;
+        list = new SubscriberList(topic, this);
+        this._subscriberListsByTopic[topic] = list;
 
-            throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
-        }
-    }, {
-        key: 'follow',
-        value: function follow(watcher, topic) {
+        return list;
+        
+    };
 
-            if (this.dead) this._throwDead();
+    verify(expectedType){
 
-            topic = topic || undefined;
-            this.subscribe(watcher, topic);
-            var packet = this.peek();
-
-            if (packet) typeof watcher === 'function' ? watcher.call(watcher, packet.msg, packet) : watcher.handle(packet.msg, packet);
-
+        if(this.type === expectedType)
             return this;
+
+        throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
+
+    };
+
+    follow(watcher, topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        const list = this.subscribe(watcher, topic);
+
+        if(list.used)
+            typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
+
+        return this;
+
+    };
+
+    subscribe(watcher, topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        return this._demandSubscriberList(topic).add(watcher);
+
+    };
+
+    monitor(watcher){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        this._wildcardSubscriberList.add(watcher);
+
+        return this;
+
+    };
+
+    unsubscribe(watcher, topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        topic = topic || '';
+        this._demandSubscriberList(topic).remove(watcher);
+        this._wildcardSubscriberList.remove(watcher);
+
+        return this;
+
+    };
+
+    // topics(){
+    //
+    //     return this._subscriberListsByTopic.keys();
+    //
+    // };
+
+    survey(){
+        // get entire key/value store by topic:lastPacket
+        throw new Error('not imp');
+
+        // const entries = this._subscriberListsByTopic.entries();
+        // const m = new Map();
+        // for (const [key, value] of entries) {
+        //     m.set(key, value.lastPacket);
+        // }
+        //
+        // return m;
+    };
+
+
+    present(topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        const subscriberList = this._demandSubscriberList(topic);
+        return subscriberList.used;
+
+    };
+
+
+    read(topic) {
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        const list = this._demandSubscriberList(topic);
+        return (list.used) ? list.lastMsg : undefined;
+
+    };
+
+    dataTopic(topic, silently){
+        return new DataTopic(this, topic, silently);
+    }
+
+    silentWrite(msg, topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        this.write(msg, topic, true);
+
+    };
+
+
+    write(msg, topic, silently){
+
+        // todo change methods to imply if statements for perf?
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        if(this.type === DATA_TYPES.MIRROR)
+            throw new Error('Mirror Data: ' + this.name + ' is read-only');
+
+        const list = this._demandSubscriberList(topic);
+        list.handle(msg, topic, silently);
+        this._wildcardSubscriberList.handle(msg, topic, silently);
+
+    };
+
+
+
+    refresh(topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        const list = this._demandSubscriberList(topic);
+
+        if(list.used)
+            this.write(list.lastMsg, list.lastTopic);
+
+        return this;
+
+    };
+
+
+    toggle(topic){
+
+        // if(this.dead)
+        //     this._throwDead();
+
+        this.write(!this.read(topic), topic);
+
+        return this;
+
+    };
+
+    _throwDead(){
+
+        throw new Error('Data: ' + this.name + ' is already dead.');
+
+    };
+
+}
+
+function NoopSource() {
+    this.name = '';
+}
+
+NoopSource.prototype.init = function init() {};
+NoopSource.prototype.pull = function pull() {};
+NoopSource.prototype.destroy = function destroy() {};
+
+
+const stubs = {init:'init', pull:'pull', destroy:'destroy'};
+
+NoopSource.prototype.addStubs = function addStubs(sourceClass) {
+
+    for(const name in stubs){
+        const ref = stubs[name];
+        const f = NoopSource.prototype[ref];
+        if(typeof sourceClass.prototype[name] !== 'function'){
+            sourceClass.prototype[name] = f;
         }
-    }, {
-        key: 'subscribe',
-        value: function subscribe(watcher, topic) {
+    }
 
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this._demandSubscriberList(topic).add(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'monitor',
-        value: function monitor(watcher) {
-
-            if (this.dead) this._throwDead();
-
-            this._wildcardSubscriberList.add(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'unsubscribe',
-        value: function unsubscribe(watcher, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this._demandSubscriberList(topic).remove(watcher);
-            this._wildcardSubscriberList.remove(watcher);
-
-            return this;
-        }
-    }, {
-        key: 'topics',
-        value: function topics() {
-
-            return this._subscriberListsByTopic.keys();
-        }
-    }, {
-        key: 'survey',
-        value: function survey() {
-            // get entire key/value store by topic:lastPacket
-
-            var entries = this._subscriberListsByTopic.entries();
-            var m = new Map();
-            var _iteratorNormalCompletion2 = true;
-            var _didIteratorError2 = false;
-            var _iteratorError2 = undefined;
-
-            try {
-                for (var _iterator2 = entries[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var _step2$value = slicedToArray(_step2.value, 2),
-                        key = _step2$value[0],
-                        value = _step2$value[1];
-
-                    m.set(key, value.lastPacket);
-                }
-            } catch (err) {
-                _didIteratorError2 = true;
-                _iteratorError2 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                        _iterator2.return();
-                    }
-                } finally {
-                    if (_didIteratorError2) {
-                        throw _iteratorError2;
-                    }
-                }
-            }
-
-            return m;
-        }
-    }, {
-        key: 'peek',
-        value: function peek(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var subscriberList = this._subscriberListsByTopic.get(topic);
-            return subscriberList ? subscriberList.lastPacket : null;
-        }
-    }, {
-        key: 'read',
-        value: function read(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var packet = this.peek(topic);
-            return packet ? packet.msg : undefined;
-        }
-    }, {
-        key: 'silentWrite',
-        value: function silentWrite(msg, topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this.write(msg, topic, true);
-        }
-    }, {
-        key: 'write',
-        value: function write(msg, topic, silently) {
-
-            if (this.dead) this._throwDead();
-
-            if (this.type === DATA_TYPES.MIRROR) throw new Error('Mirror Data: ' + this.name + ' is read-only');
-
-            topic = topic || undefined;
-            var list = this._demandSubscriberList(topic);
-            list.handle(msg, topic, silently);
-            this._wildcardSubscriberList.handle(msg, topic, silently);
-        }
-    }, {
-        key: 'refresh',
-        value: function refresh(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            var lastPacket = this.peek(topic);
-
-            if (lastPacket) this.write(lastPacket._msg, topic);
-
-            return this;
-        }
-    }, {
-        key: 'toggle',
-        value: function toggle(topic) {
-
-            if (this.dead) this._throwDead();
-
-            topic = topic || undefined;
-            this.write(!this.read(topic), topic);
-
-            return this;
-        }
-    }, {
-        key: '_throwDead',
-        value: function _throwDead() {
-
-            throw new Error('Data: ' + this.name + ' is already dead.');
-        }
-    }, {
-        key: 'scope',
-        get: function get$$1() {
-            return this._scope;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'type',
-        get: function get$$1() {
-            return this._type;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }]);
-    return Data;
-}();
-
-var PoolAspects = function PoolAspects() {
-    classCallCheck(this, PoolAspects);
-
-
-    this.until = null;
-    this.reduce = null;
-    this.when = null;
-    this.clear = null;
-    this.timer = null;
-    this.keep = null;
 };
 
-//
-// this._keep = null; // pool storage
-// this._until = null; // stream end lifecycle -- todo switch until to when in current setup
-// this._timer = null; // release from pool timer
-// this._clear = false; // condition to clear storage on release
-// this._when = false; // invokes timer for release
+const NOOP_SOURCE = new NoopSource();
 
-var Frame = function () {
-    function Frame(bus, streams) {
-        classCallCheck(this, Frame);
+function NoopStream() {
+    this.name = '';
+}
 
+NoopStream.prototype.handle = function handle(msg, source, topic) {};
+NoopStream.prototype.reset = function reset() {};
+NoopStream.prototype.emit = function emit() {};
 
-        streams = streams || [];
-        this._bus = bus;
-        this._index = bus._frames.length;
-        this._holding = false; //begins group, keep, schedule frames
-        this._streams = streams;
-
-        this._process = null; // name of sync process method in streams
-        this._action = null; // function defining sync stream action
-        this._isFactory = false; // whether sync action is a stateful factory function
-
-        this._poolAspects = null;
-
-        var len = streams.length;
-        for (var i = 0; i < len; i++) {
-            streams[i].debugFrame = this;
-        }
-    }
-
-    createClass(Frame, [{
-        key: 'applySyncProcess',
-        value: function applySyncProcess(name, action, isFactory) {
-            // generate means action function must be called to generate stateful action
-
-            this._process = name;
-            this._action = action;
-            this._isFactory = isFactory;
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            if (isFactory) {
-                for (var _len = arguments.length, args = Array(_len > 3 ? _len - 3 : 0), _key = 3; _key < _len; _key++) {
-                    args[_key - 3] = arguments[_key];
-                }
-
-                for (var i = 0; i < len; i++) {
-                    var s = streams[i];
-                    s.actionMethod = action.apply(undefined, args);
-                    s.processMethod = s[name];
-                }
-            } else {
-                for (var _i = 0; _i < len; _i++) {
-                    var _s = streams[_i];
-                    _s.actionMethod = action;
-                    _s.processMethod = _s[name];
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: 'hold',
-        value: function hold() {
-
-            this._holding = true;
-            this._poolAspects = new PoolAspects();
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.createPool();
-                s.processMethod = s.doPool;
-            }
-
-            return this;
-        }
-    }, {
-        key: 'pull',
-        value: function pull() {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.pull();
-            }
-        }
-    }, {
-        key: 'source',
-        value: function source(name) {
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.name = name;
-            }
-            return this;
-        }
-    }, {
-        key: 'run',
-        value: function run(func, stateful) {
-            return this.applySyncProcess('doRun', func, stateful);
-        }
-    }, {
-        key: 'msg',
-        value: function msg(fAny, stateful) {
-            return this.applySyncProcess('doMsg', Func.FUNCTOR(fAny), stateful);
-        }
-    }, {
-        key: 'transform',
-        value: function transform(fAny, stateful) {
-            return this.applySyncProcess('doTransform', Func.FUNCTOR(fAny), stateful);
-        }
-    }, {
-        key: 'delay',
-        value: function delay(fNum, stateful) {
-            return this.applySyncProcess('doDelay', Func.FUNCTOR(fNum), stateful);
-        }
-    }, {
-        key: 'filter',
-        value: function filter(func, stateful) {
-            return this.applySyncProcess('doFilter', func, stateful);
-        }
-    }, {
-        key: 'skipDupes',
-        value: function skipDupes() {
-            return this.applySyncProcess('doFilter', Func.getSkipDupes, true);
-        }
-    }, {
-        key: 'hasKeys',
-        value: function hasKeys(keys) {
-            return this.applySyncProcess('doFilter', Func.getHasKeys, true, keys);
-        }
-    }, {
-        key: 'clear',
-        value: function clear(factory) {
-            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-                args[_key2 - 1] = arguments[_key2];
-            }
-
-            return this.buildPoolAspect.apply(this, ['clear', factory].concat(args));
-        }
-    }, {
-        key: 'reduce',
-
-
-        // factory should define content and reset methods have signature f(msg, source) return f.content()
-
-        value: function reduce(factory) {
-            for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-                args[_key3 - 1] = arguments[_key3];
-            }
-
-            return this.buildPoolAspect.apply(this, ['keep', factory].concat(args));
-        }
-    }, {
-        key: 'timer',
-        value: function timer(factory) {
-            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
-                args[_key4 - 1] = arguments[_key4];
-            }
-
-            return this.buildPoolAspect.apply(this, ['timer', factory].concat(args));
-        }
-    }, {
-        key: 'when',
-        value: function when(factory) {
-            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
-                args[_key5 - 1] = arguments[_key5];
-            }
-
-            return this.buildPoolAspect.apply(this, ['when', factory].concat(args));
-        }
-    }, {
-        key: 'until',
-        value: function until(factory) {
-            for (var _len6 = arguments.length, args = Array(_len6 > 1 ? _len6 - 1 : 0), _key6 = 1; _key6 < _len6; _key6++) {
-                args[_key6 - 1] = arguments[_key6];
-            }
-
-            return this.buildPoolAspect.apply(this, ['until', factory].concat(args));
-        }
-    }, {
-        key: 'buildPoolAspect',
-        value: function buildPoolAspect(aspect, factory) {
-
-            if (aspect === 'timer') this._holding = false;
-
-            for (var _len7 = arguments.length, args = Array(_len7 > 2 ? _len7 - 2 : 0), _key7 = 2; _key7 < _len7; _key7++) {
-                args[_key7 - 2] = arguments[_key7];
-            }
-
-            this._poolAspects[aspect] = [factory].concat(args);
-
-            var streams = this._streams;
-            var len = streams.length;
-
-            for (var i = 0; i < len; i++) {
-
-                var s = streams[i];
-                var pool = s.pool;
-                pool.build.apply(pool, [aspect, factory].concat(args));
-            }
-
-            return this;
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            var streams = this._streams;
-            var len = streams.length;
-            for (var i = 0; i < len; i++) {
-                streams[i].cleanupMethod();
-            }
-            this._streams = null;
-        }
-    }, {
-        key: 'bus',
-        get: function get$$1() {
-            return this._bus;
-        }
-    }, {
-        key: 'index',
-        get: function get$$1() {
-            return this._index;
-        }
-    }, {
-        key: 'holding',
-        get: function get$$1() {
-            return this._holding;
-        }
-    }, {
-        key: 'streams',
-        get: function get$$1() {
-            return [].concat(this._streams);
-        }
-    }]);
-    return Frame;
-}();
-
-var Pool = function () {
-    function Pool(stream) {
-        classCallCheck(this, Pool);
-
-
-        this.stream = stream;
-
-        this.keep = null;
-        this.when = Func.ALWAYS_TRUE;
-        this.until = Func.ALWAYS_TRUE;
-        this.timer = null; // throttle, debounce, defer, batch, sync
-        this.clear = Func.ALWAYS_FALSE;
-        this.isPrimed = false;
-        this.source = stream.name;
-    }
-
-    createClass(Pool, [{
-        key: 'handle',
-        value: function handle(msg, source) {
-
-            this.keep(msg, source);
-            if (!this.isPrimed) {
-                var content = this.keep.content();
-                if (this.when(content)) {
-                    this.isPrimed = true;
-                    this.timer(this);
-                }
-            }
-        }
-    }, {
-        key: 'build',
-        value: function build(prop, factory) {
-            for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-                args[_key - 2] = arguments[_key];
-            }
-
-            this[prop] = factory.call.apply(factory, [this].concat(args));
-        }
-    }, {
-        key: 'release',
-        value: function release(pool) {
-
-            pool = pool || this;
-            var hasContent = !pool.keep.isEmpty;
-            var msg = hasContent && pool.keep.next();
-
-            if (pool.clear()) {
-                pool.keep.reset();
-                pool.when.reset();
-            }
-
-            pool.isPrimed = false;
-
-            if (hasContent) pool.stream.emit(msg, pool.stream.name);
-        }
-    }]);
-    return Pool;
-}();
-
-var Stream = function () {
-    function Stream() {
-        classCallCheck(this, Stream);
-
-
-        this.debugFrame = null;
-        this.dead = false;
-        this.children = [];
-        this.name = null;
-        this.pool = null;
-        this.cleanupMethod = Func.NOOP; // to cleanup subscriptions
-        this.pull = Func.NOOP; // to retrieve and emit stored values from a source
-        this.processMethod = this.emit;
-        this.actionMethod = null; // for run, transform, filter, name, delay
-    }
-
-    createClass(Stream, [{
-        key: 'handle',
-        value: function handle(msg, source) {
-
-            if (this.dead) // true if canceled or disposed midstream
-                return this;
-
-            this.processMethod(msg, this.name || source); // handle method = doDelay, doGroup, doHold, , doFilter
-
-            return this;
-        }
-    }, {
-        key: 'drop',
-        value: function drop(stream) {
-
-            var children = this.children;
-            var i = children.indexOf(stream);
-
-            if (i !== -1) children.splice(i, 1);
-        }
-    }, {
-        key: 'addTarget',
-        value: function addTarget(stream) {
-            this.children.push(stream);
-        }
-    }, {
-        key: 'emit',
-        value: function emit(msg, source, topic, thisStream) {
-
-            thisStream = thisStream || this; // allow callbacks with context instead of bind (massively faster)
-            source = thisStream.name || source;
-
-            var children = thisStream.children;
-            var len = children.length;
-
-            for (var i = 0; i < len; i++) {
-                var c = children[i];
-                c.handle(msg, source, topic);
-            }
-        }
-    }, {
-        key: 'doFilter',
-        value: function doFilter(msg, source, topic) {
-
-            if (!this.actionMethod(msg, source, topic)) return;
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doMsg',
-        value: function doMsg(msg, source, topic) {
-
-            msg = this.actionMethod(msg, source, topic);
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doTransform',
-        value: function doTransform(msg, source, topic) {
-
-            msg = this.actionMethod.msg ? this.actionMethod.msg(msg, source, topic) : msg;
-            source = this.actionMethod.source ? this.actionMethod.source(msg, source, topic) : source;
-            topic = this.actionMethod.topic ? this.actionMethod.topic(msg, source, topic) : topic;
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'doDelay',
-        value: function doDelay(msg, source, topic) {
-
-            // todo add destroy -> kills timeout
-            // passes 'this' to avoid bind slowdown
-            setTimeout(this.emit, this.actionMethod(msg, source, topic) || 0, msg, source, topic, this);
-        }
-    }, {
-        key: 'doSource',
-        value: function doSource(msg, source, topic) {
-
-            this.name = this.actionMethod(); // todo shoehorned -- this needs it's own setup
-            //source = this.actionMethod(msg, source, topic);
-            // this.name = function(){ return }
-            this.emit(msg, this.name || source, topic);
-        }
-    }, {
-        key: 'doRun',
-        value: function doRun(msg, source, topic) {
-
-            this.actionMethod(msg, source, topic);
-            this.emit(msg, source, topic);
-        }
-    }, {
-        key: 'createPool',
-        value: function createPool() {
-
-            this.pool = new Pool(this);
-        }
-    }, {
-        key: 'doPool',
-        value: function doPool(msg, source, topic) {
-
-            this.pool.handle(msg, this.name || source, topic);
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return;
-
-            this.cleanupMethod(); // should remove an eventListener if present
-        }
-    }]);
-    return Stream;
-}();
-
-Stream.fromMonitor = function (data, name, canPull) {
-
-    var stream = new Stream();
-    var streamName = name || data.name;
-
-    stream.name = streamName;
-
-    var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName, topic);
-    };
-
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream);
-    };
-
-    if (canPull) {
-        stream.pull = function () {
-            var packet = data.survey();
-            if (packet) {
-                var msg = packet._msg;
-                var source = streamName || packet._source;
-                var topic = packet._topic;
-                stream.emit(msg, source, topic, stream);
-            }
-        };
-    }
-
-    data.monitor(toStream);
-
-    return stream;
+NoopStream.prototype.resetDefault = function reset() {
+    this.next.reset();
 };
 
-Stream.fromTopicData = function (data, topicData, name, canPull) {
+const stubs$1 = {handle:'handle', reset:'resetDefault', emit:'emit'};
 
-    var stream = new Stream();
-    var streamName = name || data.name;
-    stream.name = streamName;
+NoopStream.prototype.addStubs = function addStubs(streamClass) {
 
-    var currentTopic = topicData.read();
-
-    var toTopicChange = function toTopicChange(msg) {
-        data.unsubscribe(toStream, currentTopic);
-        currentTopic = msg;
-        data.subscribe(toStream, currentTopic);
-    };
-
-    topicData.subscribe(toTopicChange);
-
-    var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName, topic);
-    };
-
-    stream.cleanupMethod = function () {
-        topicData.unsubscribe(toTopicChange);
-        data.unsubscribe(toStream, currentTopic);
-    };
-
-    if (canPull) {
-        stream.pull = function () {
-            var packet = data.peek();
-            if (packet) {
-                var msg = packet._msg;
-                var source = streamName || packet._source;
-                var topic = packet._topic;
-                stream.emit(msg, source, topic, stream);
-            }
-        };
+    for(const name in stubs$1){
+        const ref = stubs$1[name];
+        const f = NoopStream.prototype[ref];
+        if(typeof streamClass.prototype[name] !== 'function'){
+            streamClass.prototype[name] = f;
+        }
     }
 
-    data.subscribe(toStream, currentTopic);
-
-    return stream;
 };
 
-Stream.fromSubscribe = function (data, topic, name, canPull) {
+const NOOP_STREAM = new NoopStream();
 
-    var stream = new Stream();
-    var streamName = name || topic || data.name;
-    stream.name = streamName;
+function PassStream(name) {
 
-    var toStream = function toStream(msg, source, topic) {
-        stream.emit(msg, streamName, topic);
-    };
+    this.name = name || '';
+    this.next = NOOP_STREAM;
 
-    stream.cleanupMethod = function () {
-        data.unsubscribe(toStream, topic);
-    };
+}
 
-    if (canPull) {
-        stream.pull = function () {
-            var packet = data.peek();
-            if (packet) {
-                var msg = packet._msg;
-                var source = streamName || packet._source;
-                var _topic = packet._topic;
-                stream.emit(msg, source, _topic, stream);
-            }
-        };
-    }
+PassStream.prototype.handle = function passHandle(msg, source, topic) {
 
-    data.subscribe(toStream, topic);
+    const n = this.name || source;
+    this.next.handle(msg, n, topic);
 
-    return stream;
 };
 
-Stream.fromEvent = function (target, eventName, useCapture) {
-
-    useCapture = !!useCapture;
-
-    var stream = new Stream();
-    stream.name = eventName;
-
-    var on = target.addEventListener || target.addListener || target.on;
-    var off = target.removeEventListener || target.removeListener || target.off;
-
-    var toStream = function toStream(msg) {
-        stream.handle(msg, eventName);
-    };
-
-    stream.cleanupMethod = function () {
-        off.call(target, eventName, toStream, useCapture);
-    };
-
-    on.call(target, eventName, toStream, useCapture);
-
-    return stream;
-};
-
-var Bus = function () {
-    function Bus(scope, streams) {
-        classCallCheck(this, Bus);
-
-
-        this._frames = [];
-        this._dead = false;
-        this._scope = scope; // data scope
-        this._children = []; // from forks
-        this._parent = null;
-
-        if (scope) scope._busList.push(this);
-
-        var f = new Frame(this, streams || []);
-        this._frames.push(f);
-        this._currentFrame = f;
-    }
-
-    createClass(Bus, [{
-        key: 'addFrame',
-
-
-        // NOTE: unlike most bus methods, this one returns a new current frame (not the bus!)
-        // todo private?
-
-        value: function addFrame(streams) {
-
-            var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this, streams);
-            this._frames.push(nextFrame);
-
-            _wireFrames(lastFrame, nextFrame);
-
-            return nextFrame;
-        }
-    }, {
-        key: 'spawn',
-
-
-        // create stream
-        value: function spawn() {}
-
-        // convert each stream into a bus, wiring prior streams, dump in array
-
-    }, {
-        key: 'split',
-        value: function split() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-        }
-    }, {
-        key: 'fork',
-        value: function fork() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            var fork = new Bus(this.scope);
-            fork.parent = this;
-            _wireFrames(this._currentFrame, fork._currentFrame, true);
-
-            return fork;
-        }
-    }, {
-        key: 'back',
-        value: function back() {
-
-            if (!this._parent) throw new Error('Cannot exit fork, parent does not exist!');
-
-            return this.parent;
-        }
-    }, {
-        key: 'join',
-        value: function join() {
-
-            var parent = this.back();
-            parent.add(this);
-            return parent;
-        }
-    }, {
-        key: 'add',
-        value: function add(bus) {
-
-            var frame = this.addFrame(); // wire from current bus
-            _wireFrames(bus._currentFrame, frame); // wire from outside bus
-            return this;
-        }
-    }, {
-        key: 'defer',
-        value: function defer() {
-            return this.timer(Func.getDeferTimer);
-        }
-    }, {
-        key: 'batch',
-        value: function batch() {
-            return this.timer(Func.getBatchTimer);
-        }
-    }, {
-        key: 'sync',
-        value: function sync() {
-            return this.timer(Func.getSyncTimer);
-        }
-    }, {
-        key: 'throttle',
-        value: function throttle(fNum) {
-            return this.timer(Func.getThrottleTimer, fNum);
-        }
-    }, {
-        key: 'hold',
-        value: function hold() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold();
-            return this;
-        }
-    }, {
-        key: 'pull',
-        value: function pull() {
-
-            var frame1 = this._frames[0];
-
-            if (frame1._streams.length > 0) {
-                frame1.pull();
-                return this;
-            }
-
-            if (this._frames.length !== 1) {
-                var frame2 = this._frames[1];
-                frame2.pull();
-            }
-
-            return this;
-        }
-    }, {
-        key: 'event',
-        value: function event(name, target, eventName, useCapture) {
-
-            eventName = eventName || name;
-            Func.ASSERT_NOT_HOLDING(this);
-            var stream = Stream.fromEvent(target, eventName, useCapture);
-            stream.name = name;
-            this.addFrame([stream]);
-            return this;
-        }
-    }, {
-        key: 'eventList',
-        value: function eventList(list) {
-
-            Func.ASSERT_NOT_HOLDING(this);
-
-            var len = list.length;
-            var streams = [];
-
-            for (var i = 0; i < len; i++) {
-                var e = list[i];
-                var eventName = e.eventName || e.name;
-                var name = e.name || e.eventName;
-                var s = Stream.fromEvent(e.target, eventName, e.useCapture);
-                s.name = name;
-                streams.push(s);
-            }
-
-            this.addFrame(streams);
-            return this;
-        }
-    }, {
-        key: 'scan',
-        value: function scan(func, seed) {
-            return this.reduce(Func.getScan, func, seed);
-        }
-    }, {
-        key: 'delay',
-        value: function delay(num) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().delay(num);
-            return this;
-        }
-    }, {
-        key: 'willReset',
-        value: function willReset() {
-
-            Func.ASSERT_IS_HOLDING(this);
-            return this.clear(Func.getAlwaysTrue);
-        }
-    }, {
-        key: 'whenKeys',
-        value: function whenKeys(keys) {
-            return this.when(Func.getWhenKeys, keys);
-        }
-    }, {
-        key: 'group',
-        value: function group(by) {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold().reduce(Func.getGroup, by);
-            return this;
-        }
-    }, {
-        key: 'groupByTopic',
-        value: function groupByTopic() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hold().reduce(Func.getGroup, Func.TO_TOPIC);
-            return this;
-        }
-    }, {
-        key: 'all',
-        value: function all() {
-            return this.reduce(Func.getKeepAll);
-        }
-    }, {
-        key: 'first',
-        value: function first(n) {
-            return this.reduce(Func.getKeepFirst, n);
-        }
-    }, {
-        key: 'last',
-        value: function last(n) {
-            return this.reduce(Func.getKeepLast, n);
-        }
-    }, {
-        key: 'clear',
-        value: function clear(factory) {
-            var _currentFrame;
-
-            for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-                args[_key - 1] = arguments[_key];
-            }
-
-            return (_currentFrame = this._currentFrame).clear.apply(_currentFrame, [factory].concat(args));
-        }
-    }, {
-        key: 'reduce',
-        value: function reduce(factory) {
-            var _currentFrame2, _addFrame$hold;
-
-            for (var _len2 = arguments.length, args = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-                args[_key2 - 1] = arguments[_key2];
-            }
-
-            this.holding ? (_currentFrame2 = this._currentFrame).reduce.apply(_currentFrame2, [factory].concat(args)) : (_addFrame$hold = this.addFrame().hold()).reduce.apply(_addFrame$hold, [factory].concat(args)).timer(Func.getSyncTimer);
-            return this;
-        }
-    }, {
-        key: 'timer',
-        value: function timer(factory) {
-            var _currentFrame3, _addFrame$hold$reduce;
-
-            for (var _len3 = arguments.length, args = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
-                args[_key3 - 1] = arguments[_key3];
-            }
-
-            this.holding ? (_currentFrame3 = this._currentFrame).timer.apply(_currentFrame3, [factory].concat(args)) : (_addFrame$hold$reduce = this.addFrame().hold().reduce(Func.getKeepLast)).timer.apply(_addFrame$hold$reduce, [factory].concat(args));
-            return this;
-        }
-    }, {
-        key: 'until',
-        value: function until(factory) {
-            var _currentFrame4, _addFrame$hold$reduce2;
-
-            for (var _len4 = arguments.length, args = Array(_len4 > 1 ? _len4 - 1 : 0), _key4 = 1; _key4 < _len4; _key4++) {
-                args[_key4 - 1] = arguments[_key4];
-            }
-
-            this.holding ? (_currentFrame4 = this._currentFrame).until.apply(_currentFrame4, [factory].concat(args)) : (_addFrame$hold$reduce2 = this.addFrame().hold().reduce(Func.getKeepLast)).until.apply(_addFrame$hold$reduce2, [factory].concat(args)).timer(Func.getSyncTimer);
-            return this;
-        }
-    }, {
-        key: 'when',
-        value: function when(factory) {
-            var _currentFrame5, _addFrame$hold$reduce3;
-
-            for (var _len5 = arguments.length, args = Array(_len5 > 1 ? _len5 - 1 : 0), _key5 = 1; _key5 < _len5; _key5++) {
-                args[_key5 - 1] = arguments[_key5];
-            }
-
-            this.holding ? (_currentFrame5 = this._currentFrame).when.apply(_currentFrame5, [factory].concat(args)) : (_addFrame$hold$reduce3 = this.addFrame().hold().reduce(Func.getKeepLast)).when.apply(_addFrame$hold$reduce3, [factory].concat(args)).timer(Func.getSyncTimer);
-            return this;
-        }
-    }, {
-        key: 'run',
-        value: function run(func) {
-
-            Func.ASSERT_IS_FUNCTION(func);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().run(func);
-            return this;
-        }
-    }, {
-        key: 'merge',
-        value: function merge() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-
-            var mergedStream = new Stream();
-
-            var lastFrame = this._currentFrame;
-            var nextFrame = this._currentFrame = new Frame(this, [mergedStream]);
-            this._frames.push(nextFrame);
-
-            var streams = lastFrame._streams;
-            var len = streams.length;
-            for (var i = 0; i < len; i++) {
-                var s = streams[i];
-                s.addTarget(mergedStream);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'msg',
-        value: function msg(fAny) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().msg(fAny);
-            return this;
-        }
-    }, {
-        key: 'transform',
-        value: function transform(fAny) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().transform(fAny);
-            return this;
-        }
-    }, {
-        key: 'source',
-        value: function source(fStr) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().source(fStr);
-            return this;
-        }
-    }, {
-        key: 'filter',
-        value: function filter(func) {
-
-            Func.ASSERT_NEED_ONE_ARGUMENT(arguments);
-            Func.ASSERT_IS_FUNCTION(func);
-            Func.ASSERT_NOT_HOLDING(this);
-
-            this.addFrame().filter(func);
-            return this;
-        }
-    }, {
-        key: 'hasKeys',
-        value: function hasKeys(keys) {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().hasKeys(keys);
-            return this;
-        }
-    }, {
-        key: 'skipDupes',
-        value: function skipDupes() {
-
-            Func.ASSERT_NOT_HOLDING(this);
-            this.addFrame().skipDupes();
-            return this;
-        }
-    }, {
-        key: 'toStream',
-        value: function toStream() {
-            // merge, fork -> immutable stream?
-        }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
-
-            if (this.dead) return this;
-
-            this._dead = true;
-
-            var frames = this._frames;
-
-            var _iteratorNormalCompletion = true;
-            var _didIteratorError = false;
-            var _iteratorError = undefined;
-
-            try {
-                for (var _iterator = frames[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var f = _step.value;
-
-                    f.destroy();
-                }
-            } catch (err) {
-                _didIteratorError = true;
-                _iteratorError = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion && _iterator.return) {
-                        _iterator.return();
-                    }
-                } finally {
-                    if (_didIteratorError) {
-                        throw _iteratorError;
-                    }
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: 'children',
-        get: function get$$1() {
-
-            return this._children.map(function (d) {
-                return d;
-            });
-        }
-    }, {
-        key: 'parent',
-        get: function get$$1() {
-            return this._parent;
-        },
-        set: function set$$1(newParent) {
-
-            var oldParent = this.parent;
-
-            if (oldParent === newParent) return;
-
-            if (oldParent) {
-                var i = oldParent._children.indexOf(this);
-                oldParent._children.splice(i, 1);
-            }
-
-            this._parent = newParent;
-
-            if (newParent) {
-                newParent._children.push(this);
-            }
-
-            return this;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'holding',
-        get: function get$$1() {
-            return this._currentFrame._holding;
-        }
-    }, {
-        key: 'scope',
-        get: function get$$1() {
-            return this._scope;
-        }
-    }]);
-    return Bus;
-}();
-
-// send messages from streams in one frame to new empty streams in another frame
-// injects new streams to frame 2
-
-function _wireFrames(frame1, frame2, isForking) {
-
-    var streams1 = frame1._streams;
-    var streams2 = frame2._streams;
-
-    var len = streams1.length;
-
-    for (var i = 0; i < len; i++) {
-
-        var s1 = streams1[i];
-        var s2 = new Stream(frame2);
-
-        if (!isForking) s2.name = s1.name;
-
-        streams2.push(s2);
-        s1.addTarget(s2);
+NOOP_STREAM.addStubs(PassStream);
+
+function SubscribeSource(name, data, topic, canPull){
+
+    this.name = name;
+    this.data = data;
+    this.topic = topic;
+    this.canPull = canPull;
+    this.stream = new PassStream(name);
+    data.subscribe(this.stream, topic);
+
+}
+
+function tryEmit(source){
+    try{
+        source.emit();
+    } catch(e){
     }
 }
 
-var Nyan = {};
+SubscribeSource.prototype.pull = function pull(){
+
+    !this.dead && this.canPull && tryEmit(this);
+
+};
+
+
+
+SubscribeSource.prototype.emit = function emit(){
+
+    const data = this.data;
+    const topic = this.topic;
+
+    const present = data.present(topic);
+
+    if(present) {
+        const stream = this.stream;
+        const msg = data.read(topic);
+        const source = this.name;
+        stream.handle(msg, source, topic);
+    }
+
+};
+
+SubscribeSource.prototype.destroy = function destroy(){
+
+    const stream = this.stream;
+    const topic = this.topic;
+
+    this.data.unsubscribe(stream, topic);
+    this.dead = true;
+
+};
+
+
+NOOP_SOURCE.addStubs(SubscribeSource);
+
+function EventSource(name, target, eventName, useCapture){
+
+    function toStream(msg){
+        stream.handle(msg, eventName, null);
+    }
+
+    this.name = name;
+    this.target = target;
+    this.eventName = eventName;
+    this.useCapture = !!useCapture;
+    this.on = target.addEventListener || target.addListener || target.on;
+    this.off = target.removeEventListener || target.removeListener || target.off;
+    this.stream = new PassStream(name);
+    this.callback = toStream;
+    const stream = this.stream;
+
+    this.on.call(target, eventName, toStream, useCapture);
+
+}
+
+
+
+EventSource.prototype.destroy = function destroy(){
+
+    this.off.call(this.target, this.eventName, this.callback, this.useCapture);
+    this.dead = true;
+
+};
+
+
+NOOP_SOURCE.addStubs(EventSource);
+
+function ForkStream(name, fork) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.fork = fork;
+
+}
+
+ForkStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name;
+    this.next.handle(msg, n, topic);
+    this.fork.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(ForkStream);
+
+function BatchStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.msg = undefined;
+    this.topic = '';
+    this.latched = false;
+
+}
+
+BatchStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.msg = msg;
+    this.topic = topic;
+
+    if(!this.latched){
+        this.latched = true;
+        Catbus.enqueue(this);
+    }
+
+};
+
+BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
+
+    const msg = this.msg;
+    const topic = this.topic;
+    const source = this.name;
+
+    this.next.handle(msg, source, topic);
+
+};
+
+
+BatchStream.prototype.reset = function reset() {
+
+    this.latched = false;
+    this.msg = undefined;
+    this.topic = '';
+
+    // doesn't continue on as in default
+
+};
+
+NOOP_STREAM.addStubs(BatchStream);
+
+function ResetStream(name, head) {
+
+    this.head = head; // stream at the head of the reset process
+    this.name = name;
+    this.next = NOOP_STREAM;
+
+}
+
+ResetStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.next.handle(msg, source, topic);
+    this.head.reset(msg, source, topic);
+
+};
+
+ResetStream.prototype.reset = function(){
+    // catch reset from head, does not continue
+};
+
+function IDENTITY$1(d) { return d; }
+
+
+function TapStream(name, f) {
+    this.name = name;
+    this.f = f || IDENTITY$1;
+    this.next = NOOP_STREAM;
+}
+
+TapStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name || source;
+    const f = this.f;
+    f(msg, n, topic);
+    this.next.handle(msg, n, topic);
+
+};
+
+NOOP_STREAM.addStubs(TapStream);
+
+function IDENTITY$2(msg, source, topic) { return msg; }
+
+
+function MsgStream(name, f) {
+
+    this.name = name;
+    this.f = f || IDENTITY$2;
+    this.next = NOOP_STREAM;
+
+}
+
+
+MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
+
+    const f = this.f;
+    this.next.handle(f(msg, source, topic), source, topic);
+
+};
+
+NOOP_STREAM.addStubs(MsgStream);
+
+function IDENTITY$3(d) { return d; }
+
+
+function FilterStream(name, f, context) {
+
+    this.name = name;
+    this.f = f || IDENTITY$3;
+    this.context = context || null;
+    this.next = NOOP_STREAM;
+
+}
+
+FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
+
+    const f = this.f;
+    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
+
+};
+
+NOOP_STREAM.addStubs(FilterStream);
+
+function IS_EQUAL(a, b) { return a === b; }
+
+
+function SkipStream(name) {
+
+    this.name = name;
+    this.msg = undefined;
+    this.hasValue = true;
+    this.next = NOOP_STREAM;
+
+}
+
+SkipStream.prototype.handle = function handle(msg, source, topic) {
+
+    if(!this.hasValue) {
+
+        this.hasValue = true;
+        this.msg = msg;
+        this.next.handle(msg, source, topic);
+
+    } else if (!IS_EQUAL(this.msg, msg)) {
+
+        this.msg = msg;
+        this.next.handle(msg, source, topic);
+
+    }
+};
+
+NOOP_STREAM.addStubs(SkipStream);
+
+function LastNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 1;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+LastNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const m = this.msg;
+    const n = this.name || source;
+
+    m.push(msg);
+    if(m.length > c)
+        m.shift();
+
+    this.next.handle(m, n, topic);
+
+};
+
+LastNStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(LastNStream);
+
+function FirstNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 1;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+FirstNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const m = this.msg;
+    const n = this.name || source;
+
+    if(m.length < c)
+        m.push(msg);
+
+    this.next.handle(m, n, topic);
+
+};
+
+FirstNStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+
+};
+
+NOOP_STREAM.addStubs(FirstNStream);
+
+function AllStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+    this.msg = [];
+
+}
+
+AllStream.prototype.handle = function handle(msg, source, topic) {
+
+    const m = this.msg;
+    const n = this.name || source;
+
+    m.push(msg);
+
+    this.next.handle(m, n, topic);
+
+};
+
+AllStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+
+};
+
+NOOP_STREAM.addStubs(AllStream);
+
+const FUNCTOR$1 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function IMMEDIATE(msg, source, topic) { return 0; }
+
+function callback(stream, msg, source, topic){
+    const n = stream.name || source;
+    stream.next.handle(msg, n, topic);
+}
+
+function DelayStream(name, f) {
+
+    this.name = name;
+    this.f = arguments.length ? FUNCTOR$1(f) : IMMEDIATE;
+    this.next = NOOP_STREAM;
+
+}
+
+DelayStream.prototype.handle = function handle(msg, source, topic) {
+
+    const delay = this.f(msg, source, topic);
+    setTimeout(callback, delay, this, msg, source, topic);
+
+};
+
+NOOP_STREAM.addStubs(DelayStream);
+
+function BY_SOURCE(msg, source, topic) { return source; }
+
+const FUNCTOR$2 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function GroupStream(name, f, seed) {
+
+    this.name = name;
+    this.f = f || BY_SOURCE;
+    this.seed = arguments.length === 3 ? FUNCTOR$2(seed) : FUNCTOR$2({});
+    this.next = NOOP_STREAM;
+    this.topic = undefined;
+    this.msg = this.seed();
+
+}
+
+GroupStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+    const n = this.name || source;
+    const m = this.msg;
+
+    if(v){
+        m[v] = msg;
+    } else {
+        for(const k in msg){
+            m[k] = msg[k];
+        }
+    }
+
+    this.next.handle(m, n, topic);
+
+};
+
+GroupStream.prototype.reset = function reset(msg) {
+
+    const m = this.msg = this.seed(msg);
+    this.topic = undefined;
+    this.next.reset(m);
+
+};
+
+NOOP_STREAM.addStubs(GroupStream);
+
+function TRUE() { return true; }
+
+
+function LatchStream(name, f) {
+
+    this.name = name;
+    this.f = f || TRUE;
+    this.next = NOOP_STREAM;
+    this.latched = false;
+
+}
+
+LatchStream.prototype.handle = function handle(msg, source, topic) {
+
+    const n = this.name;
+
+    if(this.latched){
+        this.next.handle(msg, n, topic);
+        return;
+    }
+
+    const f = this.f;
+    const v = f(msg, source, topic);
+
+    if(v) {
+        this.latched = true;
+        this.next.handle(msg, n, topic);
+    }
+
+};
+
+LatchStream.prototype.reset = function(seed){
+    this.latched = false;
+    this.next.reset(seed);
+};
+
+NOOP_STREAM.addStubs(LatchStream);
+
+function ScanStream(name, f) {
+
+    this.name = name;
+    this.f = f;
+    this.hasValue = false;
+    this.next = NOOP_STREAM;
+    this.value = undefined;
+
+}
+
+
+ScanStream.prototype.handle = function handle(msg, source, topic) {
+
+    const f = this.f;
+    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
+    this.next.handle(this.value, source, topic);
+
+};
+
+ScanStream.prototype.reset = function reset(msg) {
+
+    this.hasValue = false;
+    this.value = undefined;
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(ScanStream);
+
+const FUNCTOR$3 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
+
+function ScanWithSeedStream(name, f, seed) {
+
+    this.name = name;
+    this.f = f;
+    this.seed = FUNCTOR$3(seed);
+    this.next = NOOP_STREAM;
+    this.value = this.seed();
+
+}
+
+
+
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
+
+    const f = this.f;
+    this.value = f(this.value, msg, source, topic);
+    this.next.handle(this.value, source, topic);
+
+};
+
+ScanWithSeedStream.prototype.reset = function reset(msg) {
+
+    this.value = this.seed(msg);
+    this.next.reset(this.value);
+
+};
+
+NOOP_STREAM.addStubs(ScanWithSeedStream);
+
+
+
+
+// const scanStreamBuilder = function(f, seed) {
+//     const hasSeed = arguments.length === 2;
+//     return function(name) {
+//         return hasSeed? new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
+//     }
+// };
+
+function SplitStream(name) {
+
+    this.name = name;
+    this.next = NOOP_STREAM;
+
+}
+
+
+SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
+
+    if(Array.isArray(msg)){
+        this.withArray(msg, source, topic);
+    } else {
+        this.withIteration(msg, source, topic);
+    }
+
+};
+
+
+SplitStream.prototype.withArray = function(msg, source, topic){
+
+    const len = msg.length;
+
+    for(let i = 0; i < len; ++i){
+        this.next.handle(msg[i], source, topic);
+    }
+
+};
+
+
+
+SplitStream.prototype.withIteration = function(msg, source, topic){
+
+    const next = this.next;
+
+    for(const m of msg){
+        next.handle(m, source, topic);
+    }
+
+};
+
+NOOP_STREAM.addStubs(SplitStream);
+
+function WriteStream(name, dataTopic) {
+    this.name = name;
+    this.dataTopic = dataTopic;
+    this.next = NOOP_STREAM;
+}
+
+WriteStream.prototype.handle = function handle(msg, source, topic) {
+
+    this.dataTopic.handle(msg);
+    this.next.handle(msg, source, topic);
+
+};
+
+NOOP_STREAM.addStubs(WriteStream);
+
+function IDENTITY$4(d) { return d; }
+
+
+function FilterMapStream(name, f, m, context) {
+
+    this.name = name || '';
+    this.f = f || IDENTITY$4;
+    this.m = m || IDENTITY$4;
+    this.context = context || null;
+    this.next = NOOP_STREAM;
+
+}
+
+FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
+
+    const f = this.f;
+    const m = this.m;
+    f.call(this.context, msg, source, topic) && this.next.handle(
+        m.call(this.context, msg, source, topic));
+
+};
+
+NOOP_STREAM.addStubs(FilterMapStream);
+
+function FUNCTOR$4(d) {
+    return typeof d === 'function' ? d : function() { return d; };
+}
+
+function ReduceStream(name, f, seed) {
+
+    this.name = name;
+    this.seed = FUNCTOR$4(seed);
+    this.v = this.seed() || 0;
+    this.f = f;
+    this.next = NOOP_STREAM;
+
+}
+
+
+ReduceStream.prototype.reset = function(){
+
+    this.v = this.seed() || 0;
+    this.next.reset();
+
+};
+
+ReduceStream.prototype.handle = function(msg, source, topic){
+
+    const f = this.f;
+    this.next.handle(this.v = f(msg, this.v), source, topic);
+
+};
+
+NOOP_STREAM.addStubs(ReduceStream);
+
+function SkipNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 0;
+    this.next = NOOP_STREAM;
+    this.seen = 0;
+
+}
+
+SkipNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const s = this.seen;
+
+    if(this.seen < c){
+        this.seen = s + 1;
+    } else {
+        this.next.handle(msg, source, topic);
+    }
+
+};
+
+SkipNStream.prototype.reset = function(msg, source, topic){
+
+    this.seen = 0;
+
+};
+
+NOOP_STREAM.addStubs(SkipNStream);
+
+function TakeNStream(name, count) {
+
+    this.name = name;
+    this.count = count || 0;
+    this.next = NOOP_STREAM;
+    this.seen = 0;
+
+}
+
+TakeNStream.prototype.handle = function handle(msg, source, topic) {
+
+    const c = this.count;
+    const s = this.seen;
+
+    if(this.seen < c){
+        this.seen = s + 1;
+        this.next.handle(msg, source, topic);
+    }
+
+};
+
+TakeNStream.prototype.reset = function(msg, source, topic){
+
+    this.seen = 0;
+
+};
+
+NOOP_STREAM.addStubs(TakeNStream);
+
+function Spork(bus) {
+
+    this.bus = bus;
+    this.streams = [];
+    this.first = NOOP_STREAM;
+    this.last = NOOP_STREAM;
+    this.initialized = false;
+
+}
+
+Spork.prototype.handle = function(msg, topic, source) {
+
+    this.first.reset();
+    this._split(msg, source, topic);
+    this.last.handle(this.last.v, source, topic);
+
+};
+
+
+Spork.prototype.withArray = function withArray(msg, source, topic){
+
+    const len = msg.length;
+
+    for(let i = 0; i < len; ++i){
+        this.first.handle(msg[i], source, topic);
+    }
+
+};
+
+Spork.prototype.withIteration = function withIteration(msg, source, topic){
+
+    const first = this.first;
+    for(const i of msg){
+        first.handle(i, source, topic);
+    }
+
+};
+
+Spork.prototype._split = function(msg, source, topic){
+
+    if(Array.isArray(msg)){
+        this.withArray(msg, source, topic);
+    } else {
+        this.withIteration(msg, source, topic);
+    }
+
+};
+
+Spork.prototype._extend = function(stream) {
+
+    if(!this.initialized){
+        this.initialized = true;
+        this.first = stream;
+        this.last = stream;
+    } else {
+        this.streams.push(stream);
+        this.last.next = stream;
+        this.last = stream;
+    }
+
+};
+
+Spork.prototype.msg = function msg(f) {
+    this._extend(new MsgStream('', f));
+    return this;
+};
+
+Spork.prototype.skipDupes = function skipDupes() {
+    this._extend(new SkipStream(''));
+    return this;
+};
+
+Spork.prototype.skip = function skip(n) {
+    this._extend(new SkipNStream('', n));
+    return this;
+};
+
+Spork.prototype.take = function take(n) {
+    this._extend(new TakeNStream('', n));
+    return this;
+};
+
+
+Spork.prototype.reduce = function reduce(f, seed) {
+    this._extend(new ReduceStream('', f, seed));
+    this.bus._spork = null;
+    return this.bus;
+};
+
+Spork.prototype.filter = function filter(f) {
+    this._extend(new FilterStream('', f));
+    return this;
+};
+
+Spork.prototype.filterMap = function filter(f, m) {
+    this._extend(new FilterMapStream('', f, m));
+    return this;
+};
+
+class Frame {
+
+    constructor(bus) {
+
+        this.bus = bus;
+        this.index = bus._frames.length;
+        this.streams = [];
+
+    };
+
+
+}
+
+const Nyan = {};
 
 // then = applies to all words in a phrase
 // watch: ^ = action, need, event, watch | read, must
 // then:  run, read, attr, and, style, write, blast, filter
 
-var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, need: true, solo: true }, { name: 'WIRE', sym: '~', react: true, follow: true }, // INTERCEPT
-{ name: 'WATCH', sym: null, react: true, follow: true }, { name: 'EVENT', sym: '@', react: true, event: true }, { name: 'ALIAS', sym: '(', then: true, solo: true }, { name: 'METHOD', sym: '`', then: true, solo: true }, { name: 'READ', sym: null, then: true, read: true }, { name: 'ATTR', sym: '#', then: true, solo: true, output: true }, { name: 'AND', sym: '&', then: true }, { name: 'STYLE', sym: '$', then: true, solo: true, output: true }, { name: 'WRITE', sym: '=', then: true, solo: true }, { name: 'SPRAY', sym: '<', then: true }, { name: 'RUN', sym: '*', then: true, output: true }, { name: 'FILTER', sym: '>', then: true }];
+const operationDefs = [
+
+    {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
+    {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
+    {name: 'WATCH',  sym: null, react: true, follow: true},
+    {name: 'EVENT',  sym: '@',  react: true, event: true},
+    {name: 'ALIAS',  sym: '(',  then: true, solo: true},
+    {name: 'METHOD', sym: '`',  then: true, solo: true},
+    {name: 'READ',   sym: null, then: true, read: true},
+    {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
+    {name: 'AND',    sym: '&',  then: true },
+    {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
+    {name: 'WRITE',  sym: '=',  then: true,  solo: true },
+    {name: 'SPRAY',  sym: '<',  then: true },
+    {name: 'RUN',    sym: '*',  then: true, output: true },
+    {name: 'FILTER', sym: '>',  then: true }
+
+];
 
 // cat, dog | & meow, kitten {*log} | =puppy
 
@@ -2028,21 +1301,21 @@ var operationDefs = [{ name: 'ACTION', sym: '^', react: true, subscribe: true, n
 // ? is object maybe (object might not be there)
 // () is rename
 
-var operationsBySymbol = {};
-var operationsByName = {};
-var symbolsByName = {};
-var namesBySymbol = {};
-var reactionsByName = {};
-var withReactionsByName = {};
-var thenByName = {};
+const operationsBySymbol = {};
+const operationsByName = {};
+const symbolsByName = {};
+const namesBySymbol = {};
+const reactionsByName = {};
+const withReactionsByName = {};
+const thenByName = {};
 
-for (var i = 0; i < operationDefs.length; i++) {
+for(let i = 0; i < operationDefs.length; i++){
 
-    var op = operationDefs[i];
-    var name = op.name;
-    var sym = op.sym;
+    const op = operationDefs[i];
+    const name = op.name;
+    const sym = op.sym;
 
-    if (sym) {
+    if(sym) {
         operationsBySymbol[sym] = op;
         namesBySymbol[sym] = name;
     }
@@ -2050,47 +1323,54 @@ for (var i = 0; i < operationDefs.length; i++) {
     operationsByName[name] = op;
     symbolsByName[name] = sym;
 
-    if (op.then) {
+    if(op.then){
         thenByName[name] = true;
     }
 
-    if (op.react) {
+    if(op.react) {
         reactionsByName[name] = true;
         withReactionsByName[name] = true;
     }
+
 }
 
-var NyanWord = function NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts) {
-    classCallCheck(this, NyanWord);
 
 
-    this.name = name;
-    this.operation = operation;
-    this.maybe = maybe || false;
-    this.need = need || false;
-    this.topic = topic || null;
-    this.alias = alias || null;
-    this.monitor = monitor || false;
-    this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
-    // this.useCapture =
-};
+class NyanWord {
 
-var tickStack = [];
+    constructor(name, operation, maybe, need, topic, alias, monitor, extracts){
 
-function toTickStackString(str) {
+        this.name = name;
+        this.operation = operation;
+        this.maybe = maybe || false;
+        this.need = need || false;
+        this.topic = topic || null;
+        this.alias = alias || null;
+        this.monitor = monitor || false;
+        this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
+        // this.useCapture =
+
+    }
+
+}
+
+let tickStack = [];
+
+function toTickStackString(str){
+
 
     tickStack = [];
-    var chunks = str.split(/([`])/);
-    var strStack = [];
+    const chunks = str.split(/([`])/);
+    const strStack = [];
 
-    var ticking = false;
-    while (chunks.length) {
-        var c = chunks.shift();
-        if (c === '`') {
+    let ticking = false;
+    while(chunks.length){
+        const c = chunks.shift();
+        if(c === '`'){
             ticking = !ticking;
             strStack.push(c);
         } else {
-            if (ticking) {
+            if(ticking) {
                 tickStack.push(c);
             } else {
                 strStack.push(c);
@@ -2098,149 +1378,160 @@ function toTickStackString(str) {
         }
     }
 
-    var result = strStack.join('');
+    const result = strStack.join('');
     //console.log('stack res', result, tickStack);
     return result;
 }
 
 function parse(str, isProcess) {
 
+
     str = toTickStackString(str);
 
-    var sentences = [];
+    const sentences = [];
 
     // split on curlies and remove empty chunks (todo optimize for parsing speed, batch loop operations?)
-    var chunks = str.split(/([{}]|-})/).map(function (d) {
-        return d.trim();
-    }).filter(function (d) {
-        return d;
-    });
+    let chunks = str.split(/([{}]|-})/).map(d => d.trim()).filter(d => d);
 
-    for (var _i = 0; _i < chunks.length; _i++) {
+    for(let i = 0; i < chunks.length; i++){
 
-        var chunk = chunks[_i];
-        var sentence = chunk === '}' || chunk === '{' || chunk === '-}' ? chunk : parseSentence(chunk);
+        const chunk = chunks[i];
+        const sentence = (chunk === '}' || chunk === '{' || chunk === '-}') ? chunk : parseSentence(chunk);
 
-        if (typeof sentence === 'string' || sentence.length > 0) sentences.push(sentence);
+        if(typeof sentence === 'string' || sentence.length > 0)
+            sentences.push(sentence);
+
     }
 
     return validate(sentences, isProcess);
+
+
 }
 
-function validate(sentences, isProcess) {
+function validate(sentences, isProcess){
 
-    var cmdList = [];
-    var firstPhrase = true;
+    const cmdList = [];
+    let firstPhrase = true;
+    
+    for(let i = 0; i < sentences.length; i++){
+        const s = sentences[i];
+        if(typeof s !== 'string') {
 
-    for (var _i2 = 0; _i2 < sentences.length; _i2++) {
-        var s = sentences[_i2];
-        if (typeof s !== 'string') {
-
-            for (var j = 0; j < s.length; j++) {
-                var phrase = s[j];
-                if (firstPhrase && !isProcess) {
+            for (let j = 0; j < s.length; j++) {
+                const phrase = s[j];
+                if(firstPhrase && !isProcess) {
                     validateReactPhrase(phrase);
                     firstPhrase = false;
-                    cmdList.push({ name: 'REACT', phrase: phrase });
-                } else {
+                    cmdList.push({name: 'REACT', phrase: phrase});
+                }
+                else {
                     validateProcessPhrase(phrase);
-                    cmdList.push({ name: 'PROCESS', phrase: phrase });
+                    cmdList.push({name: 'PROCESS', phrase: phrase});
                 }
             }
+
         } else if (s === '{') {
-            cmdList.push({ name: 'FORK' });
+            cmdList.push({name: 'FORK'});
         } else if (s === '}') {
-            cmdList.push({ name: 'BACK' });
+            cmdList.push({name: 'BACK'});
         } else if (s === '-}') {
-            cmdList.push({ name: 'JOIN' });
+            cmdList.push({name: 'JOIN'});
         }
     }
 
     return cmdList;
 }
 
-function validateReactPhrase(phrase) {
 
-    var hasReaction = false;
-    for (var _i3 = 0; _i3 < phrase.length; _i3++) {
+function validateReactPhrase(phrase){
 
-        var nw = phrase[_i3];
-        var operation = nw.operation = nw.operation || 'WATCH';
+    let hasReaction = false;
+    for(let i = 0; i < phrase.length; i++){
+
+        const nw = phrase[i];
+        const operation = nw.operation = nw.operation || 'WATCH';
         hasReaction = hasReaction || reactionsByName[operation];
-        if (!withReactionsByName[operation]) throw new Error('This Nyan command cannot be in a reaction!');
+        if(!withReactionsByName[operation])
+            throw new Error('This Nyan command cannot be in a reaction!');
+
     }
 
-    if (!hasReaction) throw new Error('Nyan commands must begin with an observation!');
+    if(!hasReaction)
+        throw new Error('Nyan commands must begin with an observation!');
+
 }
 
-function validateProcessPhrase(phrase) {
 
-    var firstPhrase = phrase[0];
-    var firstOperation = firstPhrase.operation || 'READ';
 
-    if (!thenByName[firstOperation]) throw new Error('Illegal operation in phrase!'); // unknown or reactive
+function validateProcessPhrase(phrase){
 
-    for (var _i4 = 0; _i4 < phrase.length; _i4++) {
+    const firstPhrase = phrase[0];
+    const firstOperation = firstPhrase.operation || 'READ';
 
-        var nw = phrase[_i4];
+    if(!thenByName[firstOperation])
+        throw new Error('Illegal operation in phrase!'); // unknown or reactive
+
+    for(let i = 0; i < phrase.length; i++){
+
+        const nw = phrase[i];
         nw.operation = nw.operation || firstOperation;
-        if (nw.operation !== firstOperation) {
+        if(nw.operation !== firstOperation){
 
-            // console.log('mult', nw.operation, firstOperation);
+           // console.log('mult', nw.operation, firstOperation);
             throw new Error('Multiple operation types in phrase (only one allowed)!');
+
         }
+
     }
+
 }
+
+
 
 function parseSentence(str) {
 
-    var result = [];
-    var chunks = str.split('|').map(function (d) {
-        return d.trim();
-    }).filter(function (d) {
-        return d;
-    });
+    const result = [];
+    const chunks = str.split('|').map(d => d.trim()).filter(d => d);
 
-    for (var _i5 = 0; _i5 < chunks.length; _i5++) {
+    for(let i = 0; i < chunks.length; i++){
 
-        var chunk = chunks[_i5];
-        var phrase = parsePhrase(chunk);
+        const chunk = chunks[i];
+        const phrase = parsePhrase(chunk);
         result.push(phrase);
+
     }
 
     return result;
+
 }
 
 function parsePhrase(str) {
 
-    var words = [];
-    var rawWords = str.split(',').map(function (d) {
-        return d.trim();
-    }).filter(function (d) {
-        return d;
-    });
+    const words = [];
+    const rawWords = str.split(',').map(d => d.trim()).filter(d => d);
 
-    var len = rawWords.length;
+    const len = rawWords.length;
 
-    for (var _i6 = 0; _i6 < len; _i6++) {
+    for (let i = 0; i < len; i++) {
 
-        var rawWord = rawWords[_i6];
+        const rawWord = rawWords[i];
         //console.log('word=', rawWord);
-        var rawChunks = rawWord.split(/([(?!:.`)])/);
-        var chunks = [];
-        var inMethod = false;
+        const rawChunks = rawWord.split(/([(?!:.`)])/);
+        const chunks = [];
+        let inMethod = false;
 
         // white space is only allowed between e.g. `throttle 200`, `string meow in the hat`
 
-        while (rawChunks.length) {
-            var next = rawChunks.shift();
-            if (next === '`') {
+        while(rawChunks.length){
+            const next = rawChunks.shift();
+            if(next === '`'){
                 inMethod = !inMethod;
                 chunks.push(next);
             } else {
-                if (!inMethod) {
-                    var trimmed = next.trim();
-                    if (trimmed) chunks.push(trimmed);
+                if(!inMethod){
+                    const trimmed = next.trim();
+                    if(trimmed)
+                        chunks.push(trimmed);
                 } else {
                     chunks.push(next);
                 }
@@ -2248,58 +1539,57 @@ function parsePhrase(str) {
         }
 
         //console.log('to:', chunks);
-        var nameAndOperation = chunks.shift();
-        var firstChar = rawWord[0];
-        var operation = namesBySymbol[firstChar];
-        var start = operation ? 1 : 0;
-        var _name = nameAndOperation.slice(start).trim();
-        var extracts = [];
+        const nameAndOperation = chunks.shift();
+        const firstChar = rawWord[0];
+        const operation = namesBySymbol[firstChar];
+        const start = operation ? 1 : 0;
+        const name = nameAndOperation.slice(start).trim();
+        const extracts = [];
 
         // todo hack (rename)
 
-        var maybe = false;
-        var monitor = false;
-        var topic = null;
-        var alias = null;
-        var need = false;
+        let maybe = false;
+        let monitor = false;
+        let topic = null;
+        let alias = null;
+        let need = false;
 
-        if (operation === 'ALIAS') {
+        if(operation === 'ALIAS'){
             alias = chunks.shift();
             chunks.shift(); // todo verify ')'
-        } else if (operation === 'METHOD') {
-            chunks.shift();
-            // const next = chunks.shift();
-            var _next = tickStack.shift();
-            var _i7 = _next.indexOf(' ');
-            if (_i7 === -1) {
-                extracts.push(_next);
-            } else {
-                extracts.push(_next.slice(0, _i7));
-                if (_next.length > _i7) {
-                    extracts.push(_next.slice(_i7 + 1));
-                }
-            }
-
-            while (chunks.length) {
+        } else if (operation === 'METHOD'){
                 chunks.shift();
-            }
+                // const next = chunks.shift();
+                const next = tickStack.shift();
+                const i = next.indexOf(' ');
+                if(i === -1) {
+                    extracts.push(next);
+                } else {
+                    extracts.push(next.slice(0, i));
+                    if(next.length > i){
+                        extracts.push(next.slice(i + 1));
+                    }
+                }
+
+            while(chunks.length){ chunks.shift(); }
         }
 
-        while (chunks.length) {
+        while(chunks.length){
 
-            var c = chunks.shift();
+            const c = chunks.shift();
 
-            switch (c) {
+            switch(c){
 
                 case '.':
 
-                    var prop = chunks.length && chunks[0]; // todo assert not operation
-                    var silentFail = chunks.length > 1 && chunks[1] === '?';
+                    const prop = chunks.length && chunks[0]; // todo assert not operation
+                    const silentFail = chunks.length > 1 && (chunks[1] === '?');
 
-                    if (prop) {
-                        extracts.push({ name: prop, silentFail: silentFail });
+                    if(prop) {
+                        extracts.push({name: prop, silentFail: silentFail});
                         chunks.shift(); // remove word from queue
-                        if (silentFail) chunks.shift(); // remove ? from queue
+                        if(silentFail)
+                            chunks.shift(); // remove ? from queue
                     }
 
                     break;
@@ -2316,12 +1606,12 @@ function parsePhrase(str) {
 
                 case ':':
 
-                    if (chunks.length) {
-                        var _next2 = chunks[0];
-                        if (_next2 === '(') {
+                    if(chunks.length){
+                        const next = chunks[0];
+                        if(next === '('){
                             monitor = true;
                         } else {
-                            topic = _next2;
+                            topic = next;
                             chunks.shift(); // remove topic from queue
                         }
                     } else {
@@ -2332,352 +1622,365 @@ function parsePhrase(str) {
 
                 case '(':
 
-                    if (chunks.length) {
+                    if(chunks.length){
                         alias = chunks.shift(); // todo assert not operation
                     }
 
                     break;
 
+
+
             }
+
         }
 
-        alias = alias || topic || _name;
-        var nw = new NyanWord(_name, operation, maybe, need, topic, alias, monitor, extracts);
+        alias = alias || topic || name;
+        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts);
         words.push(nw);
+
     }
 
     return words;
+
 }
 
 Nyan.parse = parse;
 
-function getPacketFromDataWord(scope, word) {
+function getSurveyFromDataWord(scope, word){
 
-    var data = scope.find(word.name, !word.maybe);
-    var peek = data && data.peek(word.topic);
-    return peek;
-}
-
-function getSurveyFromDataWord(scope, word) {
-
-    var data = scope.find(word.name, !word.maybe);
+    const data = scope.find(word.name, !word.maybe);
     return data && data.survey();
+
 }
 
-function throwError(msg) {
+function throwError(msg){
     console.log('throwing ', msg);
-    var e = new Error(msg);
+    const e = new Error(msg);
     console.log(this, e);
     throw e;
 }
 
-function getDoSkipNamedDupes(names) {
+function getDoSkipNamedDupes(names){
 
-    var lastMsg = {};
-    var len = names.length;
+    let lastMsg = {};
+    const len = names.length;
 
     return function doSkipNamedDupes(msg) {
 
-        var diff = false;
-        for (var i = 0; i < len; i++) {
-            var name = names[i];
-            if (!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name]) diff = true;
+        let diff = false;
+        for(let i = 0; i < len; i++){
+            const name = names[i];
+            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name])
+                diff = true;
             lastMsg[name] = msg[name];
         }
 
         return diff;
+
     };
 }
 
-function getDoWrite(scope, word) {
 
-    var data = scope.find(word.name, !word.maybe);
+function getDoSpray(scope, phrase){
 
-    return function doWrite(msg) {
-        data.write(msg, word.topic);
-    };
-}
+    const wordByAlias = {};
+    const dataByAlias = {};
 
-function getDoSpray(scope, phrase) {
+    const len = phrase.length;
 
-    var wordByAlias = {};
-    var dataByAlias = {};
+    for(let i = 0; i < len; i++){ // todo, validate no dupe alias in word validator for spray
 
-    var len = phrase.length;
-
-    for (var i = 0; i < len; i++) {
-        // todo, validate no dupe alias in word validator for spray
-
-        var word = phrase[i];
-        var data = scope.find(word.name, !word.maybe);
-        if (data) {
-            // might not exist if optional
+        const word = phrase[i];
+        const data = scope.find(word.name, !word.maybe);
+        if(data) { // might not exist if optional
             wordByAlias[word.alias] = word;
             dataByAlias[word.alias] = data;
         }
+
     }
 
     return function doWrite(msg) {
 
-        for (var alias in msg) {
+        for(const alias in msg){
 
-            var _data = dataByAlias[alias];
-            if (_data) {
-                var _word = wordByAlias[alias];
-                var msgPart = msg[alias];
-                _data.silentWrite(msgPart, _word.topic);
+            const data = dataByAlias[alias];
+            if(data) {
+                const word = wordByAlias[alias];
+                const msgPart = msg[alias];
+                data.silentWrite(msgPart, word.topic);
             }
+
         }
 
-        for (var _alias in msg) {
+        for(const alias in msg){
 
-            var _data2 = dataByAlias[_alias];
-            if (_data2) {
-                var _word2 = wordByAlias[_alias];
-                _data2.refresh(_word2.topic);
+            const data = dataByAlias[alias];
+            if(data) {
+                const word = wordByAlias[alias];
+                data.refresh(word.topic);
             }
+
         }
+
+
     };
+
+
 }
 
-function getDoRead(scope, phrase) {
 
-    var len = phrase.length;
-    var firstWord = phrase[0];
+function getDoRead(scope, phrase){
 
-    if (len > 1 || firstWord.monitor) {
-        // if only reading word is a wildcard subscription then hash as well
+    const len = phrase.length;
+    const firstWord = phrase[0];
+
+    if(len > 1 || firstWord.monitor) { // if only reading word is a wildcard subscription then hash as well
         return getDoReadMultiple(scope, phrase);
     } else {
         return getDoReadSingle(scope, firstWord);
     }
+
 }
+
 
 function getDoAnd(scope, phrase) {
 
     return getDoReadMultiple(scope, phrase, true);
+
 }
+
 
 function getDoReadSingle(scope, word) {
 
+    const data = scope.find(word.name, !word.maybe);
+    const topic = word.topic;
+
     return function doReadSingle() {
 
-        var packet = getPacketFromDataWord(scope, word);
-        return packet && packet.msg;
+        return data.read(topic);
+
     };
+
 }
 
-function getDoReadMultiple(scope, phrase, isAndOperation) {
 
-    var len = phrase.length;
+function getDoReadMultiple(scope, phrase, isAndOperation){
 
-    return function doReadMultiple(msg, source) {
 
-        var result = {};
+        const len = phrase.length;
 
-        if (isAndOperation) {
 
-            if (source) {
-                result[source] = msg;
-            } else {
-                for (var p in msg) {
-                    result[p] = msg[p];
+        return function doReadMultiple(msg, source) {
+
+            const result = {};
+
+            if(isAndOperation){
+
+                if(source){
+                    result[source] = msg;
+                } else {
+                    for (const p in msg) {
+                        result[p] = msg[p];
+                    }
                 }
             }
-        }
 
-        for (var i = 0; i < len; i++) {
-            var word = phrase[i];
+            for (let i = 0; i < len; i++) {
+                const word = phrase[i];
 
-            if (word.monitor) {
+                if(word.monitor){
 
-                var survey = getSurveyFromDataWord(scope, word);
-                var _iteratorNormalCompletion = true;
-                var _didIteratorError = false;
-                var _iteratorError = undefined;
-
-                try {
-                    for (var _iterator = survey[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                        var _step$value = slicedToArray(_step.value, 2),
-                            key = _step$value[0],
-                            value = _step$value[1];
-
+                    const survey = getSurveyFromDataWord(scope, word);
+                    for(const [key, value] of survey){
                         result[key] = value;
                     }
-                } catch (err) {
-                    _didIteratorError = true;
-                    _iteratorError = err;
-                } finally {
-                    try {
-                        if (!_iteratorNormalCompletion && _iterator.return) {
-                            _iterator.return();
-                        }
-                    } finally {
-                        if (_didIteratorError) {
-                            throw _iteratorError;
-                        }
-                    }
+
+                } else {
+
+                    const data = scope.find(word.name, !word.maybe);
+                    const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
+                    if (data.present(word.topic))
+                        result[prop] = data.read(word.topic);
+
                 }
-            } else {
 
-                var packet = getPacketFromDataWord(scope, word);
-                var prop = word.monitor ? word.alias || word.topic : word.alias || word.name;
-                if (packet) result[prop] = packet.msg;
             }
-        }
 
-        return result;
-    };
+            return result;
+
+        };
+
 }
+
 
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function getDataStream(scope, word, canPull) {
+function addDataSource(bus, scope, word, canPull) {
 
-    var data = scope.find(word.name, !word.maybe);
-    if (word.monitor) {
-        return Stream.fromMonitor(data, word.alias, canPull);
-    } else {
-        return Stream.fromSubscribe(data, word.topic, word.alias, canPull);
-    }
+    const data = scope.find(word.name, !word.maybe);
+    bus.addSubscribe(word.alias, data, word.topic);
+
 }
+
+function addEventSource(bus, word, target) {
+
+    bus.addEvent(word.alias, target, word.topic, word.useCapture);
+
+}
+
 
 function isObject(v) {
-    if (v === null) return false;
-    return typeof v === 'function' || (typeof v === 'undefined' ? 'undefined' : _typeof(v)) === 'object';
+    if (v === null)
+        return false;
+    return (typeof v === 'function') || (typeof v === 'object');
 }
 
-function getEventStream(scope, word, node) {
 
-    return Stream.fromEvent(node, word.topic, word.useCapture, word.alias);
-}
 
 function doExtracts(value, extracts) {
 
-    var result = value;
-    var len = extracts.length;
+    let result = value;
+    const len = extracts.length;
 
-    for (var i = 0; i < len; i++) {
-        var extract = extracts[i];
-        if (!isObject(result)) {
-            if (extract.silentFail) return undefined;
+    for (let i = 0; i < len; i++) {
+        const extract = extracts[i];
+        if(!isObject(result)) {
+            if(extract.silentFail)
+                return undefined;
 
             throwError('Cannot access property \'' + extract.name + '\' of ' + result);
+
         }
         result = result[extract.name];
     }
 
+
     return result;
+
 }
 
-function getNeedsArray(phrase) {
-    return phrase.filter(function (word) {
-        return word.operation.need;
-    }).map(function (word) {
-        return word.alias;
-    });
+function getNeedsArray(phrase){
+    return phrase.filter(word => word.operation.need).map(word => word.alias);
 }
 
 function getDoMsgHashExtract(words) {
 
-    var len = words.length;
-    var extractsByAlias = {};
+    const len = words.length;
+    const extractsByAlias = {};
 
-    for (var i = 0; i < len; i++) {
+    for (let i = 0; i < len; i++) {
 
-        var word = words[i];
+        const word = words[i];
         extractsByAlias[word.alias] = word.extracts;
+
     }
 
-    return function (msg) {
+    return function(msg) {
 
-        var result = {};
-        for (var alias in extractsByAlias) {
-            var hasProp = msg.hasOwnProperty(alias);
-            if (hasProp) {
+        const result = {};
+        for(const alias in extractsByAlias){
+            const hasProp = msg.hasOwnProperty(alias);
+            if(hasProp){
                 result[alias] = doExtracts(msg[alias], extractsByAlias[alias]);
             }
         }
 
         return result;
+
     };
+
 }
 
 function getDoMsgExtract(word) {
 
-    var extracts = word.extracts;
+    const extracts = word.extracts;
 
-    return function (msg) {
+    return function(msg){
         return doExtracts(msg, extracts);
-    };
+    }
+
 }
 
-function applyReaction(scope, bus, phrase, target) {
-    // target is some event emitter
 
-    var need = [];
-    var skipDupes = [];
-    var streams = [];
-    var extracts = [];
+function applyReaction(scope, bus, phrase, target) { // target is some event emitter
 
-    if (phrase.length === 1 && phrase[0].operation === 'ACTION') {
-        bus.addFrame(getDataStream(scope, phrase[0], false));
+    const need = [];
+    const skipDupes = [];
+    const extracts = [];
+
+    if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
+        const word = phrase[0];
+        addDataSource(bus, scope, word);
         return;
     }
 
-    for (var i = 0; i < phrase.length; i++) {
+    for(let i = 0; i < phrase.length; i++){
 
-        var word = phrase[i];
-        var operation = word.operation;
+        const word = phrase[i];
+        const operation = word.operation;
 
-        if (operation === 'WATCH') {
-            streams.push(getDataStream(scope, word, true));
+        if(operation === 'WATCH') {
+            addDataSource(bus, scope, word);
             skipDupes.push(word.alias);
-        } else if (operation === 'WIRE') {
-            streams.push(getDataStream(scope, word, true));
-        } else if (operation === 'EVENT') {
-            streams.push(getEventStream(scope, word));
+        }
+        else if(operation === 'WIRE'){
+            addDataSource(bus, scope, word);
+        }
+        else if(operation === 'EVENT') {
+            addEventSource(bus, word, target);
         }
 
-        if (word.extracts) extracts.push(word);
+        if(word.extracts)
+            extracts.push(word);
 
-        if (word.need) need.push(word.alias);
+        if(word.need)
+            need.push(word.alias);
+
     }
 
-    bus.addFrame(streams);
+    // transformations are applied via named hashes for performance
 
-    if (streams.length > 1) {
+    if(bus._sources.length > 1) {
 
         bus.merge().group().batch();
 
-        if (extracts.length) bus.msg(getDoMsgHashExtract(extracts));
+        if(extracts.length)
+            bus.msg(getDoMsgHashExtract(extracts));
 
-        if (need.length) bus.hasKeys(need);
+        if(need.length)
+            bus.hasKeys(need);
 
-        if (skipDupes.length) {
+        if(skipDupes.length){
             bus.filter(getDoSkipNamedDupes(skipDupes));
         }
+
     } else {
 
-        if (extracts.length) bus.msg(getDoMsgExtract(extracts[0]));
+        if(extracts.length)
+            bus.msg(getDoMsgExtract(extracts[0]));
 
-        if (skipDupes.length) bus.skipDupes();
+        if(skipDupes.length)
+            bus.skipDupes();
+
     }
+
 }
 
-function isTruthy(msg) {
+function isTruthy(msg){
     return !!msg;
 }
-function isFalsey(msg) {
+
+function isFalsey(msg){
     return !msg;
 }
 
+
 function applyMethod(bus, word) {
 
-    var method = word.extracts[0];
+    const method = word.extracts[0];
 
-    switch (method) {
+    switch(method){
 
         case 'true':
             bus.msg(true);
@@ -2712,28 +2015,29 @@ function applyMethod(bus, word) {
             break;
 
         case 'string':
-            bus.msg(function () {
-                return word.extracts[1];
-            });
+            bus.msg(function(){ return word.extracts[1];});
             break;
 
-        // throttle x, debounce x, delay x, last x, first x, all
+            // throttle x, debounce x, delay x, last x, first x, all
 
     }
+
 }
 
 function applyProcess(scope, bus, phrase, context, node) {
 
-    var operation = phrase[0].operation; // same for all words in a process phrase
+    const operation = phrase[0].operation; // same for all words in a process phrase
 
-    if (operation === 'READ') {
+    if(operation === 'READ') {
         bus.msg(getDoRead(scope, phrase));
-        var needs = getNeedsArray(phrase);
-        if (needs.length) bus.whenKeys(needs);
+        const needs = getNeedsArray(phrase);
+        if(needs.length)
+            bus.hasKeys(needs);
     } else if (operation === 'AND') {
         bus.msg(getDoAnd(scope, phrase));
-        var _needs = getNeedsArray(phrase);
-        if (_needs.length) bus.whenKeys(_needs);
+        const needs = getNeedsArray(phrase);
+        if (needs.length)
+            bus.hasKeys(needs);
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
@@ -2743,108 +2047,752 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
-        bus.run(getDoWrite(scope, phrase[0]));
+        applyWriteProcess(bus, scope, phrase[0]);
     } else if (operation === 'SPRAY') {
+
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
+
     }
+
 }
 
-function applyMsgProcess(bus, phrase, context) {
 
-    var len = phrase.length;
+function applyWriteProcess(bus, scope, word){
 
-    var _loop = function _loop(i) {
+    const data = scope.find(word.name, !word.maybe);
+    const dataTopic = data.dataTopic(word.topic);
+    bus.write(dataTopic);
 
-        var word = phrase[i];
-        var name = word.name;
-        var method = context[name];
-
-        var f = function f(msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
-
-        bus.msg(f);
-    };
-
-    for (var i = 0; i < len; i++) {
-        _loop(i);
-    }
 }
 
-function applySourceProcess(bus, word) {
+function applyMsgProcess(bus, phrase, context){
+
+    const len = phrase.length;
+
+    for(let i = 0; i < len; i++) {
+
+        const word = phrase[i];
+        const name = word.name;
+        const method = context[name];
+
+        bus.msg(method, context);
+
+    }
+
+}
+
+
+
+
+
+function applySourceProcess(bus, word){
 
     bus.source(word.alias);
+
 }
 
-function applyFilterProcess(bus, phrase, context) {
 
-    var len = phrase.length;
+function applyFilterProcess(bus, phrase, context){
 
-    var _loop3 = function _loop3(i) {
+    const len = phrase.length;
 
-        var word = phrase[i];
-        var name = word.name;
-        var method = context[name];
+    for(let i = 0; i < len; i++) {
 
-        var f = function f(msg, source, topic) {
-            return method.call(context, msg, source, topic);
-        };
+        const word = phrase[i];
+        const name = word.name;
+        const method = context[name];
 
-        bus.filter(f);
-    };
+        bus.filter(method, context);
 
-    for (var i = 0; i < len; i++) {
-        _loop3(i);
     }
+
 }
 
-function nyanToBus(scope, bus, str, context, target) {
+function createBus(nyan, scope, context, target){
 
-    var nyan = Nyan.parse(str);
-    var len = nyan.length;
+    let bus = new Bus(scope);
+    return applyNyan(nyan, bus, context, target);
 
-    for (var i = 0; i < len; i++) {
+}
 
-        var cmd = nyan[i];
-        var name = cmd.name;
-        var phrase = cmd.phrase;
+function applyNyan(nyan, bus, context, target){
 
-        //  console.log('----', name, phrase);
+    const len = nyan.length;
+    const scope = bus.scope;
+    for(let i = 0; i < len; i++){
 
-        if (name === 'JOIN') {
+        const cmd = nyan[i];
+        const name = cmd.name;
+        const phrase = cmd.phrase;
+
+        if(name === 'JOIN') {
+
             bus = bus.join();
             bus.merge();
             bus.group();
-            bus.sync();
-        } else if (name === 'FORK') {
+
+        } else if(name === 'FORK'){
             bus = bus.fork();
-        } else if (name === 'BACK') {
+        } else if (name === 'BACK'){
             bus = bus.back();
         } else {
 
-            if (name === 'PROCESS') applyProcess(scope, bus, phrase, context, target);else // name === 'REACT'
+            if(name === 'PROCESS')
+                applyProcess(scope, bus, phrase, context, target);
+            else // name === 'REACT'
                 applyReaction(scope, bus, phrase, target);
+
         }
     }
 
     return bus;
+
 }
 
-var idCounter = 0;
+const NyanRunner = {
+    applyNyan: applyNyan,
+    createBus: createBus
+};
 
-function _destroyEach(arr) {
+const FUNCTOR = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
+};
 
-    var len = arr.length;
-    for (var i = 0; i < len; i++) {
-        var item = arr[i];
+const batchStreamBuilder = function() {
+    return function(name) {
+        return new BatchStream(name);
+    }
+};
+
+const resetStreamBuilder = function(head) {
+    return function(name) {
+        return new ResetStream(name, head);
+    }
+};
+
+const tapStreamBuilder = function(f) {
+    return function(name) {
+        return new TapStream(name, f);
+    }
+};
+
+const msgStreamBuilder = function(f) {
+    return function(name) {
+        return new MsgStream(name, f);
+    }
+};
+
+const filterStreamBuilder = function(f) {
+    return function(name) {
+        return new FilterStream(name, f);
+    }
+};
+
+const skipStreamBuilder = function(f) {
+    return function(name) {
+        return new SkipStream(name, f);
+    }
+};
+
+const lastNStreamBuilder = function(count) {
+    return function(name) {
+        return new LastNStream(name, count);
+    }
+};
+
+const firstNStreamBuilder = function(count) {
+    return function(name) {
+        return new FirstNStream(name, count);
+    }
+};
+
+const allStreamBuilder = function() {
+    return function(name) {
+        return new AllStream(name);
+    }
+};
+
+const delayStreamBuilder = function(delay) {
+    return function(name) {
+        return new DelayStream(name, delay);
+    }
+};
+
+const groupStreamBuilder = function(by) {
+    return function(name) {
+        return new GroupStream(name, by);
+    }
+};
+
+const nameStreamBuilder = function(name) {
+    return function() {
+        return new PassStream(name);
+    }
+};
+
+const latchStreamBuilder = function(f) {
+    return function(name) {
+        return new LatchStream(name, f);
+    }
+};
+
+const scanStreamBuilder = function(f, seed) {
+    const hasSeed = arguments.length === 2;
+    return function(name) {
+        return hasSeed ?
+            new ScanWithSeedStream(name, f, seed) : new ScanStream(name, f);
+    }
+};
+
+const splitStreamBuilder = function() {
+    return function(name) {
+        return new SplitStream(name);
+    }
+};
+
+const writeStreamBuilder = function(dataTopic) {
+    return function(name) {
+        return new WriteStream(name, dataTopic);
+    }
+};
+
+const filterMapStreamBuilder = function(f, m, context) {
+    return function(name) {
+        return new FilterMapStream(name, f, m, context);
+    }
+};
+
+function getHasKeys(keys){
+
+    const len = keys.length;
+    return function _hasKeys(msg, source, topic){
+
+        if(typeof msg !== 'object')
+            return false;
+
+        for(let i = 0; i < len; i++){
+            const k = keys[i];
+            if(!msg.hasOwnProperty(k))
+                return false;
+        }
+
+        return true;
+    }
+
+}
+
+class Bus {
+
+    constructor(scope) {
+
+        this._frames = [];
+        this._sources = [];
+        this._dead = false;
+        this._scope = scope;
+        this._children = []; // from forks
+        this._parent = null;
+
+        // temporary api states (used for interactively building the bus)
+
+
+        this._spork = null; // beginning frame of split sub process
+        this._holding = false; // multiple commands until duration function
+        this._head = null; // point to reset accumulators
+        this._locked = false; // prevents additional sources from being added
+
+        if(scope)
+            scope._busList.push(this);
+
+        const f = new Frame(this);
+        this._frames.push(f);
+        this._currentFrame = f;
+
+    };
+
+    get children(){
+
+        return this._children.map((d) => d);
+
+    };
+
+    get parent() { return this._parent; };
+
+    set parent(newParent){
+
+        const oldParent = this.parent;
+
+        if(oldParent === newParent)
+            return;
+
+        if(oldParent) {
+            const i = oldParent._children.indexOf(this);
+            oldParent._children.splice(i, 1);
+        }
+
+        this._parent = newParent;
+
+        if(newParent) {
+            newParent._children.push(this);
+        }
+
+        return this;
+
+    };
+
+    get dead() {
+        return this._dead;
+    };
+
+    get holding() {
+        return this._holding;
+    };
+
+    get scope() {
+        return this._scope;
+    }
+
+    _createMergingFrame() {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const merged_stream = new PassStream();
+        target_streams.push(merged_stream);
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            s1.next = merged_stream;
+        }
+
+        return f2;
+
+    };
+
+    _createNormalFrame(streamBuilder) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+            const s1 = source_streams[i];
+            const s2 = streamBuilder ? streamBuilder(s1.name) : new PassStream(s1.name);
+            s1.next = s2;
+            target_streams.push(s2);
+        }
+
+        return f2;
+
+    };
+
+
+    _createForkingFrame(forkedTargetFrame) {
+
+        const f1 = this._currentFrame;
+        const f2 = this._currentFrame = new Frame(this);
+        this._frames.push(f2);
+
+        const source_streams = f1.streams;
+        const target_streams = f2.streams;
+        const forked_streams = forkedTargetFrame.streams;
+
+        const len = source_streams.length;
+        for(let i = 0; i < len; i++){
+
+            const s1 = source_streams[i];
+            const s3 = new PassStream(s1.name);
+            const s2 = new ForkStream(s1.name, s3);
+
+            s1.next = s2;
+
+            target_streams.push(s2);
+            forked_streams.push(s3);
+        }
+
+        return f2;
+
+    };
+
+    _ASSERT_IS_FUNCTION(f) {
+        if(typeof f !== 'function')
+            throw new Error('Argument must be a function.');
+    };
+
+    _ASSERT_NOT_HOLDING() {
+        if (this.holding)
+            throw new Error('Method cannot be invoked while holding messages in the frame.');
+    };
+
+    _ASSERT_IS_HOLDING(){
+        if(!this.holding)
+            throw new Error('Method cannot be invoked unless holding messages in the frame.');
+    };
+
+    _ASSERT_HAS_HEAD(){
+        if(!this._head)
+            throw new Error('Cannot reset without an upstream accumulator.');
+    };
+
+    _ASSERT_NOT_LOCKED(){
+        if(this._locked)
+            throw new Error('Cannot add sources after other operations.');
+    };
+
+    _ASSERT_NOT_SPORKING(){
+        if(this._spork)
+            throw new Error('Cannot do this while sporking.');
+    };
+
+
+    addSource(source){
+
+        this._ASSERT_NOT_LOCKED();
+
+        this._sources.push(source);
+        this._currentFrame.streams.push(source.stream);
+        return this;
+
+    }
+
+    process(nyan, context, target){
+
+        if(typeof nyan === 'string')
+            nyan = Nyan.parse(nyan, true);
+
+        NyanRunner.applyNyan(nyan, this, context, target);
+        return this;
+
+    }
+
+
+    fork() {
+
+        this._ASSERT_NOT_HOLDING();
+        const fork = new Bus(this.scope);
+        fork.parent = this;
+        this._createForkingFrame(fork._currentFrame);
+
+        return fork;
+    };
+
+    back() {
+
+        if(!this._parent)
+            throw new Error('Cannot exit fork, parent does not exist!');
+
+        return this.parent;
+
+    };
+
+    join() {
+
+        const parent = this.back();
+        parent.add(this);
+        return parent;
+
+    }
+
+    add(bus) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+        bus._createForkingFrame(nf); // outside bus then forks into this bus
+        return this;
+
+    };
+
+    fromMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+            // add sources from buses
+            // bus._createTerminalFrame
+        }
+
+        return this;
+
+    };
+
+    addMany(buses) {
+
+        const nf = this._createNormalFrame(); // extend this bus
+
+        const len = buses.length;
+        for(let i = 0; i < len; i++) {
+            const bus = buses[i];
+            bus._createForkingFrame(nf); // outside bus then forks into this bus
+        }
+        return this;
+
+    };
+
+    spork() {
+
+        this._ASSERT_NOT_HOLDING();
+        this._ASSERT_NOT_SPORKING();
+
+        const spork = new Spork(this);
+
+        function sporkBuilder(){
+            return spork;
+        }
+
+        this._createNormalFrame(sporkBuilder);
+        return this._spork = spork;
+
+    };
+
+    // defer() {
+    //     return this.timer(F.getDeferTimer);
+    // };
+
+
+
+    batch() {
+        this._createNormalFrame(batchStreamBuilder());
+        this._holding = false;
+        return this;
+    };
+
+
+    // throttle(fNum) {
+    //     return this.timer(F.getThrottleTimer, fNum);
+    // };
+
+    hold() {
+
+        this._ASSERT_NOT_HOLDING();
+        this._holding = true;
+        this._head = this._createNormalFrame();
+        return this;
+
+    };
+
+    reset() {
+
+        this._ASSERT_HAS_HEAD();
+        this._createNormalFrame(resetStreamBuilder(this._head));
+        return this;
+
+    }
+
+    pull() {
+
+        const len = this._sources.length;
+
+        for(let i = 0; i < len; i++) {
+            const s = this._sources[i];
+            s.pull();
+        }
+
+        return this;
+
+    };
+
+
+
+
+    scan(f, seed){
+
+        this._createNormalFrame(scanStreamBuilder(f, seed));
+        return this;
+
+    };
+
+
+
+    delay(fNum) {
+
+        this._createNormalFrame(delayStreamBuilder(fNum));
+        return this;
+
+    };
+
+
+
+    hasKeys(keys) {
+
+        const f = getHasKeys(keys);
+        this._createNormalFrame(latchStreamBuilder(f));
+        return this;
+
+    };
+
+    group(by) {
+
+        this._createNormalFrame(groupStreamBuilder(by));
+        return this;
+
+    };
+
+    all() {
+        this._createNormalFrame(allStreamBuilder());
+        return this;
+    };
+
+    first(count) {
+        this._createNormalFrame(firstNStreamBuilder(count));
+        return this;
+    };
+
+    last(count) {
+        this._createNormalFrame(lastNStreamBuilder(count));
+        return this;
+    };
+
+    run(f) {
+
+        this._ASSERT_IS_FUNCTION(f);
+
+        this._createNormalFrame(tapStreamBuilder(f));
+        return this;
+
+    };
+
+    merge() {
+
+        this._createMergingFrame();
+        return this;
+
+    };
+
+    msg(fAny) {
+
+        const f = FUNCTOR(fAny);
+
+        this._createNormalFrame(msgStreamBuilder(f));
+        return this;
+
+
+    };
+
+    name(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
+        return this;
+
+    };
+
+    source(str) {
+
+        this._createNormalFrame(nameStreamBuilder(str));
+        return this;
+
+    };
+
+    write(dataTopic) {
+
+        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        return this;
+
+    };
+
+    filter(f) {
+
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(filterStreamBuilder(f));
+        return this;
+
+
+    };
+
+    filterMap(f, m) {
+
+        this._ASSERT_IS_FUNCTION(f);
+        this._ASSERT_NOT_HOLDING();
+
+        this._createNormalFrame(filterMapStreamBuilder(f, m));
+        return this;
+
+
+    };
+
+    split() {
+
+        this._createNormalFrame(splitStreamBuilder());
+        return this;
+
+    };
+
+
+    skipDupes() {
+
+        this._createNormalFrame(skipStreamBuilder());
+        return this;
+
+    };
+
+    addSubscribe(name, data, topic){
+
+        const source = new SubscribeSource(name, data, topic, true);
+        this.addSource(source);
+
+        return this;
+
+    };
+
+    addEvent(name, target, eventName, useCapture){
+
+        const source = new EventSource(name, target, eventName, useCapture);
+        this.addSource(source);
+
+        return this;
+
+    };
+
+    toStream() {
+        // merge, fork -> immutable stream?
+    };
+
+    destroy() {
+
+        if (this.dead)
+            return this;
+
+        this._dead = true;
+
+        const sources = this._sources;
+        const len = sources.length;
+        for (let i = 0; i < len; i++) {
+            const s = sources[i];
+            s.destroy();
+        }
+
+        return this;
+
+    };
+
+}
+
+let idCounter = 0;
+
+function _destroyEach(arr){
+
+    const len = arr.length;
+    for(let i = 0; i < len; i++){
+        const item = arr[i];
         item.destroy();
     }
+
 }
 
-var Scope = function () {
-    function Scope(name) {
-        classCallCheck(this, Scope);
 
+class Scope{
+
+    constructor(name) {
 
         this._id = ++idCounter;
         this._name = name;
@@ -2855,652 +2803,593 @@ var Scope = function () {
         this._valves = new Map();
         this._mirrors = new Map();
         this._dead = false;
+
+    };
+
+    get name() { return this._name; };
+    get dead() { return this._dead; };
+
+    get children(){
+
+        return this._children.map((d) => d);
+
+    };
+
+    bus(strOrNyan, context, node){
+
+        if(!strOrNyan)
+            return new Bus(this);
+
+        const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
+        console.log(nyan);
+        return NyanRunner.createBus(nyan, this, context, node);
+
+    };
+
+
+    clear(){
+
+        if(this._dead)
+            return;
+
+        _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
+        _destroyEach(this._busList);
+        _destroyEach(this._dataList.values());
+
+        this._children = [];
+        this._busList = [];
+        this._dataList.clear();
+        this._valves.clear();
+        this._mirrors.clear();
+
+    };
+
+    destroy(){
+
+        this.clear();
+        this.parent = null;
+        this._dead = true;
+
+    };
+
+    createChild(name){
+
+        let child = new Scope(name);
+        child.parent = this;
+        return child;
+
+    };
+
+    insertParent(newParent){
+
+        newParent.parent = this.parent;
+        this.parent = newParent;
+        return this;
+
+    };
+
+    get parent() { return this._parent; };
+
+    set parent(newParent){
+
+        const oldParent = this.parent;
+
+        if(oldParent === newParent)
+            return;
+
+        if(oldParent) {
+            const i = oldParent._children.indexOf(this);
+            oldParent._children.splice(i, 1);
+        }
+
+        this._parent = newParent;
+
+        if(newParent) {
+            newParent._children.push(this);
+        }
+
+        return this;
+
+    };
+
+    set valves(list){
+
+        for(const name of list){
+            this._valves.set(name, true);
+        }
+
     }
 
-    createClass(Scope, [{
-        key: 'react',
+    get valves(){ return Array.from(this._valves.keys());};
 
 
-        // todo react via nyan (so it can be precompiled and reused
-        value: function react(str, context, node) {
-            // string is Nyan
+    _createMirror(data){
 
-            if (!str) throw new Error('Need a Nyan phrase!');
+        const mirror = Object.create(data);
+        mirror._type = DATA_TYPES.MIRROR;
+        this._mirrors.set(data.name, mirror);
+        return mirror;
 
-            var b = new Bus(this);
+    };
 
-            return nyanToBus(this, b, str, context, node);
+    _createData(name, type){
+
+        const d = new Data(this, name, type);
+        this._dataList.set(name, d);
+        return d;
+
+    };
+
+
+    data(name){
+
+        return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
+
+    };
+
+
+    action(name){
+
+        const d = this.grab(name);
+
+        if(d)
+            return d.verify(DATA_TYPES.ACTION);
+
+        return this._createData(name, DATA_TYPES.ACTION);
+
+    };
+
+
+    state(name){
+
+        const d = this.grab(name);
+
+        if(d)
+            return d.verify(DATA_TYPES.STATE);
+
+        const state = this._createData(name, DATA_TYPES.STATE);
+        this._createMirror(state);
+        return state;
+
+    };
+
+
+    findDataSet(names, required){
+
+
+        const result = {};
+        for(const name of names){
+            result[name] = this.find(name, required);
         }
-    }, {
-        key: 'clear',
-        value: function clear() {
 
-            if (this._dead) return;
+        return result;
 
-            _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
-            _destroyEach(this._busList);
-            _destroyEach(this._dataList.values());
+    };
 
-            this._children = [];
-            this._busList = [];
-            this._dataList.clear();
-            this._valves.clear();
-            this._mirrors.clear();
+    readDataSet(names, required){
+
+        const dataSet = this.findDataSet(names, required);
+        const result = {};
+
+        for(const d of dataSet) {
+            if (d) {
+
+                if (d.present())
+                    result[d.name] = d.read();
+            }
         }
-    }, {
-        key: 'destroy',
-        value: function destroy() {
 
-            this.clear();
-            this.parent = null;
-            this._dead = true;
+        return result;
+    };
+
+
+    // created a flattened view of all data at and above this scope
+
+    flatten(){
+
+        let scope = this;
+
+        const result = new Map();
+        const appliedValves = new Map();
+
+        for(const [key, value] of scope._dataList){
+            result.set(key, value);
         }
-    }, {
-        key: 'createChild',
-        value: function createChild(name) {
 
-            var child = new Scope(name);
-            child.parent = this;
-            return child;
-        }
-    }, {
-        key: 'insertParent',
-        value: function insertParent(newParent) {
+        while(scope = scope._parent){
 
-            newParent.parent = this.parent;
-            this.parent = newParent;
-            return this;
-        }
-    }, {
-        key: '_createMirror',
-        value: function _createMirror(data) {
+            const dataList = scope._dataList;
+            const valves = scope._valves;
+            const mirrors = scope._mirrors;
 
-            var mirror = Object.create(data);
-            mirror._type = DATA_TYPES.MIRROR;
-            this._mirrors.set(data.name, mirror);
-            return mirror;
-        }
-    }, {
-        key: '_createData',
-        value: function _createData(name, type) {
+            if(!dataList.size)
+                continue;
 
-            var d = new Data(this, name, type);
-            this._dataList.set(name, d);
-            return d;
-        }
-    }, {
-        key: 'data',
-        value: function data(name) {
+            // further restrict valves with each new scope
 
-            return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
-        }
-    }, {
-        key: 'action',
-        value: function action(name) {
-
-            var d = this.grab(name);
-
-            if (d) return d.verify(DATA_TYPES.ACTION);
-
-            return this._createData(name, DATA_TYPES.ACTION);
-        }
-    }, {
-        key: 'state',
-        value: function state(name) {
-
-            var d = this.grab(name);
-
-            if (d) return d.verify(DATA_TYPES.STATE);
-
-            var state = this._createData(name, DATA_TYPES.STATE);
-            this._createMirror(state);
-            return state;
-        }
-    }, {
-        key: 'findDataSet',
-        value: function findDataSet(names, required) {
-
-            var result = {};
-            var _iteratorNormalCompletion = true;
-            var _didIteratorError = false;
-            var _iteratorError = undefined;
-
-            try {
-                for (var _iterator = names[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                    var name = _step.value;
-
-                    result[name] = this.find(name, required);
-                }
-            } catch (err) {
-                _didIteratorError = true;
-                _iteratorError = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion && _iterator.return) {
-                        _iterator.return();
+            if(valves.size){
+                if(appliedValves.size) {
+                    for (const key of appliedValves.keys()) {
+                        if(!valves.has(key))
+                            appliedValves.delete(key);
                     }
-                } finally {
-                    if (_didIteratorError) {
-                        throw _iteratorError;
+                } else {
+                    for (const [key, value] of valves.entries()) {
+                        appliedValves.set(key, value);
                     }
                 }
             }
 
-            return result;
-        }
-    }, {
-        key: 'readDataSet',
-        value: function readDataSet(names, required) {
+            const possibles = appliedValves.size ? appliedValves : dataList;
 
-            var dataSet = this.findDataSet(names, required);
-            var result = {};
+            for(const key of possibles.keys()) {
+                if (!result.has(key)) {
 
-            var _iteratorNormalCompletion2 = true;
-            var _didIteratorError2 = false;
-            var _iteratorError2 = undefined;
-
-            try {
-                for (var _iterator2 = dataSet[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                    var d = _step2.value;
-
-                    if (d) {
-                        var lastPacket = d.peek();
-                        if (lastPacket) result[d.name] = lastPacket.msg;
-                    }
-                }
-            } catch (err) {
-                _didIteratorError2 = true;
-                _iteratorError2 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion2 && _iterator2.return) {
-                        _iterator2.return();
-                    }
-                } finally {
-                    if (_didIteratorError2) {
-                        throw _iteratorError2;
-                    }
+                    const data = mirrors.get(key) || dataList.get(key);
+                    if (data)
+                        result.set(key, data);
                 }
             }
 
-            return result;
         }
-    }, {
-        key: 'flatten',
+
+        return result;
+
+    };
 
 
-        // created a flattened view of all data at and above this scope
+    find(name, required){
 
-        value: function flatten() {
+        const localData = this.grab(name);
+        if(localData)
+            return localData;
 
-            var scope = this;
+        let scope = this;
 
-            var result = new Map();
-            var appliedValves = new Map();
+        while(scope = scope._parent){
 
-            var _iteratorNormalCompletion3 = true;
-            var _didIteratorError3 = false;
-            var _iteratorError3 = undefined;
+            const valves = scope._valves;
 
-            try {
-                for (var _iterator3 = scope._dataList[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-                    var _step3$value = slicedToArray(_step3.value, 2),
-                        _key3 = _step3$value[0],
-                        value = _step3$value[1];
-
-                    result.set(_key3, value);
-                }
-            } catch (err) {
-                _didIteratorError3 = true;
-                _iteratorError3 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion3 && _iterator3.return) {
-                        _iterator3.return();
-                    }
-                } finally {
-                    if (_didIteratorError3) {
-                        throw _iteratorError3;
-                    }
-                }
+            // if valves exist and the name is not present, stop looking
+            if(valves.size && !valves.has(name)){
+                break;
             }
 
-            while (scope = scope._parent) {
+            const mirror = scope._mirrors.get(name);
 
-                var dataList = scope._dataList;
-                var valves = scope._valves;
-                var mirrors = scope._mirrors;
+            if(mirror)
+                return mirror;
 
-                if (!dataList.size) continue;
+            const d = scope.grab(name);
 
-                // further restrict valves with each new scope
-
-                if (valves.size) {
-                    if (appliedValves.size) {
-                        var _iteratorNormalCompletion4 = true;
-                        var _didIteratorError4 = false;
-                        var _iteratorError4 = undefined;
-
-                        try {
-                            for (var _iterator4 = appliedValves.keys()[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
-                                var key = _step4.value;
-
-                                if (!valves.has(key)) appliedValves.delete(key);
-                            }
-                        } catch (err) {
-                            _didIteratorError4 = true;
-                            _iteratorError4 = err;
-                        } finally {
-                            try {
-                                if (!_iteratorNormalCompletion4 && _iterator4.return) {
-                                    _iterator4.return();
-                                }
-                            } finally {
-                                if (_didIteratorError4) {
-                                    throw _iteratorError4;
-                                }
-                            }
-                        }
-                    } else {
-                        var _iteratorNormalCompletion5 = true;
-                        var _didIteratorError5 = false;
-                        var _iteratorError5 = undefined;
-
-                        try {
-                            for (var _iterator5 = valves.entries()[Symbol.iterator](), _step5; !(_iteratorNormalCompletion5 = (_step5 = _iterator5.next()).done); _iteratorNormalCompletion5 = true) {
-                                var _step5$value = slicedToArray(_step5.value, 2),
-                                    _key = _step5$value[0],
-                                    value = _step5$value[1];
-
-                                appliedValves.set(_key, value);
-                            }
-                        } catch (err) {
-                            _didIteratorError5 = true;
-                            _iteratorError5 = err;
-                        } finally {
-                            try {
-                                if (!_iteratorNormalCompletion5 && _iterator5.return) {
-                                    _iterator5.return();
-                                }
-                            } finally {
-                                if (_didIteratorError5) {
-                                    throw _iteratorError5;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                var possibles = appliedValves.size ? appliedValves : dataList;
-
-                var _iteratorNormalCompletion6 = true;
-                var _didIteratorError6 = false;
-                var _iteratorError6 = undefined;
-
-                try {
-                    for (var _iterator6 = possibles.keys()[Symbol.iterator](), _step6; !(_iteratorNormalCompletion6 = (_step6 = _iterator6.next()).done); _iteratorNormalCompletion6 = true) {
-                        var _key2 = _step6.value;
-
-                        if (!result.has(_key2)) {
-
-                            var data = mirrors.get(_key2) || dataList.get(_key2);
-                            if (data) result.set(_key2, data);
-                        }
-                    }
-                } catch (err) {
-                    _didIteratorError6 = true;
-                    _iteratorError6 = err;
-                } finally {
-                    try {
-                        if (!_iteratorNormalCompletion6 && _iterator6.return) {
-                            _iterator6.return();
-                        }
-                    } finally {
-                        if (_didIteratorError6) {
-                            throw _iteratorError6;
-                        }
-                    }
-                }
-            }
-
-            return result;
-        }
-    }, {
-        key: 'find',
-        value: function find(name, required) {
-
-            var localData = this.grab(name);
-            if (localData) return localData;
-
-            var scope = this;
-
-            while (scope = scope._parent) {
-
-                var valves = scope._valves;
-
-                // if valves exist and the name is not present, stop looking
-                if (valves.size && !valves.has(name)) {
-                    break;
-                }
-
-                var mirror = scope._mirrors.get(name);
-
-                if (mirror) return mirror;
-
-                var d = scope.grab(name);
-
-                if (d) return d;
-            }
-
-            if (required) throw new Error('Required data: ' + name + ' not found!');
-
-            return null;
-        }
-    }, {
-        key: 'findOuter',
-        value: function findOuter(name, required) {
-
-            var foundInner = false;
-            var localData = this.grab(name);
-            if (localData) foundInner = true;
-
-            var scope = this;
-
-            while (scope = scope._parent) {
-
-                var valves = scope._valves;
-
-                // if valves exist and the name is not present, stop looking
-                if (valves.size && !valves.has(name)) {
-                    break;
-                }
-
-                var mirror = scope._mirrors.get(name);
-
-                if (mirror) {
-
-                    if (foundInner) return mirror;
-
-                    foundInner = true;
-                    continue;
-                }
-
-                var d = scope.grab(name);
-
-                if (d) {
-
-                    if (foundInner) return d;
-
-                    foundInner = true;
-                }
-            }
-
-            if (required) throw new Error('Required data: ' + name + ' not found!');
-
-            return null;
-        }
-    }, {
-        key: 'grab',
-        value: function grab(name, required) {
-
-            var data = this._dataList.get(name);
-
-            if (!data && required) throw new Error('Required Data: ' + name + ' not found!');
-
-            return data || null;
-        }
-    }, {
-        key: 'transaction',
-        value: function transaction(writes) {
-
-            if (Array.isArray(writes)) return this._multiWriteArray(writes);else if ((typeof writes === 'undefined' ? 'undefined' : _typeof(writes)) === 'object') return this._multiWriteHash(writes);
-
-            throw new Error('Write values must be in an array of object hash.');
-        }
-    }, {
-        key: '_multiWriteArray',
-
-
-        // write {name, topic, value} objects as a transaction
-        value: function _multiWriteArray(writeArray) {
-
-            var list = [];
-
-            var _iteratorNormalCompletion7 = true;
-            var _didIteratorError7 = false;
-            var _iteratorError7 = undefined;
-
-            try {
-                for (var _iterator7 = writeArray[Symbol.iterator](), _step7; !(_iteratorNormalCompletion7 = (_step7 = _iterator7.next()).done); _iteratorNormalCompletion7 = true) {
-                    var w = _step7.value;
-
-                    var d = this.find(w.name);
-                    d.silentWrite(w.value, w.topic);
-                    list.push(d);
-                }
-            } catch (err) {
-                _didIteratorError7 = true;
-                _iteratorError7 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion7 && _iterator7.return) {
-                        _iterator7.return();
-                    }
-                } finally {
-                    if (_didIteratorError7) {
-                        throw _iteratorError7;
-                    }
-                }
-            }
-
-            var i = 0;
-            var _iteratorNormalCompletion8 = true;
-            var _didIteratorError8 = false;
-            var _iteratorError8 = undefined;
-
-            try {
-                for (var _iterator8 = list[Symbol.iterator](), _step8; !(_iteratorNormalCompletion8 = (_step8 = _iterator8.next()).done); _iteratorNormalCompletion8 = true) {
-                    var _d = _step8.value;
-
-                    var _w = writeArray[i];
-                    _d.refresh(_w.topic);
-                }
-            } catch (err) {
-                _didIteratorError8 = true;
-                _iteratorError8 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion8 && _iterator8.return) {
-                        _iterator8.return();
-                    }
-                } finally {
-                    if (_didIteratorError8) {
-                        throw _iteratorError8;
-                    }
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: '_multiWriteHash',
-
-
-        // write key-values as a transaction
-        value: function _multiWriteHash(writeHash) {
-
-            var list = [];
-
-            for (var k in writeHash) {
-                var v = writeHash[k];
-                var d = this.find(k);
-                d.silentWrite(v);
-                list.push(d);
-            }
-
-            var _iteratorNormalCompletion9 = true;
-            var _didIteratorError9 = false;
-            var _iteratorError9 = undefined;
-
-            try {
-                for (var _iterator9 = list[Symbol.iterator](), _step9; !(_iteratorNormalCompletion9 = (_step9 = _iterator9.next()).done); _iteratorNormalCompletion9 = true) {
-                    var _d2 = _step9.value;
-
-                    _d2.refresh();
-                }
-            } catch (err) {
-                _didIteratorError9 = true;
-                _iteratorError9 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion9 && _iterator9.return) {
-                        _iterator9.return();
-                    }
-                } finally {
-                    if (_didIteratorError9) {
-                        throw _iteratorError9;
-                    }
-                }
-            }
-
-            return this;
-        }
-    }, {
-        key: 'name',
-        get: function get$$1() {
-            return this._name;
-        }
-    }, {
-        key: 'dead',
-        get: function get$$1() {
-            return this._dead;
-        }
-    }, {
-        key: 'children',
-        get: function get$$1() {
-
-            return this._children.map(function (d) {
+            if(d)
                 return d;
-            });
+
         }
-    }, {
-        key: 'parent',
-        get: function get$$1() {
-            return this._parent;
-        },
-        set: function set$$1(newParent) {
 
-            var oldParent = this.parent;
+        if(required)
+            throw new Error('Required data: ' + name + ' not found!');
 
-            if (oldParent === newParent) return;
+        return null;
 
-            if (oldParent) {
-                var i = oldParent._children.indexOf(this);
-                oldParent._children.splice(i, 1);
+    };
+
+    findOuter(name, required){
+
+        let foundInner = false;
+        const localData = this.grab(name);
+        if(localData)
+            foundInner = true;
+
+        let scope = this;
+
+        while(scope = scope._parent){
+
+            const valves = scope._valves;
+
+            // if valves exist and the name is not present, stop looking
+            if(valves.size && !valves.has(name)){
+                break;
             }
 
-            this._parent = newParent;
+            const mirror = scope._mirrors.get(name);
 
-            if (newParent) {
-                newParent._children.push(this);
+            if(mirror) {
+
+                if(foundInner)
+                    return mirror;
+
+                foundInner = true;
+                continue;
             }
 
-            return this;
-        }
-    }, {
-        key: 'valves',
-        set: function set$$1(list) {
-            var _iteratorNormalCompletion10 = true;
-            var _didIteratorError10 = false;
-            var _iteratorError10 = undefined;
+            const d = scope.grab(name);
 
-            try {
+            if(d) {
 
-                for (var _iterator10 = list[Symbol.iterator](), _step10; !(_iteratorNormalCompletion10 = (_step10 = _iterator10.next()).done); _iteratorNormalCompletion10 = true) {
-                    var name = _step10.value;
+                if(foundInner)
+                    return d;
 
-                    this._valves.set(name, true);
-                }
-            } catch (err) {
-                _didIteratorError10 = true;
-                _iteratorError10 = err;
-            } finally {
-                try {
-                    if (!_iteratorNormalCompletion10 && _iterator10.return) {
-                        _iterator10.return();
-                    }
-                } finally {
-                    if (_didIteratorError10) {
-                        throw _iteratorError10;
-                    }
-                }
+                foundInner = true;
             }
-        },
-        get: function get$$1() {
-            return Array.from(this._valves.keys());
+
         }
-    }]);
-    return Scope;
-}();
 
-var Catbus$1 = {};
+        if(required)
+            throw new Error('Required data: ' + name + ' not found!');
 
-var _batchQueue = [];
-var _primed = false;
+        return null;
 
-Catbus$1.fromEvent = function (target, eventName, useCapture) {
+    };
 
-    var stream = Stream.fromEvent(target, eventName, useCapture);
-    return new Bus(null, [stream]);
+    grab(name, required) {
+
+        const data = this._dataList.get(name);
+
+        if(!data && required)
+            throw new Error('Required Data: ' + name + ' not found!');
+
+        return data || null;
+
+    };
+
+    transaction(writes){
+
+        if(Array.isArray(writes))
+            return this._multiWriteArray(writes);
+        else if(typeof writes === 'object')
+            return this._multiWriteHash(writes);
+
+        throw new Error('Write values must be in an array of object hash.');
+
+    };
+
+    // write {name, topic, value} objects as a transaction
+    _multiWriteArray(writeArray){
+
+        const list = [];
+
+        for(const w of writeArray){
+            const d = this.find(w.name);
+            d.silentWrite(w.value, w.topic);
+            list.push(d);
+        }
+
+        let i = 0;
+        for(const d of list){
+            const w = writeArray[i];
+            d.refresh(w.topic);
+        }
+
+        return this;
+
+    };
+
+
+    // write key-values as a transaction
+    _multiWriteHash(writeHash){
+
+        const list = [];
+
+        for(const k in writeHash){
+            const v = writeHash[k];
+            const d = this.find(k);
+            d.silentWrite(v);
+            list.push(d);
+        }
+
+        for(const d of list){
+            d.refresh();
+        }
+
+        return this;
+
+    };
+
+}
+
+const FUNCTOR$5 = function(d) {
+    return typeof d === 'function' ? d : function() { return d;};
 };
+
+function callback$1(source){
+
+    const n = source.name;
+    const msg = source.msg();
+    source.stream.handle(msg, n, null);
+
+}
+
+function IntervalSource(name, delay, msg) {
+
+    this.name = name;
+    this.delay = delay;
+    this.dead = false;
+    this.stream = new PassStream(name);
+    this.intervalId = setInterval(callback$1, delay, this);
+    this.msg = FUNCTOR$5(msg);
+
+}
+
+IntervalSource.prototype.destroy = function destroy(){
+    clearInterval(this.intervalId);
+    this.dead = true;
+};
+
+
+NOOP_SOURCE.addStubs(IntervalSource);
+
+function ValueSource(name, value){
+
+    this.name = name;
+    this.value = value;
+    this.stream = new PassStream(name);
+
+}
+
+function tryEmit$1(source){
+    try{
+        source.emit();
+    } catch(e){
+    }
+}
+
+ValueSource.prototype.pull = function pull(){
+
+    tryEmit$1(this);
+
+};
+
+ValueSource.prototype.emit = function pull(){
+
+    this.stream.handle(this.value, this.name, '');
+
+};
+
+NOOP_SOURCE.addStubs(ValueSource);
+
+function ArraySource(name, value){
+
+    this.name = name;
+    this.value = value;
+    this.stream = new PassStream(name);
+
+}
+
+ArraySource.prototype.pull = function pull(){
+
+    push(this.stream, this.value, this.value.length, this.name);
+
+};
+
+function push(stream, arr, len, name){
+    for(let i = 0; i < len; ++i) {
+        stream.handle(arr[i], name, '');
+    }
+}
+
+
+NOOP_SOURCE.addStubs(ArraySource);
+
+const Catbus = {};
+
+let _batchQueue = [];
+let _primed = false;
+
+Catbus.bus = function(){
+    return new Bus();
+};
+
+
+Catbus.fromInterval = function(name, delay, msg){
+
+    const bus = new Bus();
+    const source = new IntervalSource(name, delay, msg);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
+Catbus.fromEvent = function(target, eventName, useCapture){
+
+    const bus = new Bus();
+    const source = new EventSource(eventName, target, eventName, useCapture);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
+Catbus.fromValues = function(values){
+
+    const bus = new Bus();
+    const len = values.length;
+    for(let i = 0; i < len; ++i) {
+        const source = new ValueSource('', value);
+        bus.addSource(source);
+    }
+    return bus;
+
+};
+
+Catbus.fromArray = function(arr, name){
+
+    return Catbus.fromValue(arr, name).split();
+
+};
+
+Catbus.fromValue = function(value, name){
+
+    const bus = new Bus();
+    const source = new ValueSource(name || '', value);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
+
+Catbus.fromSubscribe = function(name, data, topic){
+
+    const bus = new Bus();
+    const source = new SubscribeSource(name, data, topic, true);
+    bus.addSource(source);
+
+    return bus;
+
+};
+
 
 // todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
-Catbus$1.enqueue = function (pool) {
+Catbus.enqueue = function(pool){
 
     _batchQueue.push(pool);
 
-    if (!_primed) {
-        // register to flush the queue
+    if(!_primed) { // register to flush the queue
         _primed = true;
-        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus$1.flush);else process.nextTick(Catbus$1.flush);
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus.flush);
+        else process.nextTick(Catbus.flush);
     }
+
 };
 
-Catbus$1.createChild = Catbus$1.scope = function (name) {
+
+Catbus.createChild = Catbus.scope = function(name){
 
     return new Scope(name);
+
 };
 
-Catbus$1.flush = function () {
+
+Catbus.flush = function(){
 
     _primed = false;
 
-    var cycles = 0;
-    var q = _batchQueue;
+    let cycles = 0;
+    let q = _batchQueue;
     _batchQueue = [];
 
-    while (q.length) {
+    while(q.length) {
 
         while (q.length) {
-            var pool = q.shift();
-            pool.release();
+            const pool = q.shift();
+            pool.emit();
         }
 
         q = _batchQueue;
         _batchQueue = [];
 
         cycles++;
-        if (cycles > 10) throw new Error('Flush batch cycling loop > 10.', q);
+        if(cycles > 10)
+            throw new Error('Flush batch cycling loop > 10.', q);
+
     }
+
 };
 
-// export default () => {
-//     let s = new Scope('cow');
-//     return s;
-// }
-
-return Catbus$1;
+return Catbus;
 
 })));
 //# sourceMappingURL=catbus.umd.js.map
