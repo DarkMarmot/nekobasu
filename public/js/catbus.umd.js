@@ -2492,13 +2492,22 @@ class Bus {
 
     };
 
+    fuse(bus) {
+
+        this.add(bus);
+        this.merge();
+        this.group();
+
+        return this;
+    };
+
     join() {
 
         const parent = this.back();
         parent.add(this);
         return parent;
 
-    }
+    };
 
     add(bus) {
 

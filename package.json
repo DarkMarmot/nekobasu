@@ -18,7 +18,8 @@
     "rollup-plugin-babel": "^2.7.1",
     "rollup-plugin-node-resolve": "^2.0.0",
     "rollup-plugin-uglify": "^1.0.2",
-    "rollup-watch": "^3.2.2"
+    "rollup-watch": "^3.2.2",
+    "sinon": "^2.3.6"
   },
   "dependencies": {}
 }
