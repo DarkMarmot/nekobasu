@@ -456,16 +456,10 @@ function SubscribeSource(name, data, topic, canPull){
 
 }
 
-function tryEmit(source){
-    try{
-        source.emit();
-    } catch(e){
-    }
-}
 
 SubscribeSource.prototype.pull = function pull(){
 
-    !this.dead && this.canPull && tryEmit(this);
+    !this.dead && this.canPull && this.emit();
 
 };
 
@@ -3282,7 +3276,7 @@ function ValueSource(name, value){
 
 }
 
-function tryEmit$1(source){
+function tryEmit(source){
     try{
         source.emit();
     } catch(e){
@@ -3291,7 +3285,7 @@ function tryEmit$1(source){
 
 ValueSource.prototype.pull = function pull(){
 
-    tryEmit$1(this);
+    tryEmit(this);
 
 };
 
