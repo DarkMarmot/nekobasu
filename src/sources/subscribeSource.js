@@ -9,10 +9,11 @@ function SubscribeSource(name, data, topic, canPull){
     this.data = data;
     this.topic = topic;
     this.canPull = canPull;
-    this.stream = new PassStream(name);
-    data.subscribe(this.stream, topic);
+    const stream = this.stream = new PassStream(name);
+    this.callback = function(msg, source, topic){ stream.handle(msg, source, topic) };
+    data.subscribe(this.callback, topic);
 
-}
+};
 
 
 SubscribeSource.prototype.pull = function pull(){
@@ -38,12 +39,13 @@ SubscribeSource.prototype.emit = function emit(){
 
 };
 
+
 SubscribeSource.prototype.destroy = function destroy(){
 
-    const stream = this.stream;
+    const callback = this.callback;
     const topic = this.topic;
 
-    this.data.unsubscribe(stream, topic);
+    this.data.unsubscribe(callback, topic);
     this.dead = true;
 
 };

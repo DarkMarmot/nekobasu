@@ -663,6 +663,7 @@ class Bus {
 
         const sources = this._sources;
         const len = sources.length;
+
         for (let i = 0; i < len; i++) {
             const s = sources[i];
             s.destroy();
