@@ -258,7 +258,7 @@ function getDoMsgExtract(word) {
 }
 
 
-function applyReaction(scope, bus, phrase, target) { // target is some event emitter
+function applyReaction(scope, bus, phrase, target, lookup) { // target is some event emitter
 
     const need = [];
     const skipDupes = [];
@@ -379,7 +379,7 @@ function applyMethod(bus, word) {
 
 }
 
-function applyProcess(scope, bus, phrase, context, node) {
+function applyProcess(scope, bus, phrase, context, node, lookup) {
 
     const operation = phrase[0].operation; // same for all words in a process phrase
 
@@ -396,9 +396,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
-        applyFilterProcess(bus, phrase, context);
+        applyFilterProcess(bus, phrase, context, lookup);
     } else if (operation === 'RUN') {
-        applyMsgProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context, lookup);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -420,15 +420,16 @@ function applyWriteProcess(bus, scope, word){
 
 }
 
-function applyMsgProcess(bus, phrase, context){
+function applyMsgProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.msg(method, context);
 
@@ -447,15 +448,16 @@ function applySourceProcess(bus, word){
 }
 
 
-function applyFilterProcess(bus, phrase, context){
+function applyFilterProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.filter(method, context);
 
@@ -463,14 +465,14 @@ function applyFilterProcess(bus, phrase, context){
 
 }
 
-function createBus(nyan, scope, context, target){
+function createBus(nyan, scope, context, target, lookup){
 
     let bus = new Bus(scope);
-    return applyNyan(nyan, bus, context, target);
+    return applyNyan(nyan, bus, context, target, lookup);
 
 }
 
-function applyNyan(nyan, bus, context, target){
+function applyNyan(nyan, bus, context, target, lookup){
 
     const len = nyan.length;
     const scope = bus.scope;
@@ -493,9 +495,9 @@ function applyNyan(nyan, bus, context, target){
         } else {
 
             if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, target);
+                applyProcess(scope, bus, phrase, context, target, lookup);
             else // name === 'REACT'
-                applyReaction(scope, bus, phrase, target);
+                applyReaction(scope, bus, phrase, target, lookup);
 
         }
     }

@@ -51,15 +51,15 @@ const tapStreamBuilder = function(f) {
     }
 };
 
-const msgStreamBuilder = function(f) {
+const msgStreamBuilder = function(f, context) {
     return function(name) {
-        return new MsgStream(name, f);
+        return new MsgStream(name, f, context);
     }
 };
 
-const filterStreamBuilder = function(f) {
+const filterStreamBuilder = function(f, context) {
     return function(name) {
-        return new FilterStream(name, f);
+        return new FilterStream(name, f, context);
     }
 };
 
@@ -174,7 +174,6 @@ class Bus {
         this._parent = null;
 
         // temporary api states (used for interactively building the bus)
-
 
         this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
@@ -565,11 +564,11 @@ class Bus {
 
     };
 
-    msg(fAny) {
+    msg(fAny, context) {
 
         const f = FUNCTOR(fAny);
 
-        this._createNormalFrame(msgStreamBuilder(f));
+        this._createNormalFrame(msgStreamBuilder(f, context));
         return this;
 
 
@@ -596,12 +595,12 @@ class Bus {
 
     };
 
-    filter(f) {
+    filter(f, context) {
 
         this._ASSERT_IS_FUNCTION(f);
         this._ASSERT_NOT_HOLDING();
 
-        this._createNormalFrame(filterStreamBuilder(f));
+        this._createNormalFrame(filterStreamBuilder(f, context));
         return this;
 
 
@@ -644,7 +643,7 @@ class Bus {
 
     addEvent(name, target, eventName, useCapture){
 
-        const source = new EventSource(name, target, eventName, useCapture);
+        const source = new EventSource(name, target, eventName || name, useCapture);
         this.addSource(source);
 
         return this;

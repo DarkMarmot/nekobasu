@@ -166,6 +166,9 @@ class Data {
 
         type = type || DATA_TYPES.NONE;
 
+        if(!name)
+            throw new Error('Data requires a name');
+
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
@@ -173,6 +176,7 @@ class Data {
         this._name       = name;
         this._type       = type;
         this._dead       = false;
+        this._local      = name[0] === '_';
 
         this._noTopicList = new SubscriberList('', this);
         this._wildcardSubscriberList = new SubscriberList('', this);
@@ -464,7 +468,6 @@ SubscribeSource.prototype.pull = function pull(){
 };
 
 
-
 SubscribeSource.prototype.emit = function emit(){
 
     const data = this.data;
@@ -631,10 +634,11 @@ NOOP_STREAM.addStubs(TapStream);
 function IDENTITY$2(msg, source, topic) { return msg; }
 
 
-function MsgStream(name, f) {
+function MsgStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY$2;
+    this.context = context;
     this.next = NOOP_STREAM;
 
 }
@@ -643,7 +647,7 @@ function MsgStream(name, f) {
 MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
-    this.next.handle(f(msg, source, topic), source, topic);
+    this.next.handle(f.call(this.context, msg, source, topic), source, topic);
 
 };
 
@@ -670,9 +674,8 @@ FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
 
 NOOP_STREAM.addStubs(FilterStream);
 
-function IS_EQUAL(a, b) { return a === b; }
-
-
+function IS_PRIMITIVE_EQUAL(a, b) {
+    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
 function SkipStream(name) {
 
     this.name = name;
@@ -690,7 +693,7 @@ SkipStream.prototype.handle = function handle(msg, source, topic) {
         this.msg = msg;
         this.next.handle(msg, source, topic);
 
-    } else if (!IS_EQUAL(this.msg, msg)) {
+    } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
         this.next.handle(msg, source, topic);
@@ -1930,7 +1933,7 @@ function getDoMsgExtract(word) {
 }
 
 
-function applyReaction(scope, bus, phrase, target) { // target is some event emitter
+function applyReaction(scope, bus, phrase, target, lookup) { // target is some event emitter
 
     const need = [];
     const skipDupes = [];
@@ -2051,7 +2054,7 @@ function applyMethod(bus, word) {
 
 }
 
-function applyProcess(scope, bus, phrase, context, node) {
+function applyProcess(scope, bus, phrase, context, node, lookup) {
 
     const operation = phrase[0].operation; // same for all words in a process phrase
 
@@ -2068,9 +2071,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
-        applyFilterProcess(bus, phrase, context);
+        applyFilterProcess(bus, phrase, context, lookup);
     } else if (operation === 'RUN') {
-        applyMsgProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context, lookup);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -2092,15 +2095,16 @@ function applyWriteProcess(bus, scope, word){
 
 }
 
-function applyMsgProcess(bus, phrase, context){
+function applyMsgProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.msg(method, context);
 
@@ -2119,15 +2123,16 @@ function applySourceProcess(bus, word){
 }
 
 
-function applyFilterProcess(bus, phrase, context){
+function applyFilterProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.filter(method, context);
 
@@ -2135,14 +2140,14 @@ function applyFilterProcess(bus, phrase, context){
 
 }
 
-function createBus(nyan, scope, context, target){
+function createBus(nyan, scope, context, target, lookup){
 
     let bus = new Bus(scope);
-    return applyNyan(nyan, bus, context, target);
+    return applyNyan(nyan, bus, context, target, lookup);
 
 }
 
-function applyNyan(nyan, bus, context, target){
+function applyNyan(nyan, bus, context, target, lookup){
 
     const len = nyan.length;
     const scope = bus.scope;
@@ -2165,9 +2170,9 @@ function applyNyan(nyan, bus, context, target){
         } else {
 
             if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, target);
+                applyProcess(scope, bus, phrase, context, target, lookup);
             else // name === 'REACT'
-                applyReaction(scope, bus, phrase, target);
+                applyReaction(scope, bus, phrase, target, lookup);
 
         }
     }
@@ -2203,15 +2208,15 @@ const tapStreamBuilder = function(f) {
     }
 };
 
-const msgStreamBuilder = function(f) {
+const msgStreamBuilder = function(f, context) {
     return function(name) {
-        return new MsgStream(name, f);
+        return new MsgStream(name, f, context);
     }
 };
 
-const filterStreamBuilder = function(f) {
+const filterStreamBuilder = function(f, context) {
     return function(name) {
-        return new FilterStream(name, f);
+        return new FilterStream(name, f, context);
     }
 };
 
@@ -2326,7 +2331,6 @@ class Bus {
         this._parent = null;
 
         // temporary api states (used for interactively building the bus)
-
 
         this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
@@ -2717,11 +2721,11 @@ class Bus {
 
     };
 
-    msg(fAny) {
+    msg(fAny, context) {
 
         const f = FUNCTOR(fAny);
 
-        this._createNormalFrame(msgStreamBuilder(f));
+        this._createNormalFrame(msgStreamBuilder(f, context));
         return this;
 
 
@@ -2748,12 +2752,12 @@ class Bus {
 
     };
 
-    filter(f) {
+    filter(f, context) {
 
         this._ASSERT_IS_FUNCTION(f);
         this._ASSERT_NOT_HOLDING();
 
-        this._createNormalFrame(filterStreamBuilder(f));
+        this._createNormalFrame(filterStreamBuilder(f, context));
         return this;
 
 
@@ -2796,7 +2800,7 @@ class Bus {
 
     addEvent(name, target, eventName, useCapture){
 
-        const source = new EventSource(name, target, eventName, useCapture);
+        const source = new EventSource(name, target, eventName || name, useCapture);
         this.addSource(source);
 
         return this;
@@ -2839,6 +2843,9 @@ function _destroyEach(arr){
 
 }
 
+function isPrivate(name){
+    return name[0] === '_';
+}
 
 class Scope{
 
@@ -2865,13 +2872,13 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node){
+    bus(strOrNyan, context, node, lookup){
 
         if(!strOrNyan)
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        return NyanRunner.createBus(nyan, this, context, node);
+        return NyanRunner.createBus(nyan, this, context, node, lookup);
 
     };
 
@@ -3090,8 +3097,12 @@ class Scope{
     find(name, required){
 
         const localData = this.grab(name);
+
         if(localData)
             return localData;
+
+        if(isPrivate(name))
+            return null;
 
         let scope = this;
 
@@ -3125,8 +3136,12 @@ class Scope{
 
     findOuter(name, required){
 
+        if(isPrivate(name))
+            return null;
+
         let foundInner = false;
         const localData = this.grab(name);
+
         if(localData)
             foundInner = true;
 

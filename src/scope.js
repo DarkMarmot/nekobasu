@@ -18,6 +18,9 @@ function _destroyEach(arr){
 
 }
 
+function isPrivate(name){
+    return name[0] === '_';
+}
 
 class Scope{
 
@@ -44,13 +47,13 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node){
+    bus(strOrNyan, context, node, lookup){
 
         if(!strOrNyan)
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        return NyanRunner.createBus(nyan, this, context, node);
+        return NyanRunner.createBus(nyan, this, context, node, lookup);
 
     };
 
@@ -269,8 +272,12 @@ class Scope{
     find(name, required){
 
         const localData = this.grab(name);
+
         if(localData)
             return localData;
+
+        if(isPrivate(name))
+            return null;
 
         let scope = this;
 
@@ -304,8 +311,12 @@ class Scope{
 
     findOuter(name, required){
 
+        if(isPrivate(name))
+            return null;
+
         let foundInner = false;
         const localData = this.grab(name);
+
         if(localData)
             foundInner = true;
 

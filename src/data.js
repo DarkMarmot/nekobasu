@@ -22,6 +22,9 @@ class Data {
 
         type = type || DATA_TYPES.NONE;
 
+        if(!name)
+            throw new Error('Data requires a name');
+
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
@@ -29,6 +32,7 @@ class Data {
         this._name       = name;
         this._type       = type;
         this._dead       = false;
+        this._local      = name[0] === '_';
 
         this._noTopicList = new SubscriberList('', this);
         this._wildcardSubscriberList = new SubscriberList('', this);
