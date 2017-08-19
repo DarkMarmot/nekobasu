@@ -415,8 +415,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    const dataTopic = data.dataTopic(word.topic);
-    bus.write(dataTopic);
+    bus.write(data, word.topic);
 
 }
 

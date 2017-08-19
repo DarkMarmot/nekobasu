@@ -1015,15 +1015,16 @@ SplitStream.prototype.withIteration = function(msg, source, topic){
 
 NOOP_STREAM.addStubs(SplitStream);
 
-function WriteStream(name, dataTopic) {
+function WriteStream(name, data, topic) {
     this.name = name;
-    this.dataTopic = dataTopic;
+    this.data = data;
+    this.topic = topic;
     this.next = NOOP_STREAM;
 }
 
 WriteStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.dataTopic.handle(msg);
+    this.data.write(msg, topic);
     this.next.handle(msg, source, topic);
 
 };
@@ -2086,8 +2087,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    const dataTopic = data.dataTopic(word.topic);
-    bus.write(dataTopic);
+    bus.write(data, word.topic);
 
 }
 
@@ -2284,9 +2284,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(dataTopic) {
+const writeStreamBuilder = function(data, topic) {
     return function(name) {
-        return new WriteStream(name, dataTopic);
+        return new WriteStream(name, data, topic);
     }
 };
 
@@ -2741,9 +2741,9 @@ class Bus {
 
     };
 
-    write(dataTopic) {
+    write(data, topic) {
 
-        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        this._createNormalFrame(writeStreamBuilder(data, topic));
         return this;
 
     };

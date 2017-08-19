@@ -131,9 +131,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(dataTopic) {
+const writeStreamBuilder = function(data, topic) {
     return function(name) {
-        return new WriteStream(name, dataTopic);
+        return new WriteStream(name, data, topic);
     }
 };
 
@@ -588,9 +588,9 @@ class Bus {
 
     };
 
-    write(dataTopic) {
+    write(data, topic) {
 
-        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        this._createNormalFrame(writeStreamBuilder(data, topic));
         return this;
 
     };

@@ -13,7 +13,7 @@ function SubscribeSource(name, data, topic, canPull){
     this.callback = function(msg, source, topic){ stream.handle(msg, source, topic) };
     data.subscribe(this.callback, topic);
 
-};
+}
 
 
 SubscribeSource.prototype.pull = function pull(){

@@ -2,15 +2,16 @@
 import NOOP_STREAM from './noopStream.js';
 
 
-function WriteStream(name, dataTopic) {
+function WriteStream(name, data, topic) {
     this.name = name;
-    this.dataTopic = dataTopic;
+    this.data = data;
+    this.topic = topic;
     this.next = NOOP_STREAM;
 }
 
 WriteStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.dataTopic.handle(msg);
+    this.data.write(msg, topic);
     this.next.handle(msg, source, topic);
 
 };
