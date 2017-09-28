@@ -407,6 +407,8 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
 
+    } else if (operation === 'ATTR') {
+        // #attr:thing, #style:moo, #prop:innerText, #class
     }
 
 }

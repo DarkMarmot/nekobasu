@@ -624,7 +624,6 @@ class Bus {
 
     };
 
-
     skipDupes() {
 
         this._createNormalFrame(skipStreamBuilder());
