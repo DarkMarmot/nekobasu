@@ -26,8 +26,7 @@ class SubscriberList {
         this._topic = topic;
         this._subscribers = [];
         this._callback = callNoOne;
-        this._used = false; // true after first msg
-        this._lastMsg = null;
+
         this._lastTopic = null;
         this._data = data;
         this._name = data._name;

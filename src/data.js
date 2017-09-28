@@ -1,20 +1,8 @@
 
 import SubscriberList from './subscriberList.js';
-import {isValid, DATA_TYPES} from './dataTypes.js';
+import {DATA_TYPES} from './dataTypes.js';
 
 
-function DataTopic(data, topic, silently){
-    this.data = data;
-    this.topic = topic;
-    this.silently = !!silently;
-    this.topicSubscriberList = data._demandSubscriberList(topic);
-    this.wildcardSubscriberList = data._wildcardSubscriberList;
-}
-
-DataTopic.prototype.handle = function(msg){
-    this.topicSubscriberList.handle(msg, this.topic, this.silently);
-    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
-};
 
 class Data {
 
@@ -25,18 +13,13 @@ class Data {
         if(!name)
             throw new Error('Data requires a name');
 
-        if(!isValid(type))
-            throw new Error('Invalid Data of type: ' + type);
-
-        this._scope      = scope;
-        this._name       = name;
-        this._type       = type;
-        this._dead       = false;
-        this._local      = name[0] === '_';
-
-        this._noTopicList = new SubscriberList('', this);
-        this._wildcardSubscriberList = new SubscriberList('', this);
-        this._subscriberListsByTopic = {};
+        this._scope       = scope;
+        this._name        = name;
+        this._type        = type;
+        this._used        = false; // true after first value assignment
+        this._value       = null;
+        this._subscribers = [];
+        this._dead        = false;
 
     };
 
@@ -47,9 +30,6 @@ class Data {
 
     destroy(){
 
-        // if(this.dead)
-        //     this._throwDead();
-        
         for(const list of this._subscriberListsByTopic.values()){
             list.destroy();
         }
