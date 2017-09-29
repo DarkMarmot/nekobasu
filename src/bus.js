@@ -131,9 +131,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(data, topic) {
+const writeStreamBuilder = function(data) {
     return function(name) {
-        return new WriteStream(name, data, topic);
+        return new WriteStream(name, data);
     }
 };
 
@@ -146,7 +146,7 @@ const filterMapStreamBuilder = function(f, m, context) {
 function getHasKeys(keys){
 
     const len = keys.length;
-    return function _hasKeys(msg, source, topic){
+    return function _hasKeys(msg, source){
 
         if(typeof msg !== 'object')
             return false;
@@ -181,7 +181,7 @@ class Bus {
         this._locked = false; // prevents additional sources from being added
 
         if(scope)
-            scope._busList.push(this);
+            scope._buses.push(this);
 
         const f = new Frame(this);
         this._frames.push(f);
@@ -588,9 +588,9 @@ class Bus {
 
     };
 
-    write(data, topic) {
+    write(data) {
 
-        this._createNormalFrame(writeStreamBuilder(data, topic));
+        this._createNormalFrame(writeStreamBuilder(data));
         return this;
 
     };
@@ -631,9 +631,9 @@ class Bus {
 
     };
 
-    addSubscribe(name, data, topic){
+    addSubscribe(name, data){
 
-        const source = new SubscribeSource(name, data, topic, true);
+        const source = new SubscribeSource(name, data, true);
         this.addSource(source);
 
         return this;

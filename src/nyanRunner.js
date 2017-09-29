@@ -1,3 +1,4 @@
+
 import Bus from './bus.js';
 
 
@@ -60,9 +61,8 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
                 const msgPart = msg[alias];
-                data.silentWrite(msgPart, word.topic);
+                data.silentWrite(msgPart);
             }
 
         }
@@ -71,8 +71,7 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
-                data.refresh(word.topic);
+                data.refresh();
             }
 
         }
@@ -108,11 +107,10 @@ function getDoAnd(scope, phrase) {
 function getDoReadSingle(scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    const topic = word.topic;
 
     return function doReadSingle() {
 
-        return data.read(topic);
+        return data.read();
 
     };
 
@@ -153,9 +151,9 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
                 } else {
 
                     const data = scope.find(word.name, !word.maybe);
-                    const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
-                    if (data.present(word.topic))
-                        result[prop] = data.read(word.topic);
+                    const prop = word.alias || word.name;
+                    if (data.present)
+                        result[prop] = data.read();
 
                 }
 
@@ -171,16 +169,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function addDataSource(bus, scope, word, canPull) {
+function addDataSource(bus, scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    bus.addSubscribe(word.alias, data, word.topic);
+    bus.addSubscribe(word.alias, data);
 
 }
 
 function addEventSource(bus, word, target) {
 
-    bus.addEvent(word.alias, target, word.topic, word.useCapture);
+    bus.addEvent(word.alias, target, word.useCapture);
 
 }
 
@@ -417,7 +415,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    bus.write(data, word.topic);
+    bus.write(data);
 
 }
 

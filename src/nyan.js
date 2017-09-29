@@ -75,13 +75,12 @@ for(let i = 0; i < operationDefs.length; i++){
 
 class NyanWord {
 
-    constructor(name, operation, maybe, need, topic, alias, monitor, extracts){
+    constructor(name, operation, maybe, need, alias, monitor, extracts){
 
         this.name = name;
         this.operation = operation;
         this.maybe = maybe || false;
         this.need = need || false;
-        this.topic = topic || null;
         this.alias = alias || null;
         this.monitor = monitor || false;
         this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
@@ -287,7 +286,6 @@ function parsePhrase(str) {
 
         let maybe = false;
         let monitor = false;
-        let topic = null;
         let alias = null;
         let need = false;
 
@@ -341,22 +339,6 @@ function parsePhrase(str) {
                     need = true;
                     break;
 
-                case ':':
-
-                    if(chunks.length){
-                        const next = chunks[0];
-                        if(next === '('){
-                            monitor = true;
-                        } else {
-                            topic = next;
-                            chunks.shift(); // remove topic from queue
-                        }
-                    } else {
-                        monitor = true;
-                    }
-
-                    break;
-
                 case '(':
 
                     if(chunks.length){
@@ -371,8 +353,8 @@ function parsePhrase(str) {
 
         }
 
-        alias = alias || topic || name;
-        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts);
+        alias = alias || name;
+        const nw = new NyanWord(name, operation, maybe, need, alias, monitor, extracts);
         words.push(nw);
 
     }

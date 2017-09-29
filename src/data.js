@@ -70,7 +70,6 @@ class Data {
 
     read(){
 
-        _ASSERT_READ_ACCESS(this);
         return this._value;
 
     };
@@ -79,11 +78,13 @@ class Data {
 
         _ASSERT_WRITE_ACCESS(this);
 
-        this._present = true;
-        let i = this._subscribers.length;
-        this._value = msg;
+        if(!this._action) { // states store the last value seen
+            this._present = true;
+            this._value = msg;
+        }
 
         if(!silent) {
+            let i = this._subscribers.length;
             while (i--) {
                 this._subscribers[i].call(null, msg, this._name);
             }
@@ -114,11 +115,6 @@ class Data {
 function _ASSERT_WRITE_ACCESS(d){
     if(!d._writable)
         throw new Error('States accessed from below are read-only. Named: ' + d._name);
-}
-
-function _ASSERT_READ_ACCESS(d){
-    if(!d._readable)
-        throw new Error('Actions are read-only. Named: ' + d._name);
 }
 
 export default Data;

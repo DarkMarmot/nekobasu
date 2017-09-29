@@ -68,10 +68,10 @@ Catbus.fromValue = function(value, name){
 };
 
 
-Catbus.fromSubscribe = function(name, data, topic){
+Catbus.fromSubscribe = function(name, data){
 
     const bus = new Bus();
-    const source = new SubscribeSource(name, data, topic, true);
+    const source = new SubscribeSource(name, data, true);
     bus.addSource(source);
 
     return bus;

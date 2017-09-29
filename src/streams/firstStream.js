@@ -5,27 +5,24 @@ function FirstStream(name) {
 
     this.name = name;
     this.msg = undefined;
-    this.topic = '';
     this.next = NOOP_STREAM;
     this.hasValue = false;
 
 }
 
-FirstStream.prototype.handle = function handle(msg, source, topic) {
+FirstStream.prototype.handle = function handle(msg, source) {
 
     if(!this.hasValue){
 
         this.hasValue = true;
         this.msg = msg;
-        this.topic = topic;
 
     }
 
     const v = this.msg;
     const n = this.name;
-    const t = this.topic;
 
-    this.next.handle(v, n, t);
+    this.next.handle(v, n);
 
 };
 

@@ -10,11 +10,11 @@ function ForkStream(name, fork) {
 
 }
 
-ForkStream.prototype.handle = function handle(msg, source, topic) {
+ForkStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
-    this.next.handle(msg, n, topic);
-    this.fork.handle(msg, n, topic);
+    this.next.handle(msg, n);
+    this.fork.handle(msg, n);
 
 };
 

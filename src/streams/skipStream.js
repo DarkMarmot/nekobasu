@@ -15,18 +15,18 @@ function SkipStream(name) {
 
 }
 
-SkipStream.prototype.handle = function handle(msg, source, topic) {
+SkipStream.prototype.handle = function handle(msg, source) {
 
     if(!this.hasValue) {
 
         this.hasValue = true;
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     }
 };

@@ -82,10 +82,11 @@ describe('RootScope', function(){
         for(let i = 0; i < 1000000; i++){
             a.push(i);
         }
+
         const n = Date.now();
 
-        const d = world.data('castle');
-        const e = world.data('moo');
+        const d = world.demand('castle');
+        const e = world.demand('moo');
 
         const fs = {
             add1: function(x) { return x + 1; },
@@ -96,7 +97,9 @@ describe('RootScope', function(){
         world.bus('~castle').split().process(' >even | *add1', fs).scan(fs.sum, 0).process('=moo');
 
 
-        d.write(a);
+        for(let j = 0; j < 10; j++) {
+            d.write(a);
+        }
 
 
         console.log('e', e.read());

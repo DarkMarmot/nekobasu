@@ -13,10 +13,10 @@ function FilterStream(name, f, context) {
 
 }
 
-FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
-    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
+    f.call(this.context, msg, source) && this.next.handle(msg, source);
 
 };
 

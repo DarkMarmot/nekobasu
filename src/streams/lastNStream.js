@@ -11,7 +11,7 @@ function LastNStream(name, count) {
 
 }
 
-LastNStream.prototype.handle = function handle(msg, source, topic) {
+LastNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -21,11 +21,11 @@ LastNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length > c)
         m.shift();
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-LastNStream.prototype.reset = function(msg, source, topic){
+LastNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();

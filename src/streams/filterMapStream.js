@@ -14,12 +14,12 @@ function FilterMapStream(name, f, m, context) {
 
 }
 
-FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterMapStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
     const m = this.m;
-    f.call(this.context, msg, source, topic) && this.next.handle(
-        m.call(this.context, msg, source, topic));
+    f.call(this.context, msg, source) && this.next.handle(
+        m.call(this.context, msg, source));
 
 };
 

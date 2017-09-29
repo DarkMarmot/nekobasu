@@ -80,7 +80,6 @@ class Data {
 
     read(){
 
-        _ASSERT_READ_ACCESS(this);
         return this._value;
 
     };
@@ -89,11 +88,13 @@ class Data {
 
         _ASSERT_WRITE_ACCESS(this);
 
-        this._present = true;
-        let i = this._subscribers.length;
-        this._value = msg;
+        if(!this._action) { // states store the last value seen
+            this._present = true;
+            this._value = msg;
+        }
 
         if(!silent) {
+            let i = this._subscribers.length;
             while (i--) {
                 this._subscribers[i].call(null, msg, this._name);
             }
@@ -126,11 +127,6 @@ function _ASSERT_WRITE_ACCESS(d){
         throw new Error('States accessed from below are read-only. Named: ' + d._name);
 }
 
-function _ASSERT_READ_ACCESS(d){
-    if(!d._readable)
-        throw new Error('Actions are read-only. Named: ' + d._name);
-}
-
 function NoopSource() {
     this.name = '';
 }
@@ -160,7 +156,7 @@ function NoopStream() {
     this.name = '';
 }
 
-NoopStream.prototype.handle = function handle(msg, source, topic) {};
+NoopStream.prototype.handle = function handle(msg, source) {};
 NoopStream.prototype.reset = function reset() {};
 NoopStream.prototype.emit = function emit() {};
 
@@ -191,24 +187,23 @@ function PassStream(name) {
 
 }
 
-PassStream.prototype.handle = function passHandle(msg, source, topic) {
+PassStream.prototype.handle = function passHandle(msg, source) {
 
     const n = this.name || source;
-    this.next.handle(msg, n, topic);
+    this.next.handle(msg, n);
 
 };
 
 NOOP_STREAM.addStubs(PassStream);
 
-function SubscribeSource(name, data, topic, canPull){
+function SubscribeSource(name, data, canPull){
 
     this.name = name;
     this.data = data;
-    this.topic = topic;
     this.canPull = canPull;
     const stream = this.stream = new PassStream(name);
-    this.callback = function(msg, source, topic){ stream.handle(msg, source, topic); };
-    data.subscribe(this.callback, topic);
+    this.callback = function(msg, source){ stream.handle(msg, source); };
+    data.subscribe(this.callback);
 
 }
 
@@ -223,15 +218,12 @@ SubscribeSource.prototype.pull = function pull(){
 SubscribeSource.prototype.emit = function emit(){
 
     const data = this.data;
-    const topic = this.topic;
 
-    const present = data.present(topic);
-
-    if(present) {
+    if(data.present) {
         const stream = this.stream;
-        const msg = data.read(topic);
+        const msg = data.read();
         const source = this.name;
-        stream.handle(msg, source, topic);
+        stream.handle(msg, source);
     }
 
 };
@@ -240,9 +232,8 @@ SubscribeSource.prototype.emit = function emit(){
 SubscribeSource.prototype.destroy = function destroy(){
 
     const callback = this.callback;
-    const topic = this.topic;
 
-    this.data.unsubscribe(callback, topic);
+    this.data.unsubscribe(callback);
     this.dead = true;
 
 };
@@ -290,11 +281,11 @@ function ForkStream(name, fork) {
 
 }
 
-ForkStream.prototype.handle = function handle(msg, source, topic) {
+ForkStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
-    this.next.handle(msg, n, topic);
-    this.fork.handle(msg, n, topic);
+    this.next.handle(msg, n);
+    this.fork.handle(msg, n);
 
 };
 
@@ -305,15 +296,13 @@ function BatchStream(name) {
     this.name = name;
     this.next = NOOP_STREAM;
     this.msg = undefined;
-    this.topic = '';
     this.latched = false;
 
 }
 
-BatchStream.prototype.handle = function handle(msg, source, topic) {
+BatchStream.prototype.handle = function handle(msg, source) {
 
     this.msg = msg;
-    this.topic = topic;
 
     if(!this.latched){
         this.latched = true;
@@ -325,10 +314,9 @@ BatchStream.prototype.handle = function handle(msg, source, topic) {
 BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
 
     const msg = this.msg;
-    const topic = this.topic;
     const source = this.name;
 
-    this.next.handle(msg, source, topic);
+    this.next.handle(msg, source);
 
 };
 
@@ -337,7 +325,6 @@ BatchStream.prototype.reset = function reset() {
 
     this.latched = false;
     this.msg = undefined;
-    this.topic = '';
 
     // doesn't continue on as in default
 
@@ -353,10 +340,10 @@ function ResetStream(name, head) {
 
 }
 
-ResetStream.prototype.handle = function handle(msg, source, topic) {
+ResetStream.prototype.handle = function handle(msg, source) {
 
-    this.next.handle(msg, source, topic);
-    this.head.reset(msg, source, topic);
+    this.next.handle(msg, source);
+    this.head.reset(msg, source);
 
 };
 
@@ -373,18 +360,18 @@ function TapStream(name, f) {
     this.next = NOOP_STREAM;
 }
 
-TapStream.prototype.handle = function handle(msg, source, topic) {
+TapStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name || source;
     const f = this.f;
-    f(msg, n, topic);
-    this.next.handle(msg, n, topic);
+    f(msg, n);
+    this.next.handle(msg, n);
 
 };
 
 NOOP_STREAM.addStubs(TapStream);
 
-function IDENTITY$2(msg, source, topic) { return msg; }
+function IDENTITY$2(msg, source) { return msg; }
 
 
 function MsgStream(name, f, context) {
@@ -397,10 +384,10 @@ function MsgStream(name, f, context) {
 }
 
 
-MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
+MsgStream.prototype.handle = function msgHandle(msg, source) {
 
     const f = this.f;
-    this.next.handle(f.call(this.context, msg, source, topic), source, topic);
+    this.next.handle(f.call(this.context, msg, source), source);
 
 };
 
@@ -418,10 +405,10 @@ function FilterStream(name, f, context) {
 
 }
 
-FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
-    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
+    f.call(this.context, msg, source) && this.next.handle(msg, source);
 
 };
 
@@ -438,18 +425,18 @@ function SkipStream(name) {
 
 }
 
-SkipStream.prototype.handle = function handle(msg, source, topic) {
+SkipStream.prototype.handle = function handle(msg, source) {
 
     if(!this.hasValue) {
 
         this.hasValue = true;
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     }
 };
@@ -465,7 +452,7 @@ function LastNStream(name, count) {
 
 }
 
-LastNStream.prototype.handle = function handle(msg, source, topic) {
+LastNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -475,11 +462,11 @@ LastNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length > c)
         m.shift();
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-LastNStream.prototype.reset = function(msg, source, topic){
+LastNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();
@@ -497,7 +484,7 @@ function FirstNStream(name, count) {
 
 }
 
-FirstNStream.prototype.handle = function handle(msg, source, topic) {
+FirstNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -506,11 +493,11 @@ FirstNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length < c)
         m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-FirstNStream.prototype.reset = function(msg, source, topic){
+FirstNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 
@@ -526,18 +513,18 @@ function AllStream(name) {
 
 }
 
-AllStream.prototype.handle = function handle(msg, source, topic) {
+AllStream.prototype.handle = function handle(msg, source) {
 
     const m = this.msg;
     const n = this.name || source;
 
     m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-AllStream.prototype.reset = function(msg, source, topic){
+AllStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 
@@ -549,11 +536,11 @@ const FUNCTOR$1 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
-function IMMEDIATE(msg, source, topic) { return 0; }
+function IMMEDIATE(msg, source) { return 0; }
 
-function callback(stream, msg, source, topic){
+function callback(stream, msg, source){
     const n = stream.name || source;
-    stream.next.handle(msg, n, topic);
+    stream.next.handle(msg, n);
 }
 
 function DelayStream(name, f) {
@@ -564,16 +551,16 @@ function DelayStream(name, f) {
 
 }
 
-DelayStream.prototype.handle = function handle(msg, source, topic) {
+DelayStream.prototype.handle = function handle(msg, source) {
 
-    const delay = this.f(msg, source, topic);
-    setTimeout(callback, delay, this, msg, source, topic);
+    const delay = this.f(msg, source);
+    setTimeout(callback, delay, this, msg, source);
 
 };
 
 NOOP_STREAM.addStubs(DelayStream);
 
-function BY_SOURCE(msg, source, topic) { return source; }
+function BY_SOURCE(msg, source) { return source; }
 
 const FUNCTOR$2 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
@@ -590,10 +577,10 @@ function GroupStream(name, f, seed) {
 
 }
 
-GroupStream.prototype.handle = function handle(msg, source, topic) {
+GroupStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
     const n = this.name || source;
     const m = this.msg;
 
@@ -605,14 +592,13 @@ GroupStream.prototype.handle = function handle(msg, source, topic) {
         }
     }
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
 GroupStream.prototype.reset = function reset(msg) {
 
     const m = this.msg = this.seed(msg);
-    this.topic = undefined;
     this.next.reset(m);
 
 };
@@ -631,21 +617,21 @@ function LatchStream(name, f) {
 
 }
 
-LatchStream.prototype.handle = function handle(msg, source, topic) {
+LatchStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
 
     if(this.latched){
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
         return;
     }
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
 
     if(v) {
         this.latched = true;
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
     }
 
 };
@@ -668,15 +654,15 @@ function ScanStream(name, f) {
 }
 
 
-ScanStream.prototype.handle = function handle(msg, source, topic) {
+ScanStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
-    this.next.handle(this.value, source, topic);
+    this.value = this.hasValue ? f(this.value, msg, source) : msg;
+    this.next.handle(this.value, source);
 
 };
 
-ScanStream.prototype.reset = function reset(msg) {
+ScanStream.prototype.reset = function reset() {
 
     this.hasValue = false;
     this.value = undefined;
@@ -702,11 +688,11 @@ function ScanWithSeedStream(name, f, seed) {
 
 
 
-ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source) {
 
     const f = this.f;
-    this.value = f(this.value, msg, source, topic);
-    this.next.handle(this.value, source, topic);
+    this.value = f(this.value, msg, source);
+    this.next.handle(this.value, source);
 
 };
 
@@ -737,52 +723,51 @@ function SplitStream(name) {
 }
 
 
-SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
+SplitStream.prototype.handle = function splitHandle(msg, source) {
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };
 
 
-SplitStream.prototype.withArray = function(msg, source, topic){
+SplitStream.prototype.withArray = function(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.next.handle(msg[i], source, topic);
+        this.next.handle(msg[i], source);
     }
 
 };
 
 
 
-SplitStream.prototype.withIteration = function(msg, source, topic){
+SplitStream.prototype.withIteration = function(msg, source){
 
     const next = this.next;
 
     for(const m of msg){
-        next.handle(m, source, topic);
+        next.handle(m, source);
     }
 
 };
 
 NOOP_STREAM.addStubs(SplitStream);
 
-function WriteStream(name, data, topic) {
+function WriteStream(name, data) {
     this.name = name;
     this.data = data;
-    this.topic = topic;
     this.next = NOOP_STREAM;
 }
 
-WriteStream.prototype.handle = function handle(msg, source, topic) {
+WriteStream.prototype.handle = function handle(msg, source) {
 
-    this.data.write(msg, topic);
-    this.next.handle(msg, source, topic);
+    this.data.write(msg);
+    this.next.handle(msg, source);
 
 };
 
@@ -801,12 +786,12 @@ function FilterMapStream(name, f, m, context) {
 
 }
 
-FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterMapStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
     const m = this.m;
-    f.call(this.context, msg, source, topic) && this.next.handle(
-        m.call(this.context, msg, source, topic));
+    f.call(this.context, msg, source) && this.next.handle(
+        m.call(this.context, msg, source));
 
 };
 
@@ -820,7 +805,7 @@ function PriorStream(name) {
 
 }
 
-PriorStream.prototype.handle = function handle(msg, source, topic) {
+PriorStream.prototype.handle = function handle(msg, source) {
 
     const arr = this.values;
 
@@ -832,11 +817,11 @@ PriorStream.prototype.handle = function handle(msg, source, topic) {
     if(arr.length > 2)
         arr.shift();
 
-    this.next.handle(arr[0], source, topic);
+    this.next.handle(arr[0], source);
 
 };
 
-PriorStream.prototype.reset = function(msg, source, topic){
+PriorStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();
@@ -867,10 +852,10 @@ ReduceStream.prototype.reset = function(){
 
 };
 
-ReduceStream.prototype.handle = function(msg, source, topic){
+ReduceStream.prototype.handle = function(msg, source){
 
     const f = this.f;
-    this.next.handle(this.v = f(msg, this.v), source, topic);
+    this.next.handle(this.v = f(msg, this.v), source);
 
 };
 
@@ -885,7 +870,7 @@ function SkipNStream(name, count) {
 
 }
 
-SkipNStream.prototype.handle = function handle(msg, source, topic) {
+SkipNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const s = this.seen;
@@ -893,12 +878,12 @@ SkipNStream.prototype.handle = function handle(msg, source, topic) {
     if(this.seen < c){
         this.seen = s + 1;
     } else {
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
     }
 
 };
 
-SkipNStream.prototype.reset = function(msg, source, topic){
+SkipNStream.prototype.reset = function(){
 
     this.seen = 0;
 
@@ -915,14 +900,14 @@ function TakeNStream(name, count) {
 
 }
 
-TakeNStream.prototype.handle = function handle(msg, source, topic) {
+TakeNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const s = this.seen;
 
     if(this.seen < c){
         this.seen = s + 1;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
     }
 
 };
@@ -945,40 +930,40 @@ function Spork(bus) {
 
 }
 
-Spork.prototype.handle = function(msg, topic, source) {
+Spork.prototype.handle = function(msg, source) {
 
     this.first.reset();
-    this._split(msg, source, topic);
-    this.last.handle(this.last.v, source, topic);
+    this._split(msg, source);
+    this.last.handle(this.last.v, source);
 
 };
 
 
-Spork.prototype.withArray = function withArray(msg, source, topic){
+Spork.prototype.withArray = function withArray(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.first.handle(msg[i], source, topic);
+        this.first.handle(msg[i], source);
     }
 
 };
 
-Spork.prototype.withIteration = function withIteration(msg, source, topic){
+Spork.prototype.withIteration = function withIteration(msg, source){
 
     const first = this.first;
     for(const i of msg){
-        first.handle(i, source, topic);
+        first.handle(i, source);
     }
 
 };
 
-Spork.prototype._split = function(msg, source, topic){
+Spork.prototype._split = function(msg, source){
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };
@@ -1122,13 +1107,12 @@ for(let i = 0; i < operationDefs.length; i++){
 
 class NyanWord {
 
-    constructor(name, operation, maybe, need, topic, alias, monitor, extracts){
+    constructor(name, operation, maybe, need, alias, monitor, extracts){
 
         this.name = name;
         this.operation = operation;
         this.maybe = maybe || false;
         this.need = need || false;
-        this.topic = topic || null;
         this.alias = alias || null;
         this.monitor = monitor || false;
         this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
@@ -1334,7 +1318,6 @@ function parsePhrase(str) {
 
         let maybe = false;
         let monitor = false;
-        let topic = null;
         let alias = null;
         let need = false;
 
@@ -1388,22 +1371,6 @@ function parsePhrase(str) {
                     need = true;
                     break;
 
-                case ':':
-
-                    if(chunks.length){
-                        const next = chunks[0];
-                        if(next === '('){
-                            monitor = true;
-                        } else {
-                            topic = next;
-                            chunks.shift(); // remove topic from queue
-                        }
-                    } else {
-                        monitor = true;
-                    }
-
-                    break;
-
                 case '(':
 
                     if(chunks.length){
@@ -1418,8 +1385,8 @@ function parsePhrase(str) {
 
         }
 
-        alias = alias || topic || name;
-        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts);
+        alias = alias || name;
+        const nw = new NyanWord(name, operation, maybe, need, alias, monitor, extracts);
         words.push(nw);
 
     }
@@ -1489,9 +1456,8 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
                 const msgPart = msg[alias];
-                data.silentWrite(msgPart, word.topic);
+                data.silentWrite(msgPart);
             }
 
         }
@@ -1500,8 +1466,7 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
-                data.refresh(word.topic);
+                data.refresh();
             }
 
         }
@@ -1537,11 +1502,10 @@ function getDoAnd(scope, phrase) {
 function getDoReadSingle(scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    const topic = word.topic;
 
     return function doReadSingle() {
 
-        return data.read(topic);
+        return data.read();
 
     };
 
@@ -1582,9 +1546,9 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
                 } else {
 
                     const data = scope.find(word.name, !word.maybe);
-                    const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
-                    if (data.present(word.topic))
-                        result[prop] = data.read(word.topic);
+                    const prop = word.alias || word.name;
+                    if (data.present)
+                        result[prop] = data.read();
 
                 }
 
@@ -1600,16 +1564,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function addDataSource(bus, scope, word, canPull) {
+function addDataSource(bus, scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    bus.addSubscribe(word.alias, data, word.topic);
+    bus.addSubscribe(word.alias, data);
 
 }
 
 function addEventSource(bus, word, target) {
 
-    bus.addEvent(word.alias, target, word.topic, word.useCapture);
+    bus.addEvent(word.alias, target, word.useCapture);
 
 }
 
@@ -1846,7 +1810,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    bus.write(data, word.topic);
+    bus.write(data);
 
 }
 
@@ -2043,9 +2007,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(data, topic) {
+const writeStreamBuilder = function(data) {
     return function(name) {
-        return new WriteStream(name, data, topic);
+        return new WriteStream(name, data);
     }
 };
 
@@ -2058,7 +2022,7 @@ const filterMapStreamBuilder = function(f, m, context) {
 function getHasKeys(keys){
 
     const len = keys.length;
-    return function _hasKeys(msg, source, topic){
+    return function _hasKeys(msg, source){
 
         if(typeof msg !== 'object')
             return false;
@@ -2093,7 +2057,7 @@ class Bus {
         this._locked = false; // prevents additional sources from being added
 
         if(scope)
-            scope._busList.push(this);
+            scope._buses.push(this);
 
         const f = new Frame(this);
         this._frames.push(f);
@@ -2500,9 +2464,9 @@ class Bus {
 
     };
 
-    write(data, topic) {
+    write(data) {
 
-        this._createNormalFrame(writeStreamBuilder(data, topic));
+        this._createNormalFrame(writeStreamBuilder(data));
         return this;
 
     };
@@ -2543,9 +2507,9 @@ class Bus {
 
     };
 
-    addSubscribe(name, data, topic){
+    addSubscribe(name, data){
 
-        const source = new SubscribeSource(name, data, topic, true);
+        const source = new SubscribeSource(name, data, true);
         this.addSource(source);
 
         return this;
@@ -3097,10 +3061,10 @@ Catbus.fromValue = function(value, name){
 };
 
 
-Catbus.fromSubscribe = function(name, data, topic){
+Catbus.fromSubscribe = function(name, data){
 
     const bus = new Bus();
-    const source = new SubscribeSource(name, data, topic, true);
+    const source = new SubscribeSource(name, data, true);
     bus.addSource(source);
 
     return bus;

@@ -1,7 +1,7 @@
 
 import NOOP_STREAM from './noopStream.js';
 
-function IDENTITY(msg, source, topic) { return msg; }
+function IDENTITY(msg, source) { return msg; }
 
 
 function PassStream(name) {
@@ -11,10 +11,10 @@ function PassStream(name) {
 
 }
 
-PassStream.prototype.handle = function passHandle(msg, source, topic) {
+PassStream.prototype.handle = function passHandle(msg, source) {
 
     const n = this.name || source;
-    this.next.handle(msg, n, topic);
+    this.next.handle(msg, n);
 
 };
 

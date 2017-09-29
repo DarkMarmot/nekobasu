@@ -10,12 +10,12 @@ function TapStream(name, f) {
     this.next = NOOP_STREAM;
 }
 
-TapStream.prototype.handle = function handle(msg, source, topic) {
+TapStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name || source;
     const f = this.f;
-    f(msg, n, topic);
-    this.next.handle(msg, n, topic);
+    f(msg, n);
+    this.next.handle(msg, n);
 
 };
 

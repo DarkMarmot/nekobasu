@@ -10,7 +10,7 @@ function PriorStream(name) {
 
 }
 
-PriorStream.prototype.handle = function handle(msg, source, topic) {
+PriorStream.prototype.handle = function handle(msg, source) {
 
     const arr = this.values;
 
@@ -22,11 +22,11 @@ PriorStream.prototype.handle = function handle(msg, source, topic) {
     if(arr.length > 2)
         arr.shift();
 
-    this.next.handle(arr[0], source, topic);
+    this.next.handle(arr[0], source);
 
 };
 
-PriorStream.prototype.reset = function(msg, source, topic){
+PriorStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();

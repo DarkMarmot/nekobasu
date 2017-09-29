@@ -11,7 +11,7 @@ function FirstNStream(name, count) {
 
 }
 
-FirstNStream.prototype.handle = function handle(msg, source, topic) {
+FirstNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -20,11 +20,11 @@ FirstNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length < c)
         m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-FirstNStream.prototype.reset = function(msg, source, topic){
+FirstNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 

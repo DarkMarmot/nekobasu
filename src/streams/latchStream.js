@@ -13,21 +13,21 @@ function LatchStream(name, f) {
 
 }
 
-LatchStream.prototype.handle = function handle(msg, source, topic) {
+LatchStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
 
     if(this.latched){
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
         return;
     }
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
 
     if(v) {
         this.latched = true;
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
     }
 
 };

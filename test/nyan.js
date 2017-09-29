@@ -7,54 +7,23 @@ const root = Catbus.createChild();
 
 let sourceLog;
 let msgLog;
-let topicLog;
-
-function Watcher(name){
-
-    this.name = name;
-
-}
 
 
-Watcher.prototype.handle = function(msg, source, topic){
-
-    console.log('gotL:', msg, source);
-    callback(msg, source, topic);
-
-    return msg;
-
-};
-
-Watcher.prototype.meow = function(msg, source, topic){
-
-    console.log('meow:', msg, source);
-    return msg;
-
-};
-
-Watcher.prototype.tap = function(msg, source, topic){
-
-    console.log('tap:', msg, source);
-    return msg;
-
-};
-
-var watcher = new Watcher('moo');
-
-
-function callback(msg, source, topic){
+function callback(msg, source){
 
     msgLog.push(msg);
     sourceLog.push(source);
-    topicLog.push(topic);
 
 }
+
+let watcher = {};
+watcher.tap = callback;
+watcher.handle = callback;
 
 function resetLog(){
 
     sourceLog = [];
     msgLog = [];
-    topicLog = [];
 
 }
 
@@ -79,7 +48,7 @@ describe('RootScope', function(){
 
     it('can react to data', function(){
 
-        const d = world.data('castle');
+        const d = world.demand('castle');
         const bus = world.bus('castle | *handle', watcher);
         d.write('knight');
 
@@ -89,7 +58,7 @@ describe('RootScope', function(){
 
     it('can react to data and rename it', function(){
 
-        const d = world.data('castle');
+        const d = world.demand('castle');
         const bus = world.bus('castle (tower) | *handle', watcher);
         d.write('knight');
 
@@ -97,31 +66,12 @@ describe('RootScope', function(){
         assert.equal(sourceLog[0], 'tower');
     });
 
-    it('can react to data on a topic', function(){
 
-        const d = world.data('cat');
-        const bus = world.bus('cat:whisker | *handle', watcher);
-        d.write('wind', 'whisker');
-
-        assert.equal(msgLog[0], 'wind');
-
-    });
-
-    it('can react to data on a topic and rename it', function(){
-
-        const d = world.data('cat');
-        const bus = world.bus('cat:whisker(grr) | *handle', watcher);
-        d.write('wind', 'whisker');
-
-        assert.equal(msgLog[0], 'wind');
-        assert.equal(sourceLog[0], 'grr');
-
-    });
 
     it('can react to multi batched data', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
 
         const bus = world.bus('castle, palace | *handle', watcher);
         d1.write('knight');
@@ -136,8 +86,8 @@ describe('RootScope', function(){
 
     it('can react to multi batched data and rename it', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
 
         const bus = world.bus('castle (cat), palace (dog) | *handle', watcher);
         d1.write('knight');
@@ -153,8 +103,8 @@ describe('RootScope', function(){
 
     it('can react to multi batched data and rename the stream', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
 
         const bus = world.bus('castle (cat), palace (dog) | (together) | *handle', watcher);
         d1.write('knight');
@@ -171,8 +121,8 @@ describe('RootScope', function(){
 
     it('can pull prior multi batched data', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
 
         d1.write('wizard');
         d2.write('mage');
@@ -189,8 +139,8 @@ describe('RootScope', function(){
 
     it('can process additional nyan', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
 
         d1.write('wizard');
         d2.write('mage');
@@ -205,31 +155,12 @@ describe('RootScope', function(){
 
     });
 
-    it('can fork and join', function(){
 
-        const d1 = world.data('castle');
-        const d2 = world.data('palace');
-        const d3 = world.data('bunny');
-
-        const bus = world.bus('castle, palace | (puppy) | *meow | { (cat) | *meow -} *handle', watcher);
-        //bus.process('*handle', watcher).pull();
-
-        d1.write('wizard');
-        d2.write('mage');
-        d3.write('knight');
-
-        Catbus.flush();
-        Catbus.flush();
-
-        assert.equal(msgLog[0].puppy.castle, 'wizard');
-        // assert.equal(msgLog[0].palace, 'mage');
-
-    });
 
     // it('can subscribe to dynamic topics', function(){
     //
-    //     const d1 = world.data('books');
-    //     const d2 = world.data('category');
+    //     const d1 = world.demand('books');
+    //     const d2 = world.demand('category');
     //
     //     d1.write(7, 'castles');
     //     d1.write(9, 'knights');
@@ -248,7 +179,7 @@ describe('RootScope', function(){
 
     it('can react', function(){
 
-            var d = world.data('ergo');
+            var d = world.demand('ergo');
 
             d.write('meow');
             const bus = world.bus('ergo | *handle', watcher).pull();
@@ -262,7 +193,7 @@ describe('RootScope', function(){
     it('can react2', function(){
 
 
-        var d = world.data('ergo');
+        var d = world.demand('ergo');
 
         d.write('fish');
         d.write('cow');
@@ -284,8 +215,8 @@ describe('RootScope', function(){
     it('can react2', function(){
 
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
 
         d1.write('fish');
         d2.write('cow');
@@ -303,10 +234,10 @@ describe('RootScope', function(){
     it('can react3', function(){
 
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
-        var d3 = world.data('sea');
-        var d4 = world.data('grove');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
+        var d3 = world.demand('sea');
+        var d4 = world.demand('grove');
 
         d1.write('fish');
         d2.write({moo: {spot: 5}});
@@ -327,10 +258,10 @@ describe('RootScope', function(){
     it('can write to data', function(){
 
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
-        var d3 = world.data('sea');
-        var d4 = world.data('grove');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
+        var d3 = world.demand('sea');
+        var d4 = world.demand('grove');
 
         d1.write('fish');
         d2.write({moo: {spot: 5}});
@@ -351,10 +282,10 @@ describe('RootScope', function(){
     it('can write to data', function(){
 
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
-        var d3 = world.data('sea');
-        var d4 = world.data('grove');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
+        var d3 = world.demand('sea');
+        var d4 = world.demand('grove');
 
         d1.write('fish');
         d2.write({moo: {spot: 5}});
@@ -379,10 +310,10 @@ describe('RootScope', function(){
 
         console.log('DB');
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
-        var d3 = world.data('sea');
-        var d4 = world.data('grove');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
+        var d3 = world.demand('sea');
+        var d4 = world.demand('grove');
 
         d1.write('fish');
         d2.write({moo: {spot: 5}});
@@ -410,10 +341,10 @@ describe('RootScope', function(){
     it('can write to datac', function(){
 
 
-        var d1 = world.data('village');
-        var d2 = world.data('forest');
-        var d3 = world.data('sea');
-        var d4 = world.data('grove');
+        var d1 = world.demand('village');
+        var d2 = world.demand('forest');
+        var d3 = world.demand('sea');
+        var d4 = world.demand('grove');
 
         console.log('DC');
 
@@ -445,7 +376,7 @@ describe('RootScope', function(){
 
     //     it('can write data', function(){
     //
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.write('proxy');
     //         var value = d.read();
     //
@@ -455,7 +386,7 @@ describe('RootScope', function(){
     //
     //     it('can modify data', function(){
     //
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.write('autoreiv');
     //         var value = d.read();
     //
@@ -467,7 +398,7 @@ describe('RootScope', function(){
     //
     //     it('can toggle data', function(){
     //
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.write('wasteland');
     //         d.toggle();
     //         assert.equal(d.read(), false);
@@ -481,7 +412,7 @@ describe('RootScope', function(){
     //
     //     it('can subscribe to data via callbacks', function(){
     //
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.subscribe(callback);
     //         d.write('Re-L');
     //         var value = msgLog[0];
@@ -491,7 +422,7 @@ describe('RootScope', function(){
     //
     // it('can subscribe to data via watchers', function(){
     //
-    //     const d = world.data('pond');
+    //     const d = world.demand('pond');
     //     d.subscribe(new Watcher('cow'));
     //     d.write('turtle');
     //
@@ -503,7 +434,7 @@ describe('RootScope', function(){
     //
     // it('can follow existing data via watchers', function(){
     //
-    //     const d = world.data('pond');
+    //     const d = world.demand('pond');
     //     d.write('kitten');
     //     d.write('bunny');
     //     d.follow(new Watcher('cow'));
@@ -521,7 +452,7 @@ describe('RootScope', function(){
     //
     //     console.log('world', world._dataList.size);
     //
-    //     var d = world.data('ergo');
+    //     var d = world.demand('ergo');
     //
     //     console.log('is', d.read());
     //
@@ -543,7 +474,7 @@ describe('RootScope', function(){
     // it('can refresh existing data', function(){
     //
     //     world.clear();
-    //     var d = world.data('ergo');
+    //     var d = world.demand('ergo');
     //     d.subscribe(callback);
     //     d.write('Vincent');
     //     d.write('Re-L');
@@ -558,7 +489,7 @@ describe('RootScope', function(){
     //     it('can subscribe to topics', function(){
     //
     //         world.clear();
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.subscribe(callback, 'arcology');
     //         d.write('Vincent', 'character');
     //         d.write('Re-L', 'character');
@@ -574,7 +505,7 @@ describe('RootScope', function(){
     // it('can drop subscriptions to topics', function(){
     //
     //     world.clear();
-    //     var d = world.data('ergo');
+    //     var d = world.demand('ergo');
     //     d.subscribe(callback, 'arcology');
     //     d.write('Vincent', 'character');
     //     d.write('Re-L', 'character');
@@ -592,7 +523,7 @@ describe('RootScope', function(){
     // it('can read data by topic', function(){
     //
     //     world.clear();
-    //     var d = world.data('ergo');
+    //     var d = world.demand('ergo');
     //
     //     d.write('Vincent', 'character');
     //     d.write('Re-L', 'character');
@@ -609,7 +540,7 @@ describe('RootScope', function(){
     // it('can peek at packets by topic', function(){
     //
     //     world.clear();
-    //     var d = world.data('ergo');
+    //     var d = world.demand('ergo');
     //
     //     d.write('Vincent', 'character');
     //     d.write('Re-L', 'character');
@@ -627,7 +558,7 @@ describe('RootScope', function(){
     //     it('can monitor all topics', function(){
     //
     //         world.clear();
-    //         var d = world.data('ergo');
+    //         var d = world.demand('ergo');
     //         d.monitor(callback);
     //         d.write('Vincent', 'character');
     //         d.write('Re-L', 'character');
@@ -649,9 +580,9 @@ describe('RootScope', function(){
     //     var city1 = world.createChild();
     //     var city2 = world.createChild();
     //
-    //     var d0 = world.data('ergo');
-    //     var d1 = city1.data('ergo');
-    //     var d2 = city2.data('proxy');
+    //     var d0 = world.demand('ergo');
+    //     var d1 = city1.demand('ergo');
+    //     var d2 = city2.demand('proxy');
     //
     //     d0.write('0');
     //     d1.write('1');
@@ -670,9 +601,9 @@ describe('RootScope', function(){
     //     var city1 = world.createChild();
     //     var city2 = world.createChild();
     //
-    //     var d0 = world.data('ergo');
-    //     var d1 = city1.data('ergo');
-    //     var d2 = city2.data('proxy');
+    //     var d0 = world.demand('ergo');
+    //     var d1 = city1.demand('ergo');
+    //     var d2 = city2.demand('proxy');
     //
     //     d0.write('0');
     //     d1.write('1');
@@ -693,9 +624,9 @@ describe('RootScope', function(){
     //
     //     var city1 = world.createChild();
     //
-    //     var d0 = world.data('proxy');
-    //     var d1 = city1.data('ergo');
-    //     var d2 = city1.data('autoreiv');
+    //     var d0 = world.demand('proxy');
+    //     var d1 = city1.demand('ergo');
+    //     var d2 = city1.demand('autoreiv');
     //
     //     var result;
     //
@@ -725,7 +656,7 @@ describe('RootScope', function(){
     //     var city1 = world.createChild();
     //
     //     var d0 = world.action('ergo');
-    //     var d1 = city1.data('ergo');
+    //     var d1 = city1.demand('ergo');
     //
     //     d0.subscribe(callback);
     //
@@ -748,11 +679,11 @@ describe('RootScope', function(){
     //     var city1 = world.createChild();
     //     var city2 = world.createChild();
     //
-    //     var d0 = world.data('ergo');
-    //     var d1 = city1.data('ergo');
-    //     var d2 = city2.data('proxy');
+    //     var d0 = world.demand('ergo');
+    //     var d1 = city1.demand('ergo');
+    //     var d2 = city2.demand('proxy');
     //
-    //     var d3 = world.data('Re-L');
+    //     var d3 = world.demand('Re-L');
     //     world.valves = ['Re-L'];
     //
     //     d0.write('0');
@@ -783,7 +714,7 @@ describe('RootScope', function(){
     //     var city1 = world.createChild();
     //
     //     var d0 = world.state('ergo'); // creates a mirror under the hood
-    //     var d1 = city1.data('proxy');
+    //     var d1 = city1.demand('proxy');
     //
     //     d0.write('0');
     //     d1.write('1');

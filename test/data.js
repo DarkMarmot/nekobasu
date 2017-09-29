@@ -206,55 +206,46 @@ describe('Data and Scopes', function(){
     });
 
 
-    it('can create actions as ephemeral data', function(){
+    it('can create actions that do not store data', function(){
 
-        world.clear();
+        let d = world.demand('$ergo');
+        d.subscribe(callback);
 
-        var city1 = world.createChild();
+        d.write('0');
+        d.write('1');
+        d.write('2');
 
-        var d0 = world.action('ergo');
-        var d1 = city1.data('ergo');
-
-        d0.subscribe(callback);
-
-        d0.write('0');
-        d1.write('1');
-//todo fix with .used
-        assert.equal(d0.read(), undefined);
-        // assert.equal(d0.peek(), null);
-        // assert.equal(d1.peek().msg, '1');
+        assert.equal(d.read(), undefined);
         assert.equal(msgLog[0], '0');
-        assert.equal(d1.read(), '1');
+        assert.equal(msgLog[2], '2');
 
     });
 
     it('valves can restrict data in higher scopes', function(){
+        
+        let city1 = world.createChild();
+        let city2 = world.createChild();
 
-
-        world.clear();
-
-        var city1 = world.createChild();
-        var city2 = world.createChild();
-
-        var d0 = world.data('ergo');
-        var d1 = city1.data('ergo');
-        var d2 = city2.data('proxy');
-
-        var d3 = world.data('Re-L');
-        world.valves = ['Re-L'];
+        let d0 = world.demand('ergo');
+        let d1 = city1.demand('ergo');
+        let d2 = city2.demand('proxy');
+        let d3 = world.demand('re-l');
+        
+        world.valves = ['re-l'];
 
         d0.write('0');
         d1.write('1');
         d2.write('2');
         d3.write('3');
 
-        var f1 = city1.find('ergo');
-        var f2 = city2.find('ergo');
-        var f3 = city1.find('Re-L');
-        var f4 = world.find('Re-L');
-        var f5 = world.find('ergo');
+        let f1 = city1.find('ergo');
+        let f2 = city2.find('ergo');
+        let f3 = city1.find('re-l');
+        let f4 = world.find('re-l');
+        let f5 = world.find('ergo');
 
-        console.log('flat',Array.from(city2.flatten().keys()));
+        // console.log('flat',Array.from(city2.flatten().keys()));
+
         assert.equal(f1.read(), '1'); // access never encounters valve above
         assert.equal(f2, null); // access blocked by valve
         assert.equal(f3.read(), '3'); // remote access through valve
@@ -266,26 +257,24 @@ describe('Data and Scopes', function(){
 
     it('can create states for data that is read-only from below', function(){
 
-        world.clear();
 
-        var city1 = world.createChild();
+        let city1 = world.createChild();
 
-        var d0 = world.state('ergo'); // creates a mirror under the hood
-        var d1 = city1.data('proxy');
+        let d0 = world.demand('ergo'); // creates a mirror under the hood
+        let d1 = city1.demand('proxy');
 
         d0.write('0');
         d1.write('1');
 
-        var f1 = city1.find('ergo'); // from below, finds mirror as read-only
-        var f2 = world.find('ergo'); // locally, finds data with write access
+        let f1 = city1.find('ergo'); // from below, finds mirror as read-only
+        let f2 = world.find('ergo'); // locally, finds data with write access
 
         f2.write('3'); // can write to state, affects both data and mirror
 
         assert.equal(f1.read(), '3');
         assert.equal(f2.read(), '3');
-        assert.equal(f1.type, 'mirror');
 
-        var writeToMirror = function(){ f1.write('4');};
+        let writeToMirror = function(){ f1.write('4');};
         assert.throws(writeToMirror, Error);
 
     });

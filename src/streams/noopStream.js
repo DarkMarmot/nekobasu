@@ -4,7 +4,7 @@ function NoopStream() {
     this.name = '';
 }
 
-NoopStream.prototype.handle = function handle(msg, source, topic) {};
+NoopStream.prototype.handle = function handle(msg, source) {};
 NoopStream.prototype.reset = function reset() {};
 NoopStream.prototype.emit = function emit() {};
 

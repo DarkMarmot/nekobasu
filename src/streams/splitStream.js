@@ -9,35 +9,35 @@ function SplitStream(name) {
 }
 
 
-SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
+SplitStream.prototype.handle = function splitHandle(msg, source) {
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };
 
 
-SplitStream.prototype.withArray = function(msg, source, topic){
+SplitStream.prototype.withArray = function(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.next.handle(msg[i], source, topic);
+        this.next.handle(msg[i], source);
     }
 
 };
 
 
 
-SplitStream.prototype.withIteration = function(msg, source, topic){
+SplitStream.prototype.withIteration = function(msg, source){
 
     const next = this.next;
 
     for(const m of msg){
-        next.handle(m, source, topic);
+        next.handle(m, source);
     }
 
 };

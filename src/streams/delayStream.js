@@ -5,11 +5,11 @@ const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
-function IMMEDIATE(msg, source, topic) { return 0; }
+function IMMEDIATE(msg, source) { return 0; }
 
-function callback(stream, msg, source, topic){
+function callback(stream, msg, source){
     const n = stream.name || source;
-    stream.next.handle(msg, n, topic);
+    stream.next.handle(msg, n);
 }
 
 function DelayStream(name, f) {
@@ -20,10 +20,10 @@ function DelayStream(name, f) {
 
 }
 
-DelayStream.prototype.handle = function handle(msg, source, topic) {
+DelayStream.prototype.handle = function handle(msg, source) {
 
-    const delay = this.f(msg, source, topic);
-    setTimeout(callback, delay, this, msg, source, topic);
+    const delay = this.f(msg, source);
+    setTimeout(callback, delay, this, msg, source);
 
 };
 

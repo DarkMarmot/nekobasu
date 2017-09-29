@@ -11,14 +11,14 @@ function TakeNStream(name, count) {
 
 }
 
-TakeNStream.prototype.handle = function handle(msg, source, topic) {
+TakeNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const s = this.seen;
 
     if(this.seen < c){
         this.seen = s + 1;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
     }
 
 };

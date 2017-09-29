@@ -13,15 +13,15 @@ function ScanStream(name, f) {
 }
 
 
-ScanStream.prototype.handle = function handle(msg, source, topic) {
+ScanStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
-    this.next.handle(this.value, source, topic);
+    this.value = this.hasValue ? f(this.value, msg, source) : msg;
+    this.next.handle(this.value, source);
 
 };
 
-ScanStream.prototype.reset = function reset(msg) {
+ScanStream.prototype.reset = function reset() {
 
     this.hasValue = false;
     this.value = undefined;

@@ -10,10 +10,10 @@ function ResetStream(name, head) {
 
 }
 
-ResetStream.prototype.handle = function handle(msg, source, topic) {
+ResetStream.prototype.handle = function handle(msg, source) {
 
-    this.next.handle(msg, source, topic);
-    this.head.reset(msg, source, topic);
+    this.next.handle(msg, source);
+    this.head.reset(msg, source);
 
 };
 

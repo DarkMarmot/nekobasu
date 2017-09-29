@@ -10,18 +10,18 @@ function AllStream(name) {
 
 }
 
-AllStream.prototype.handle = function handle(msg, source, topic) {
+AllStream.prototype.handle = function handle(msg, source) {
 
     const m = this.msg;
     const n = this.name || source;
 
     m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-AllStream.prototype.reset = function(msg, source, topic){
+AllStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 

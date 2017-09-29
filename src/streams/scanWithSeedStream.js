@@ -17,11 +17,11 @@ function ScanWithSeedStream(name, f, seed) {
 
 
 
-ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source) {
 
     const f = this.f;
-    this.value = f(this.value, msg, source, topic);
-    this.next.handle(this.value, source, topic);
+    this.value = f(this.value, msg, source);
+    this.next.handle(this.value, source);
 
 };
 

@@ -19,40 +19,40 @@ function Spork(bus) {
 
 }
 
-Spork.prototype.handle = function(msg, topic, source) {
+Spork.prototype.handle = function(msg, source) {
 
     this.first.reset();
-    this._split(msg, source, topic);
-    this.last.handle(this.last.v, source, topic);
+    this._split(msg, source);
+    this.last.handle(this.last.v, source);
 
 };
 
 
-Spork.prototype.withArray = function withArray(msg, source, topic){
+Spork.prototype.withArray = function withArray(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.first.handle(msg[i], source, topic);
+        this.first.handle(msg[i], source);
     }
 
 };
 
-Spork.prototype.withIteration = function withIteration(msg, source, topic){
+Spork.prototype.withIteration = function withIteration(msg, source){
 
     const first = this.first;
     for(const i of msg){
-        first.handle(i, source, topic);
+        first.handle(i, source);
     }
 
 };
 
-Spork.prototype._split = function(msg, source, topic){
+Spork.prototype._split = function(msg, source){
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };

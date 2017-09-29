@@ -1,7 +1,7 @@
 
 import NOOP_STREAM from './noopStream.js';
 
-function BY_SOURCE(msg, source, topic) { return source; }
+function BY_SOURCE(msg, source) { return source; }
 
 const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
@@ -18,10 +18,10 @@ function GroupStream(name, f, seed) {
 
 }
 
-GroupStream.prototype.handle = function handle(msg, source, topic) {
+GroupStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
     const n = this.name || source;
     const m = this.msg;
 
@@ -33,14 +33,13 @@ GroupStream.prototype.handle = function handle(msg, source, topic) {
         }
     }
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
 GroupStream.prototype.reset = function reset(msg) {
 
     const m = this.msg = this.seed(msg);
-    this.topic = undefined;
     this.next.reset(m);
 
 };
