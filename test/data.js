@@ -1,26 +1,13 @@
 //run mocha from project root
 
-var assert = require('assert');
-var Catbus = require('../dist/catbus.umd.js');
+const assert = require('assert');
+const Catbus = require('../dist/catbus.umd.js');
 
-var root = Catbus.scope();
+const root = Catbus.scope();
 
-var topicLog;
-var msgLog;
-var sourceLog;
-
-function Watcher(name){
-
-    this.name = name;
-
-}
-
-
-Watcher.prototype.handle = function(msg, packet){
-
-    callback(msg, packet, this);
-
-};
+let topicLog;
+let msgLog;
+let sourceLog;
 
 function callback(msg, topic, source){
 
@@ -38,10 +25,9 @@ function resetLog(){
 
 }
 
+describe('Data and Scopes', function(){
 
-describe('RootScope', function(){
-
-        var world;
+        let world;
 
         beforeEach(function(){
 
@@ -56,19 +42,20 @@ describe('RootScope', function(){
 
         });
 
-        it('can create named data', function(){
+        it('can create named states', function(){
 
-            var d = world.data('ergo');
-            var name = d.name;
+            let d = world.demand('ergo');
+            let name = d.name;
+
             assert.equal(name, 'ergo');
 
         });
 
-        it('can write data', function(){
+        it('can write to states', function(){
 
-            var d = world.data('ergo');
+            let d = world.demand('ergo');
             d.write('proxy');
-            var value = d.read();
+            let value = d.read();
 
             assert.equal(value, 'proxy');
 
@@ -76,19 +63,19 @@ describe('RootScope', function(){
 
         it('can modify data', function(){
 
-            var d = world.data('ergo');
+            let d = world.demand('ergo');
             d.write('autoreiv');
-            var value = d.read();
+            d.write('re-l');
+            let value = d.read();
 
-            assert.equal(value, 'autoreiv');
+            assert.equal(value, 're-l');
 
         });
 
 
-
         it('can toggle data', function(){
 
-            var d = world.data('ergo');
+            let d = world.demand('ergo');
             d.write('wasteland');
             d.toggle();
             assert.equal(d.read(), false);
@@ -102,178 +89,66 @@ describe('RootScope', function(){
 
         it('can subscribe to data via callbacks', function(){
 
-            var d = world.data('ergo');
+            let d = world.demand('ergo');
             d.subscribe(callback);
-            d.write('Re-L');
-            var value = msgLog[0];
-            assert.equal(value, 'Re-L');
+            d.write('re-l');
+            let value = msgLog[0];
+            assert.equal(value, 're-l');
 
         });
 
-    it('can subscribe to data via watchers', function(){
+    it('can subscribe to data and pull current value via callbacks', function(){
 
-        const d = world.data('pond');
-        d.subscribe(new Watcher('cow'));
-        d.write('turtle');
+        let d = world.demand('ergo');
+        d.write('re-l');
+        d.write('vincent');
+        d.subscribe(callback, true);
+        d.write('romdeau');
 
-        assert.equal(msgLog[0], 'turtle');
-        // assert.equal(sourceLog[0].name, 'cow');
-
-
-    });
-
-    it('can follow existing data via watchers', function(){
-
-        const d = world.data('pond');
-        d.write('kitten');
-        d.write('bunny');
-        d.follow(new Watcher('cow'));
-        d.write('turtle');
-
-        assert.equal(msgLog[1], 'turtle');
-        // assert.equal(sourceLog[0].name, 'cow');
-
+        assert.equal(msgLog[0], 'vincent');
+        assert.equal(msgLog[1], 'romdeau');
 
     });
 
     it('can unsubscribe to data', function(){
 
-        console.log('dropped', msgLog);
 
-        console.log('world', world._dataList.size);
-
-        var d = world.data('ergo');
-
-        console.log('is', d.read());
+        let d = world.demand('ergo');
 
         d.subscribe(callback);
-        d.write('Re-L');
+        d.write('re-l');
         d.unsubscribe(callback);
-        d.write('Vincent');
+        d.write('vincent');
         d.subscribe(callback);
-        d.write('Proxy');
-        console.log('dropped', msgLog);
-        var value = msgLog[0];
-        assert.equal(value, 'Re-L');
-        value = msgLog[1];
-        assert.equal(value, 'Proxy');
+        d.write('proxy');
+
+        assert.equal(msgLog[0], 're-l');
+        assert.equal(msgLog[1], 'proxy');
 
     });
 
 
     it('can refresh existing data', function(){
 
-        world.clear();
-        var d = world.data('ergo');
+        let d = world.demand('ergo');
         d.subscribe(callback);
-        d.write('Vincent');
-        d.write('Re-L');
+        d.write('vincent');
+        d.write('re-l');
         d.refresh();
 
-        var lastValue = msgLog[2];
-        assert.equal(lastValue, 'Re-L');
+        assert.equal(msgLog[2], 're-l');
         assert.equal(msgLog.length, 3);
 
     });
 
-        it('can subscribe to topics', function(){
-
-            world.clear();
-            var d = world.data('ergo');
-            d.subscribe(callback, 'arcology');
-            d.write('Vincent', 'character');
-            d.write('Re-L', 'character');
-            d.write('Romdeau', 'arcology');
-            d.write('wasteland');
-
-            var value = msgLog[0];
-            assert.equal(value, 'Romdeau');
-            assert.equal(msgLog.length, 1);
-
-        });
-
-    it('can drop subscriptions to topics', function(){
-
-        world.clear();
-        var d = world.data('ergo');
-        d.subscribe(callback, 'arcology');
-        d.write('Vincent', 'character');
-        d.write('Re-L', 'character');
-        d.write('Romdeau', 'arcology');
-        d.write('wasteland');
-        d.unsubscribe(callback, 'arcology');
-        d.write('Vincent', 'arcology');
-
-        var value = msgLog[0];
-        assert.equal(value, 'Romdeau');
-        assert.equal(msgLog.length, 1);
-
-    });
-
-    it('can read data by topic', function(){
-
-        world.clear();
-        var d = world.data('ergo');
-
-        d.write('Vincent', 'character');
-        d.write('Re-L', 'character');
-        d.write('Romdeau', 'arcology');
-        d.write('wasteland');
-
-        assert.equal(d.read('arcology'), 'Romdeau');
-        assert.equal(d.read('character'), 'Re-L');
-        assert.equal(d.read(), 'wasteland');
-
-
-    });
-
-    // todo add a peek function again
-    // it('can peek at packets by topic', function(){
-    //
-    //     world.clear();
-    //     var d = world.data('ergo');
-    //
-    //     d.write('Vincent', 'character');
-    //     d.write('Re-L', 'character');
-    //     d.write('Romdeau', 'arcology');
-    //     d.write('wasteland');
-    //
-    //     assert.equal(d.read('arcology'), 'Romdeau');
-    //     assert.equal(d.peek('arcology').source, 'ergo');
-    //     assert.equal(d.peek('character').topic, 'character');
-    //     assert.equal(d.peek().topic, null);
-    //
-    //
-    // });
-
-        it('can monitor all topics', function(){
-
-            world.clear();
-            var d = world.data('ergo');
-            d.monitor(callback);
-            d.write('Vincent', 'character');
-            d.write('Re-L', 'character');
-            d.write('Romdeau', 'arcology');
-            d.write('wasteland');
-
-            var value = msgLog[2];
-            var source = sourceLog[2];
-            assert.equal(value, 'Romdeau');
-            assert.equal(source, 'arcology');
-            assert.equal(msgLog.length, 4);
-
-        });
-
     it('creates child scopes', function(){
 
-        world.clear();
+        let city1 = world.createChild();
+        let city2 = world.createChild();
 
-        var city1 = world.createChild();
-        var city2 = world.createChild();
-
-        var d0 = world.data('ergo');
-        var d1 = city1.data('ergo');
-        var d2 = city2.data('proxy');
+        let d0 = world.demand('ergo');
+        let d1 = city1.demand('ergo');
+        let d2 = city2.demand('proxy');
 
         d0.write('0');
         d1.write('1');
@@ -287,21 +162,20 @@ describe('RootScope', function(){
 
     it('finds data in higher scopes', function(){
 
-        world.clear();
 
-        var city1 = world.createChild();
-        var city2 = world.createChild();
+        let city1 = world.createChild();
+        let city2 = world.createChild();
 
-        var d0 = world.data('ergo');
-        var d1 = city1.data('ergo');
-        var d2 = city2.data('proxy');
+        let d0 = world.demand('ergo');
+        let d1 = city1.demand('ergo');
+        let d2 = city2.demand('proxy');
 
         d0.write('0');
         d1.write('1');
         d2.write('2');
 
-        var f1 = city1.find('ergo');
-        var f2 = city2.find('ergo');
+        let f1 = city1.find('ergo');
+        let f2 = city2.find('ergo');
 
         assert.equal(f1.read(), '1');
         assert.equal(f2.read(), '0');
@@ -310,16 +184,12 @@ describe('RootScope', function(){
 
     it('can write transactions', function(){
 
-        resetLog();
-        world.clear();
 
-        var city1 = world.createChild();
+        let d0 = world.demand('proxy');
+        let d1 = world.demand('ergo');
+        let d2 = world.demand('autoreiv');
 
-        var d0 = world.data('proxy');
-        var d1 = city1.data('ergo');
-        var d2 = city1.data('autoreiv');
-
-        var result;
+        let result;
 
         d0.subscribe(function(msg){
             result = msg;
@@ -328,11 +198,7 @@ describe('RootScope', function(){
             assert(d2.read(), 'chrome');
         });
 
-        city1.transaction([
-            {name: 'proxy', value: 'grey'},
-            {name: 'ergo', value: 'black'},
-            {name: 'autoreiv', value: 'chrome'}
-        ]);
+        world.write({proxy: 'grey', ergo: 'black', autoreiv: 'chrome'});
 
         assert(result, 'grey');
 

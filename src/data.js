@@ -1,42 +1,24 @@
 
-import SubscriberList from './subscriberList.js';
-import {isValid, DATA_TYPES} from './dataTypes.js';
+import {isPrivate, isAction} from './dataTypes.js';
 
-
-function DataTopic(data, topic, silently){
-    this.data = data;
-    this.topic = topic;
-    this.silently = !!silently;
-    this.topicSubscriberList = data._demandSubscriberList(topic);
-    this.wildcardSubscriberList = data._wildcardSubscriberList;
-}
-
-DataTopic.prototype.handle = function(msg){
-    this.topicSubscriberList.handle(msg, this.topic, this.silently);
-    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
-};
 
 class Data {
 
+    // should only be created via Scope methods
+
     constructor(scope, name, type) {
 
-        type = type || DATA_TYPES.NONE;
-
-        if(!name)
-            throw new Error('Data requires a name');
-
-        if(!isValid(type))
-            throw new Error('Invalid Data of type: ' + type);
-
-        this._scope      = scope;
-        this._name       = name;
-        this._type       = type;
-        this._dead       = false;
-        this._local      = name[0] === '_';
-
-        this._noTopicList = new SubscriberList('', this);
-        this._wildcardSubscriberList = new SubscriberList('', this);
-        this._subscriberListsByTopic = {};
+        this._scope       = scope;
+        this._action      = isAction(name);
+        this._name        = name;
+        this._type        = type;
+        this._dead        = false;
+        this._value       = undefined;
+        this._present     = false;  // true if a value has been received
+        this._private     = isPrivate(name);
+        this._readable    = !this._action;
+        this._writable    = true; // false when mirrored
+        this._subscribers = [];
 
     };
 
@@ -44,208 +26,100 @@ class Data {
     get name() { return this._name; };
     get type() { return this._type; };
     get dead() { return this._dead; };
+    get present() { return this._present; };
+    get private() { return this._private; };
+
 
     destroy(){
 
-        // if(this.dead)
-        //     this._throwDead();
-        
-        for(const list of this._subscriberListsByTopic.values()){
-            list.destroy();
-        }
-
+        this._scope = null;
+        this._subscribers = null;
         this._dead = true;
 
     };
-    
-    _demandSubscriberList(topic){
 
-        topic = topic || '';
-        let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
+    subscribe(watcher, pull){
 
-        if(list)
-            return list;
+        this._subscribers.unshift(watcher);
 
-        list = new SubscriberList(topic, this);
-        this._subscriberListsByTopic[topic] = list;
-
-        return list;
-        
-    };
-
-    verify(expectedType){
-
-        if(this.type === expectedType)
-            return this;
-
-        throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
-
-    };
-
-    follow(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this.subscribe(watcher, topic);
-
-        if(list.used)
-            typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
+        if(pull && this._present)
+            watcher.call(null, this._value, this._name);
 
         return this;
 
     };
 
-    subscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        return this._demandSubscriberList(topic).add(watcher);
-
-    };
-
-    monitor(watcher){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this._wildcardSubscriberList.add(watcher);
-
-        return this;
-
-    };
-
-    unsubscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        topic = topic || '';
-        this._demandSubscriberList(topic).remove(watcher);
-        this._wildcardSubscriberList.remove(watcher);
-
-        return this;
-
-    };
-
-    // topics(){
-    //
-    //     return this._subscriberListsByTopic.keys();
-    //
-    // };
-
-    survey(){
-        // get entire key/value store by topic:lastPacket
-        throw new Error('not imp');
-
-        // const entries = this._subscriberListsByTopic.entries();
-        // const m = new Map();
-        // for (const [key, value] of entries) {
-        //     m.set(key, value.lastPacket);
-        // }
-        //
-        // return m;
-    };
+    unsubscribe(watcher){
 
 
-    present(topic){
+        let i = this._subscribers.indexOf(watcher);
 
-        // if(this.dead)
-        //     this._throwDead();
-
-        const subscriberList = this._demandSubscriberList(topic);
-        return subscriberList.used;
-
-    };
-
-
-    read(topic) {
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-        return (list.used) ? list.lastMsg : undefined;
-
-    };
-
-    dataTopic(topic, silently){
-        return new DataTopic(this, topic, silently);
-    }
-
-    silentWrite(msg, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this.write(msg, topic, true);
-
-    };
-
-
-    write(msg, topic, silently){
-
-        // todo change methods to imply if statements for perf?
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        if(this.type === DATA_TYPES.MIRROR)
-            throw new Error('Mirror Data: ' + this.name + ' is read-only');
-
-        const list = this._demandSubscriberList(topic);
-        list.handle(msg, topic, silently);
-        this._wildcardSubscriberList.handle(msg, topic, silently);
-
-    };
-
-
-
-    refresh(topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-
-        if(list.used)
-            this.write(list.lastMsg, list.lastTopic);
+        if(i !== -1)
+            this._subscribers.splice(i, 1);
 
         return this;
 
     };
 
 
-    toggle(topic){
+    silentWrite(msg){
 
-        // if(this.dead)
-        //     this._throwDead();
+        this.write(msg, true);
 
-        this.write(!this.read(topic), topic);
+    };
+
+    read(){
+
+        _ASSERT_READ_ACCESS(this);
+        return this._value;
+
+    };
+
+    write(msg, silent){
+
+        _ASSERT_WRITE_ACCESS(this);
+
+        this._present = true;
+        let i = this._subscribers.length;
+        this._value = msg;
+
+        if(!silent) {
+            while (i--) {
+                this._subscribers[i].call(null, msg, this._name);
+            }
+        }
+
+    };
+
+    refresh(){
+
+        if(this._present)
+            this.write(this._value);
 
         return this;
 
     };
 
-    _throwDead(){
+    toggle(){
 
-        throw new Error('Data: ' + this.name + ' is already dead.');
+        this.write(!this._value);
+
+        return this;
 
     };
 
 }
 
+
+function _ASSERT_WRITE_ACCESS(d){
+    if(!d._writable)
+        throw new Error('States accessed from below are read-only. Named: ' + d._name);
+}
+
+function _ASSERT_READ_ACCESS(d){
+    if(!d._readable)
+        throw new Error('Actions are read-only. Named: ' + d._name);
+}
+
 export default Data;
-
-
-
-
-
-
-
-
-
-
-
 

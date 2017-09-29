@@ -1,27 +1,11 @@
 
-
-const DATA_TYPES = {
-
-    ACTION:   'action',
-    MIRROR:   'mirror',
-    STATE:    'state',
-    COMPUTED: 'computed',
-    NONE:     'none',
-    ANY:      'any'
-
-};
-
-const reverseLookup = {};
-
-for(const p in DATA_TYPES){
-    const v = DATA_TYPES[p];
-    reverseLookup[v] = p;
+function isPrivate(name){
+    return name[0] === '_';
 }
 
-function isValid(type){
-    return reverseLookup.hasOwnProperty(type);
+function isAction(name){
+    return name[0] === '$' || (isPrivate(name) && name[1] === '$');
 }
 
-
-export { DATA_TYPES, isValid};
+export { isAction, isPrivate};
 

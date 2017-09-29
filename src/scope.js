@@ -1,7 +1,7 @@
 
 
 import Data from './data.js';
-import { DATA_TYPES } from './dataTypes.js';
+import { isPrivate, isAction } from './dataTypes.js';
 import Bus from './bus.js';
 import NyanRunner from './nyanRunner.js';
 import Nyan from './nyan.js';
@@ -10,16 +10,11 @@ let idCounter = 0;
 
 function _destroyEach(arr){
 
-    const len = arr.length;
-    for(let i = 0; i < len; i++){
-        const item = arr[i];
-        item.destroy();
+    let i = arr.length;
+    while(i--){
+        arr[i].destroy();
     }
 
-}
-
-function isPrivate(name){
-    return name[0] === '_';
 }
 
 class Scope{
@@ -30,10 +25,10 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
-        this._busList = [];
-        this._dataList = new Map();
-        this._valves = new Map();
-        this._mirrors = new Map();
+        this._buses = [];
+        this._dataMap = new Map();
+        this._valveMap = new Map();
+        this._mirrorMap = new Map();
         this._dead = false;
 
     };
@@ -63,15 +58,15 @@ class Scope{
         if(this._dead)
             return;
 
-        _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
-        _destroyEach(this._busList);
-        _destroyEach(this._dataList.values());
+        _destroyEach(this.children);
+        _destroyEach(this._buses);
+        _destroyEach(this._dataMap.values());
 
         this._children = [];
-        this._busList = [];
-        this._dataList.clear();
-        this._valves.clear();
-        this._mirrors.clear();
+        this._buses = [];
+        this._dataMap.clear();
+        this._valveMap.clear();
+        this._mirrorMap.clear();
 
     };
 
@@ -126,61 +121,36 @@ class Scope{
     set valves(list){
 
         for(const name of list){
-            this._valves.set(name, true);
+            this._valveMap.set(name, true);
         }
 
     }
 
-    get valves(){ return Array.from(this._valves.keys());};
+    get valves(){ return Array.from(this._valveMap.keys());};
 
 
     _createMirror(data){
 
         const mirror = Object.create(data);
-        mirror._type = DATA_TYPES.MIRROR;
-        this._mirrors.set(data.name, mirror);
+        mirror._writable = false;
+        this._mirrorMap.set(data.name, mirror);
         return mirror;
 
     };
 
-    _createData(name, type){
+    _createData(name){
 
-        const d = new Data(this, name, type);
-        this._dataList.set(name, d);
+        const d = new Data(this, name);
+        this._dataMap.set(name, d);
+        if(!d._action && !d._private) // if a public state, create a read-only mirror
+            this._createMirror(d);
         return d;
 
     };
 
+    demand(name){
 
-    data(name){
-
-        return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
-
-    };
-
-
-    action(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.ACTION);
-
-        return this._createData(name, DATA_TYPES.ACTION);
-
-    };
-
-
-    state(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.STATE);
-
-        const state = this._createData(name, DATA_TYPES.STATE);
-        this._createMirror(state);
-        return state;
+        return this.grab(name) || this._createData(name);
 
     };
 
@@ -223,15 +193,15 @@ class Scope{
         const result = new Map();
         const appliedValves = new Map();
 
-        for(const [key, value] of scope._dataList){
+        for(const [key, value] of scope._dataMap){
             result.set(key, value);
         }
 
         while(scope = scope._parent){
 
-            const dataList = scope._dataList;
-            const valves = scope._valves;
-            const mirrors = scope._mirrors;
+            const dataList = scope._dataMap;
+            const valves = scope._valveMap;
+            const mirrors = scope._mirrorMap;
 
             if(!dataList.size)
                 continue;
@@ -276,43 +246,42 @@ class Scope{
         if(localData)
             return localData;
 
-        if(isPrivate(name))
-            return null;
-
         let scope = this;
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror)
                 return mirror;
 
             const d = scope.grab(name);
 
-            if(d)
+            if(d) {
+                if (d._private)
+                    continue;
                 return d;
+            }
 
         }
 
-        if(required)
-            throw new Error('Required data: ' + name + ' not found!');
+        _ASSERT_NOT_REQUIRED(required);
 
         return null;
 
     };
 
+
     findOuter(name, required){
 
-        if(isPrivate(name))
-            return null;
+        _ASSERT_NO_OUTER_PRIVATE(name);
 
         let foundInner = false;
         const localData = this.grab(name);
@@ -324,14 +293,14 @@ class Scope{
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror) {
 
@@ -363,7 +332,7 @@ class Scope{
 
     grab(name, required) {
 
-        const data = this._dataList.get(name);
+        const data = this._dataMap.get(name);
 
         if(!data && required)
             throw new Error('Required Data: ' + name + ' not found!');
@@ -372,47 +341,16 @@ class Scope{
 
     };
 
-    transaction(writes){
-
-        if(Array.isArray(writes))
-            return this._multiWriteArray(writes);
-        else if(typeof writes === 'object')
-            return this._multiWriteHash(writes);
-
-        throw new Error('Write values must be in an array of object hash.');
-
-    };
-
-    // write {name, topic, value} objects as a transaction
-    _multiWriteArray(writeArray){
-
-        const list = [];
-
-        for(const w of writeArray){
-            const d = this.find(w.name);
-            d.silentWrite(w.value, w.topic);
-            list.push(d);
-        }
-
-        let i = 0;
-        for(const d of list){
-            const w = writeArray[i];
-            d.refresh(w.topic);
-        }
-
-        return this;
-
-    };
-
 
     // write key-values as a transaction
-    _multiWriteHash(writeHash){
+    write(writeHash){
 
         const list = [];
 
         for(const k in writeHash){
             const v = writeHash[k];
-            const d = this.find(k);
+            const d = this.grab(k);
+            // todo ASSERT_DATA_FOUND
             d.silentWrite(v);
             list.push(d);
         }
@@ -425,6 +363,16 @@ class Scope{
 
     };
 
+}
+
+function _ASSERT_NOT_REQUIRED(required){
+    if(required)
+        throw new Error('Required data: ' + name + ' not found!');
+}
+
+function _ASSERT_NO_OUTER_PRIVATE(name){
+    if(isPrivate(name))
+        throw new Error('Private data: ' + name + ' cannot be accessed via an outer scope!');
 }
 
 export default Scope;

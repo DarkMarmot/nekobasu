@@ -4,183 +4,31 @@
 	(global.Catbus = factory());
 }(this, (function () { 'use strict';
 
-const DATA_TYPES = {
-
-    ACTION:   'action',
-    MIRROR:   'mirror',
-    STATE:    'state',
-    COMPUTED: 'computed',
-    NONE:     'none',
-    ANY:      'any'
-
-};
-
-const reverseLookup = {};
-
-for(const p in DATA_TYPES){
-    const v = DATA_TYPES[p];
-    reverseLookup[v] = p;
+function isPrivate(name){
+    return name[0] === '_';
 }
 
-function isValid(type){
-    return reverseLookup.hasOwnProperty(type);
+function isAction(name){
+    return name[0] === '$' || (isPrivate(name) && name[1] === '$');
 }
-
-function callMany(list, msg, source, topic){
-
-    const len = list.length;
-    for (let i = 0; i < len; i++) {
-        let s = list[i];
-        s.call(s, msg, source, topic);
-    }
-
-}
-
-function callNoOne(list, msg, source, topic){}
-
-function callOne(list, msg, source, topic){
-        const s = list[0];
-        s.call(s, msg, source, topic);
-}
-
-class SubscriberList {
-
-    constructor(topic, data) {
-
-        this._topic = topic;
-        this._subscribers = [];
-        this._callback = callNoOne;
-        this._used = false; // true after first msg
-        this._lastMsg = null;
-        this._lastTopic = null;
-        this._data = data;
-        this._name = data._name;
-        this._dead = false;
-
-        if(data.type === DATA_TYPES.ACTION) {
-            this.handle = this.handleAction;
-        }
-    };
-
-    get used() { return this._used; };
-    get lastMsg() { return this._lastMsg; };
-    get lastTopic() { return this._lastTopic; };
-    get data() { return this._data; };
-    get name() { return this._name; };
-    get dead() { return this._dead; };
-    get topic() { return this._topic; };
-
-    handle(msg, topic, silently){
-
-        // if(this.dead)
-        //     return;
-
-        this._used = true;
-        topic = topic || this.topic;
-        let source = this.name;
-
-        this._lastMsg = msg;
-        this._lastTopic = topic;
-
-        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-
-        if(!silently) {
-            this._callback(this._subscribers, msg, source, topic);
-        }
-
-    };
-
-    handleAction(msg, topic){
-
-        topic = topic || this.topic;
-        let source = this.name;
-
-        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-        this._callback(this._subscribers, msg, source, topic);
-
-    };
-
-
-    destroy(){
-
-        // if(this.dead)
-        //     return;
-
-        this._subscribers = null;
-        this._lastMsg = null;
-        this._dead = true;
-
-    };
-
-    add(watcher){
-
-        const s = typeof watcher === 'function' ? watcher : function(msg, source, topic){ watcher.handle(msg, source, topic);};
-        this._subscribers.push(s);
-        this.determineCaller();
-        return this;
-
-    };
-
-    remove(watcher){
-
-        let i = this._subscribers.indexOf(watcher);
-
-        if(i !== -1)
-            this._subscribers.splice(i, 1);
-
-        this.determineCaller();
-
-        return this;
-    };
-
-    determineCaller(){
-        const len = this._subscribers.length;
-        if(len === 0){
-            this._callback = callNoOne;
-        } else if (len === 1){
-            this._callback = callOne;
-        } else {
-            this._callback = callMany;
-        }
-
-    }
-
-}
-
-function DataTopic(data, topic, silently){
-    this.data = data;
-    this.topic = topic;
-    this.silently = !!silently;
-    this.topicSubscriberList = data._demandSubscriberList(topic);
-    this.wildcardSubscriberList = data._wildcardSubscriberList;
-}
-
-DataTopic.prototype.handle = function(msg){
-    this.topicSubscriberList.handle(msg, this.topic, this.silently);
-    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
-};
 
 class Data {
 
+    // should only be created via Scope methods
+
     constructor(scope, name, type) {
 
-        type = type || DATA_TYPES.NONE;
-
-        if(!name)
-            throw new Error('Data requires a name');
-
-        if(!isValid(type))
-            throw new Error('Invalid Data of type: ' + type);
-
-        this._scope      = scope;
-        this._name       = name;
-        this._type       = type;
-        this._dead       = false;
-        this._local      = name[0] === '_';
-
-        this._noTopicList = new SubscriberList('', this);
-        this._wildcardSubscriberList = new SubscriberList('', this);
-        this._subscriberListsByTopic = {};
+        this._scope       = scope;
+        this._action      = isAction(name);
+        this._name        = name;
+        this._type        = type;
+        this._dead        = false;
+        this._value       = undefined;
+        this._present     = false;  // true if a value has been received
+        this._private     = isPrivate(name);
+        this._readable    = !this._action;
+        this._writable    = true; // false when mirrored
+        this._subscribers = [];
 
     };
 
@@ -188,196 +36,99 @@ class Data {
     get name() { return this._name; };
     get type() { return this._type; };
     get dead() { return this._dead; };
+    get present() { return this._present; };
+    get private() { return this._private; };
+
 
     destroy(){
 
-        // if(this.dead)
-        //     this._throwDead();
-        
-        for(const list of this._subscriberListsByTopic.values()){
-            list.destroy();
-        }
-
+        this._scope = null;
+        this._subscribers = null;
         this._dead = true;
 
     };
-    
-    _demandSubscriberList(topic){
 
-        topic = topic || '';
-        let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
+    subscribe(watcher, pull){
 
-        if(list)
-            return list;
+        this._subscribers.unshift(watcher);
 
-        list = new SubscriberList(topic, this);
-        this._subscriberListsByTopic[topic] = list;
-
-        return list;
-        
-    };
-
-    verify(expectedType){
-
-        if(this.type === expectedType)
-            return this;
-
-        throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
-
-    };
-
-    follow(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this.subscribe(watcher, topic);
-
-        if(list.used)
-            typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
+        if(pull && this._present)
+            watcher.call(null, this._value, this._name);
 
         return this;
 
     };
 
-    subscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        return this._demandSubscriberList(topic).add(watcher);
-
-    };
-
-    monitor(watcher){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this._wildcardSubscriberList.add(watcher);
-
-        return this;
-
-    };
-
-    unsubscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        topic = topic || '';
-        this._demandSubscriberList(topic).remove(watcher);
-        this._wildcardSubscriberList.remove(watcher);
-
-        return this;
-
-    };
-
-    // topics(){
-    //
-    //     return this._subscriberListsByTopic.keys();
-    //
-    // };
-
-    survey(){
-        // get entire key/value store by topic:lastPacket
-        throw new Error('not imp');
-
-        // const entries = this._subscriberListsByTopic.entries();
-        // const m = new Map();
-        // for (const [key, value] of entries) {
-        //     m.set(key, value.lastPacket);
-        // }
-        //
-        // return m;
-    };
+    unsubscribe(watcher){
 
 
-    present(topic){
+        let i = this._subscribers.indexOf(watcher);
 
-        // if(this.dead)
-        //     this._throwDead();
-
-        const subscriberList = this._demandSubscriberList(topic);
-        return subscriberList.used;
-
-    };
-
-
-    read(topic) {
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-        return (list.used) ? list.lastMsg : undefined;
-
-    };
-
-    dataTopic(topic, silently){
-        return new DataTopic(this, topic, silently);
-    }
-
-    silentWrite(msg, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this.write(msg, topic, true);
-
-    };
-
-
-    write(msg, topic, silently){
-
-        // todo change methods to imply if statements for perf?
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        if(this.type === DATA_TYPES.MIRROR)
-            throw new Error('Mirror Data: ' + this.name + ' is read-only');
-
-        const list = this._demandSubscriberList(topic);
-        list.handle(msg, topic, silently);
-        this._wildcardSubscriberList.handle(msg, topic, silently);
-
-    };
-
-
-
-    refresh(topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-
-        if(list.used)
-            this.write(list.lastMsg, list.lastTopic);
+        if(i !== -1)
+            this._subscribers.splice(i, 1);
 
         return this;
 
     };
 
 
-    toggle(topic){
+    silentWrite(msg){
 
-        // if(this.dead)
-        //     this._throwDead();
+        this.write(msg, true);
 
-        this.write(!this.read(topic), topic);
+    };
+
+    read(){
+
+        _ASSERT_READ_ACCESS(this);
+        return this._value;
+
+    };
+
+    write(msg, silent){
+
+        _ASSERT_WRITE_ACCESS(this);
+
+        this._present = true;
+        let i = this._subscribers.length;
+        this._value = msg;
+
+        if(!silent) {
+            while (i--) {
+                this._subscribers[i].call(null, msg, this._name);
+            }
+        }
+
+    };
+
+    refresh(){
+
+        if(this._present)
+            this.write(this._value);
 
         return this;
 
     };
 
-    _throwDead(){
+    toggle(){
 
-        throw new Error('Data: ' + this.name + ' is already dead.');
+        this.write(!this._value);
+
+        return this;
 
     };
 
+}
+
+
+function _ASSERT_WRITE_ACCESS(d){
+    if(!d._writable)
+        throw new Error('States accessed from below are read-only. Named: ' + d._name);
+}
+
+function _ASSERT_READ_ACCESS(d){
+    if(!d._readable)
+        throw new Error('Actions are read-only. Named: ' + d._name);
 }
 
 function NoopSource() {
@@ -2839,16 +2590,11 @@ let idCounter = 0;
 
 function _destroyEach(arr){
 
-    const len = arr.length;
-    for(let i = 0; i < len; i++){
-        const item = arr[i];
-        item.destroy();
+    let i = arr.length;
+    while(i--){
+        arr[i].destroy();
     }
 
-}
-
-function isPrivate(name){
-    return name[0] === '_';
 }
 
 class Scope{
@@ -2859,10 +2605,10 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
-        this._busList = [];
-        this._dataList = new Map();
-        this._valves = new Map();
-        this._mirrors = new Map();
+        this._buses = [];
+        this._dataMap = new Map();
+        this._valveMap = new Map();
+        this._mirrorMap = new Map();
         this._dead = false;
 
     };
@@ -2892,15 +2638,15 @@ class Scope{
         if(this._dead)
             return;
 
-        _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
-        _destroyEach(this._busList);
-        _destroyEach(this._dataList.values());
+        _destroyEach(this.children);
+        _destroyEach(this._buses);
+        _destroyEach(this._dataMap.values());
 
         this._children = [];
-        this._busList = [];
-        this._dataList.clear();
-        this._valves.clear();
-        this._mirrors.clear();
+        this._buses = [];
+        this._dataMap.clear();
+        this._valveMap.clear();
+        this._mirrorMap.clear();
 
     };
 
@@ -2955,61 +2701,36 @@ class Scope{
     set valves(list){
 
         for(const name of list){
-            this._valves.set(name, true);
+            this._valveMap.set(name, true);
         }
 
     }
 
-    get valves(){ return Array.from(this._valves.keys());};
+    get valves(){ return Array.from(this._valveMap.keys());};
 
 
     _createMirror(data){
 
         const mirror = Object.create(data);
-        mirror._type = DATA_TYPES.MIRROR;
-        this._mirrors.set(data.name, mirror);
+        mirror._writable = false;
+        this._mirrorMap.set(data.name, mirror);
         return mirror;
 
     };
 
-    _createData(name, type){
+    _createData(name){
 
-        const d = new Data(this, name, type);
-        this._dataList.set(name, d);
+        const d = new Data(this, name);
+        this._dataMap.set(name, d);
+        if(!d._action && !d._private) // if a public state, create a read-only mirror
+            this._createMirror(d);
         return d;
 
     };
 
+    demand(name){
 
-    data(name){
-
-        return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
-
-    };
-
-
-    action(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.ACTION);
-
-        return this._createData(name, DATA_TYPES.ACTION);
-
-    };
-
-
-    state(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.STATE);
-
-        const state = this._createData(name, DATA_TYPES.STATE);
-        this._createMirror(state);
-        return state;
+        return this.grab(name) || this._createData(name);
 
     };
 
@@ -3052,15 +2773,15 @@ class Scope{
         const result = new Map();
         const appliedValves = new Map();
 
-        for(const [key, value] of scope._dataList){
+        for(const [key, value] of scope._dataMap){
             result.set(key, value);
         }
 
         while(scope = scope._parent){
 
-            const dataList = scope._dataList;
-            const valves = scope._valves;
-            const mirrors = scope._mirrors;
+            const dataList = scope._dataMap;
+            const valves = scope._valveMap;
+            const mirrors = scope._mirrorMap;
 
             if(!dataList.size)
                 continue;
@@ -3105,43 +2826,42 @@ class Scope{
         if(localData)
             return localData;
 
-        if(isPrivate(name))
-            return null;
-
         let scope = this;
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror)
                 return mirror;
 
             const d = scope.grab(name);
 
-            if(d)
+            if(d) {
+                if (d._private)
+                    continue;
                 return d;
+            }
 
         }
 
-        if(required)
-            throw new Error('Required data: ' + name + ' not found!');
+        _ASSERT_NOT_REQUIRED(required);
 
         return null;
 
     };
 
+
     findOuter(name, required){
 
-        if(isPrivate(name))
-            return null;
+        _ASSERT_NO_OUTER_PRIVATE(name);
 
         let foundInner = false;
         const localData = this.grab(name);
@@ -3153,14 +2873,14 @@ class Scope{
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror) {
 
@@ -3192,7 +2912,7 @@ class Scope{
 
     grab(name, required) {
 
-        const data = this._dataList.get(name);
+        const data = this._dataMap.get(name);
 
         if(!data && required)
             throw new Error('Required Data: ' + name + ' not found!');
@@ -3201,47 +2921,16 @@ class Scope{
 
     };
 
-    transaction(writes){
-
-        if(Array.isArray(writes))
-            return this._multiWriteArray(writes);
-        else if(typeof writes === 'object')
-            return this._multiWriteHash(writes);
-
-        throw new Error('Write values must be in an array of object hash.');
-
-    };
-
-    // write {name, topic, value} objects as a transaction
-    _multiWriteArray(writeArray){
-
-        const list = [];
-
-        for(const w of writeArray){
-            const d = this.find(w.name);
-            d.silentWrite(w.value, w.topic);
-            list.push(d);
-        }
-
-        let i = 0;
-        for(const d of list){
-            const w = writeArray[i];
-            d.refresh(w.topic);
-        }
-
-        return this;
-
-    };
-
 
     // write key-values as a transaction
-    _multiWriteHash(writeHash){
+    write(writeHash){
 
         const list = [];
 
         for(const k in writeHash){
             const v = writeHash[k];
-            const d = this.find(k);
+            const d = this.grab(k);
+            // todo ASSERT_DATA_FOUND
             d.silentWrite(v);
             list.push(d);
         }
@@ -3254,6 +2943,16 @@ class Scope{
 
     };
 
+}
+
+function _ASSERT_NOT_REQUIRED(required){
+    if(required)
+        throw new Error('Required data: ' + name + ' not found!');
+}
+
+function _ASSERT_NO_OUTER_PRIVATE(name){
+    if(isPrivate(name))
+        throw new Error('Private data: ' + name + ' cannot be accessed via an outer scope!');
 }
 
 const FUNCTOR$5 = function(d) {
