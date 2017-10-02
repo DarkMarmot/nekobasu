@@ -23,7 +23,7 @@ TakeNStream.prototype.handle = function handle(msg, source) {
 
 };
 
-TakeNStream.prototype.reset = function(msg, source, topic){
+TakeNStream.prototype.reset = function(){
 
     this.seen = 0;
 

@@ -103,7 +103,7 @@ Spork.prototype.filter = function filter(f) {
     return this;
 };
 
-Spork.prototype.filterMap = function filter(f, m) {
+Spork.prototype.filterMap = function filterMap(f, m) {
     this._extend(new FilterMapStream('', f, m));
     return this;
 };

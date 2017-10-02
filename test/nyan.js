@@ -320,7 +320,7 @@ describe('RootScope', function(){
          // d3.write('dog');
         d4.write('mushroom');
 
-        const bus = world.bus('forest (green), sea!  { (tooth) | *handle | sea -}  &sea, grove(cave) | (poo) | =village', watcher); //pull
+        const bus = world.bus('forest (green), sea!  { (tooth) | *handle | sea }  &sea, grove(cave) | (poo) | =village', watcher); //pull
         // const bus = world.bus('forest!, sea | *handle', watcher).pull();
 
         d1.write('fish');

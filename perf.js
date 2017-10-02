@@ -3,8 +3,8 @@ const Catbus = require('./public/js/catbus.umd.js');
 
 const world = Catbus.createChild();
 
-const d = world.data('castle');
-const e = world.data('moo');
+const d = world.demand('castle');
+const e = world.demand('moo');
 
 
 const arr = [];
@@ -50,7 +50,7 @@ Answer.prototype.got = function(d){
 
 //const b = world.bus('~castle').spork().filter(even).msg(add1).reduce(sum, 0).process('=moo');
 
-//const b = world.bus('~castle').spork().skipDupes().reduce(sum, 0).process('=moo');
+// const b = world.bus('~castle').spork().skipDupes().reduce(sum, 0).msg(function(){});
 
 //const b = world.bus('~castle').spork().skip(250000).take(500000).reduce(sum, 0).process('=moo');
 //
@@ -60,7 +60,8 @@ Answer.prototype.got = function(d){
 // c.scan(sum, 0);
 // streams.forEach(function(s){ s.pull();});
 
-const b = Catbus.fromValue(arr).spork().skip(250000).take(500000).reduce(sum, 0);//.msg(function(){});
+// const b = Catbus.fromValue(arr).spork().skip(250000).take(500000).reduce(sum, 0);//.msg(function(){});
+ const b = Catbus.fromValue(arr).spork().filterMap(even, add1).reduce(sum, 0).msg(function(){});
 
 
  // const buses = [];
@@ -73,9 +74,8 @@ const b = Catbus.fromValue(arr).spork().skip(250000).take(500000).reduce(sum, 0)
 // b.scan(sum, 0);
 
 const n = Date.now();
-const dt = d.dataTopic();
 
-for(let i = 0; i < 210; i++) {
+for(let i = 0; i < 150; i++) {
 //dt.handle(arr);
 
     b.pull();

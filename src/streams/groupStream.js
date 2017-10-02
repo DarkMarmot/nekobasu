@@ -13,7 +13,6 @@ function GroupStream(name, f, seed) {
     this.f = f || BY_SOURCE;
     this.seed = arguments.length === 3 ? FUNCTOR(seed) : FUNCTOR({});
     this.next = NOOP_STREAM;
-    this.topic = undefined;
     this.msg = this.seed();
 
 }

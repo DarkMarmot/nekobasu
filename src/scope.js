@@ -25,6 +25,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
+        this._belts = {};
         this._buses = [];
         this._dataMap = new Map();
         this._valveMap = new Map();
@@ -151,6 +152,21 @@ class Scope{
     demand(name){
 
         return this.grab(name) || this._createData(name);
+
+    };
+
+
+    belt(stateName){
+
+        const actionName = '$' + stateName;
+        const state = this.demand(stateName);
+        const action = this.demand(actionName);
+
+        if(!this._belts[stateName]) {
+            this._belts[stateName] = this.bus(actionName + '|=' + stateName);
+        }
+
+        return state;
 
     };
 

@@ -6,12 +6,11 @@ class Data {
 
     // should only be created via Scope methods
 
-    constructor(scope, name, type) {
+    constructor(scope, name) {
 
         this._scope       = scope;
         this._action      = isAction(name);
         this._name        = name;
-        this._type        = type;
         this._dead        = false;
         this._value       = undefined;
         this._present     = false;  // true if a value has been received
@@ -24,7 +23,6 @@ class Data {
 
     get scope() { return this._scope; };
     get name() { return this._name; };
-    get type() { return this._type; };
     get dead() { return this._dead; };
     get present() { return this._present; };
     get private() { return this._private; };
@@ -38,21 +36,21 @@ class Data {
 
     };
 
-    subscribe(watcher, pull){
+    subscribe(listener, pull){
 
-        this._subscribers.unshift(watcher);
+        this._subscribers.unshift(listener);
 
         if(pull && this._present)
-            watcher.call(null, this._value, this._name);
+            listener.call(null, this._value, this._name);
 
         return this;
 
     };
 
-    unsubscribe(watcher){
+    unsubscribe(listener){
 
 
-        let i = this._subscribers.indexOf(watcher);
+        let i = this._subscribers.indexOf(listener);
 
         if(i !== -1)
             this._subscribers.splice(i, 1);

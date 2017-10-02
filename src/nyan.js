@@ -8,6 +8,8 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // config is a dash
+    // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
     {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
     {name: 'WATCH',  sym: null, react: true, follow: true},
@@ -17,7 +19,6 @@ const operationDefs = [
     {name: 'READ',   sym: null, then: true, read: true},
     {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
-    {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
     {name: 'WRITE',  sym: '=',  then: true,  solo: true },
     {name: 'SPRAY',  sym: '<',  then: true },
     {name: 'RUN',    sym: '*',  then: true, output: true },

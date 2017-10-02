@@ -5,23 +5,22 @@
 }(this, (function () { 'use strict';
 
 function isPrivate(name){
-    return name[0] === '_';
+    return name[0] === '_'  || (isAction(name) && name[1] === '_');
 }
 
 function isAction(name){
-    return name[0] === '$' || (isPrivate(name) && name[1] === '$');
+    return name[0] === '$';
 }
 
 class Data {
 
     // should only be created via Scope methods
 
-    constructor(scope, name, type) {
+    constructor(scope, name) {
 
         this._scope       = scope;
         this._action      = isAction(name);
         this._name        = name;
-        this._type        = type;
         this._dead        = false;
         this._value       = undefined;
         this._present     = false;  // true if a value has been received
@@ -34,7 +33,6 @@ class Data {
 
     get scope() { return this._scope; };
     get name() { return this._name; };
-    get type() { return this._type; };
     get dead() { return this._dead; };
     get present() { return this._present; };
     get private() { return this._private; };
@@ -48,21 +46,21 @@ class Data {
 
     };
 
-    subscribe(watcher, pull){
+    subscribe(listener, pull){
 
-        this._subscribers.unshift(watcher);
+        this._subscribers.unshift(listener);
 
         if(pull && this._present)
-            watcher.call(null, this._value, this._name);
+            listener.call(null, this._value, this._name);
 
         return this;
 
     };
 
-    unsubscribe(watcher){
+    unsubscribe(listener){
 
 
-        let i = this._subscribers.indexOf(watcher);
+        let i = this._subscribers.indexOf(listener);
 
         if(i !== -1)
             this._subscribers.splice(i, 1);
@@ -415,7 +413,10 @@ FilterStream.prototype.handle = function filterHandle(msg, source) {
 NOOP_STREAM.addStubs(FilterStream);
 
 function IS_PRIMITIVE_EQUAL(a, b) {
-    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
+    return a === b && typeof a !== 'object' && typeof a !== 'function';
+}
+
+
 function SkipStream(name) {
 
     this.name = name;
@@ -572,7 +573,6 @@ function GroupStream(name, f, seed) {
     this.f = f || BY_SOURCE;
     this.seed = arguments.length === 3 ? FUNCTOR$2(seed) : FUNCTOR$2({});
     this.next = NOOP_STREAM;
-    this.topic = undefined;
     this.msg = this.seed();
 
 }
@@ -912,7 +912,7 @@ TakeNStream.prototype.handle = function handle(msg, source) {
 
 };
 
-TakeNStream.prototype.reset = function(msg, source, topic){
+TakeNStream.prototype.reset = function(){
 
     this.seen = 0;
 
@@ -1014,7 +1014,7 @@ Spork.prototype.filter = function filter(f) {
     return this;
 };
 
-Spork.prototype.filterMap = function filter(f, m) {
+Spork.prototype.filterMap = function filterMap(f, m) {
     this._extend(new FilterMapStream('', f, m));
     return this;
 };
@@ -1040,6 +1040,8 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // config is a dash
+    // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
     {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
     {name: 'WATCH',  sym: null, react: true, follow: true},
@@ -1049,7 +1051,6 @@ const operationDefs = [
     {name: 'READ',   sym: null, then: true, read: true},
     {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
-    {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
     {name: 'WRITE',  sym: '=',  then: true,  solo: true },
     {name: 'SPRAY',  sym: '<',  then: true },
     {name: 'RUN',    sym: '*',  then: true, output: true },
@@ -2569,6 +2570,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
+        this._belts = {};
         this._buses = [];
         this._dataMap = new Map();
         this._valveMap = new Map();
@@ -2695,6 +2697,21 @@ class Scope{
     demand(name){
 
         return this.grab(name) || this._createData(name);
+
+    };
+
+
+    belt(stateName){
+
+        const actionName = '$' + stateName;
+        const state = this.demand(stateName);
+        const action = this.demand(actionName);
+
+        if(!this._belts[stateName]) {
+            this._belts[stateName] = this.bus(actionName + '|=' + stateName);
+        }
+
+        return state;
 
     };
 

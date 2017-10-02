@@ -2,8 +2,8 @@
 import NOOP_STREAM from './noopStream.js';
 
 function IS_PRIMITIVE_EQUAL(a, b) {
-    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
-function IS_EQUAL(a, b) { return a === b; }
+    return a === b && typeof a !== 'object' && typeof a !== 'function';
+}
 
 
 function SkipStream(name) {

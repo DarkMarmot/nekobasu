@@ -30,8 +30,6 @@ FirstStream.prototype.reset = function(){
 
     this.hasValue = false;
     this.msg = undefined;
-    this.topic = '';
-
     this.next.reset();
 
 };
