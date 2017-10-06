@@ -16,7 +16,7 @@ class Data {
         this._present     = false;  // true if a value has been received
         this._private     = isPrivate(name);
         this._readable    = !this._action;
-        this._writable    = true; // false when mirrored
+        this._writable    = true; // false when mirrored or calculated?
         this._subscribers = [];
 
     };
@@ -26,7 +26,6 @@ class Data {
     get dead() { return this._dead; };
     get present() { return this._present; };
     get private() { return this._private; };
-
 
     destroy(){
 
@@ -58,7 +57,6 @@ class Data {
         return this;
 
     };
-
 
     silentWrite(msg){
 

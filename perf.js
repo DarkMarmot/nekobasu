@@ -61,7 +61,8 @@ Answer.prototype.got = function(d){
 // streams.forEach(function(s){ s.pull();});
 
 // const b = Catbus.fromValue(arr).spork().skip(250000).take(500000).reduce(sum, 0);//.msg(function(){});
- const b = Catbus.fromValue(arr).spork().filterMap(even, add1).reduce(sum, 0).msg(function(){});
+
+const b = Catbus.fromValue(arr).spork().filterMap(even, add1).reduce(sum, 0).msg(function(){});
 
 
  // const buses = [];
@@ -76,6 +77,7 @@ Answer.prototype.got = function(d){
 const n = Date.now();
 
 for(let i = 0; i < 150; i++) {
+
 //dt.handle(arr);
 
     b.pull();
