@@ -11,6 +11,7 @@ let msgLog;
 
 function callback(msg, source){
 
+    console.log('msg is: ', msg, ' -- ', source);
     msgLog.push(msg);
     sourceLog.push(source);
 
@@ -244,6 +245,7 @@ describe('RootScope', function(){
         d3.write('dog');
         d4.write('mushroom');
 
+        console.log('poo coming:');
         const bus = world.bus('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | *handle', watcher).pull();
         d2.write({moo: {spot: 5}});
         // d2.write('sunset');

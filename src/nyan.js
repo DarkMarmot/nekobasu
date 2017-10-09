@@ -8,6 +8,13 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // rm: =, ^
+    // change: : = alias, # = hash, () = args for cmd, & = cmd
+    // = = transaction,
+
+    // &filter(true) &throttle(200)
+
+
     // config is a dash
     // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
@@ -25,6 +32,8 @@ const operationDefs = [
     {name: 'FILTER', sym: '>',  then: true }
 
 ];
+
+
 
 // cat, dog | & meow, kitten {*log} | =puppy
 
