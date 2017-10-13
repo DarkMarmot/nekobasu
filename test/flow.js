@@ -467,6 +467,47 @@ describe('Catbus', function(){
 
             });
 
+            it('can flush streams again', function () {
+
+                var b1 = Catbus.fromEvent(dice, 'roll');
+                b1.msg(function(msg){ return msg * 2});
+                b1.source('cat');
+
+                var b2 = Catbus.fromEvent(dice, 'drop');
+                b2.msg(function(msg){ return -msg});
+                b2.source('dog');
+
+                b1.add(b2);
+                b1.merge();
+                b1.group();
+                b1.batch();
+                b1.run(log);
+
+                dice.emit('roll', 5);
+                dice.emit('drop', 1);
+                dice.emit('roll', 4);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 3);
+                dice.emit('roll', 7);
+
+                Catbus.flush();
+
+                dice.emit('drop', 5);
+                dice.emit('drop', 15);
+
+                Catbus.flush();
+
+                b1.destroy();
+                b2.destroy();
+
+                assert.equal(msgLog.length, 1);
+                assert.equal(msgLog[0].cat, 14);
+                assert.equal(msgLog[0].dog, -1);
+
+            });
+
+
             it('can need by source', function () {
 
                 var b1 = Catbus.fromEvent(dice, 'roll');

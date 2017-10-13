@@ -18,6 +18,12 @@ ForkStream.prototype.handle = function handle(msg, source) {
 
 };
 
+ForkStream.prototype.reset = function reset(msg){
+
+    this.next.reset(msg);
+    this.fork.reset(msg);
+};
+
 NOOP_STREAM.addStubs(ForkStream);
 
 export default ForkStream;

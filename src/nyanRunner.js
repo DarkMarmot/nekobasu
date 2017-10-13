@@ -275,7 +275,7 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
 
         if(operation === 'WATCH') {
             addDataSource(bus, scope, word);
-            skipDupes.push(word.alias)
+            //skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
             addDataSource(bus, scope, word);
@@ -304,9 +304,9 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
         if(need.length)
             bus.hasKeys(need);
 
-        if(skipDupes.length){
-            bus.filter(getDoSkipNamedDupes(skipDupes));
-        }
+        // if(skipDupes.length){
+        //     bus.filter(getDoSkipNamedDupes(skipDupes));
+        // }
 
     } else {
 

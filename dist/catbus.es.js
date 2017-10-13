@@ -279,6 +279,12 @@ ForkStream.prototype.handle = function handle(msg, source) {
 
 };
 
+ForkStream.prototype.reset = function reset(msg){
+
+    this.next.reset(msg);
+    this.fork.reset(msg);
+};
+
 NOOP_STREAM.addStubs(ForkStream);
 
 function BatchStream(name) {
@@ -306,7 +312,10 @@ BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
     const msg = this.msg;
     const source = this.name;
 
+    this.latched = false; // can queue again
     this.next.handle(msg, source);
+
+
 
 };
 
@@ -1032,6 +1041,13 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // rm: =, ^
+    // change: : = alias, # = hash, () = args for cmd, & = cmd
+    // = = transaction,
+
+    // &filter(true) &throttle(200)
+
+
     // config is a dash
     // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
@@ -1049,6 +1065,8 @@ const operationDefs = [
     {name: 'FILTER', sym: '>',  then: true }
 
 ];
+
+
 
 // cat, dog | & meow, kitten {*log} | =puppy
 
@@ -1404,27 +1422,6 @@ function throwError(msg){
     throw e;
 }
 
-function getDoSkipNamedDupes(names){
-
-    let lastMsg = {};
-    const len = names.length;
-
-    return function doSkipNamedDupes(msg) {
-
-        let diff = false;
-        for(let i = 0; i < len; i++){
-            const name = names[i];
-            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name])
-                diff = true;
-            lastMsg[name] = msg[name];
-        }
-
-        return diff;
-
-    };
-}
-
-
 function getDoSpray(scope, phrase){
 
     const wordByAlias = {};
@@ -1663,7 +1660,7 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
 
         if(operation === 'WATCH') {
             addDataSource(bus, scope, word);
-            skipDupes.push(word.alias);
+            //skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
             addDataSource(bus, scope, word);
@@ -1692,9 +1689,9 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
         if(need.length)
             bus.hasKeys(need);
 
-        if(skipDupes.length){
-            bus.filter(getDoSkipNamedDupes(skipDupes));
-        }
+        // if(skipDupes.length){
+        //     bus.filter(getDoSkipNamedDupes(skipDupes));
+        // }
 
     } else {
 

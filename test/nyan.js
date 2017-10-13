@@ -138,6 +138,37 @@ describe('RootScope', function(){
 
     });
 
+    it('can pull prior multi batched data', function(){
+
+        const d1 = world.demand('castle');
+        const d2 = world.demand('palace');
+
+        d1.write('wizard');
+        d2.write('mage');
+
+        const bus = world.bus('castle, palace | *handle', watcher);
+        bus.pull();
+
+        Catbus.flush();
+
+        console.log('COW1', msgLog);
+
+        d1.write('cow');
+        d2.write('bunny');
+
+
+        Catbus.flush();
+
+        console.log('COW2', msgLog);
+
+        assert.equal(msgLog[0].castle, 'wizard');
+        assert.equal(msgLog[0].palace, 'mage');
+
+        assert.equal(msgLog[1].castle, 'cow');
+
+    });
+
+
     it('can process additional nyan', function(){
 
         const d1 = world.demand('castle');

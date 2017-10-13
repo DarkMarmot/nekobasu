@@ -28,7 +28,10 @@ BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
     const msg = this.msg;
     const source = this.name;
 
+    this.latched = false; // can queue again
     this.next.handle(msg, source);
+
+
 
 };
 
