@@ -133,6 +133,7 @@ describe('RootScope', function(){
 
         Catbus.flush();
 
+
         assert.equal(msgLog[0].castle, 'wizard');
         assert.equal(msgLog[0].palace, 'mage');
 
@@ -161,10 +162,10 @@ describe('RootScope', function(){
 
         console.log('COW2', msgLog);
 
-        assert.equal(msgLog[0].castle, 'wizard');
-        assert.equal(msgLog[0].palace, 'mage');
-
         assert.equal(msgLog[1].castle, 'cow');
+        assert.equal(msgLog[1].palace, 'bunny');
+
+
 
     });
 

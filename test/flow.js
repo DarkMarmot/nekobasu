@@ -491,19 +491,24 @@ describe('Catbus', function(){
                 dice.emit('roll', 3);
                 dice.emit('roll', 7);
 
+
                 Catbus.flush();
+
+                assert.equal(msgLog.length, 1);
+                assert.equal(msgLog[0].cat, 14);
+                assert.equal(msgLog[0].dog, -1);
 
                 dice.emit('drop', 5);
                 dice.emit('drop', 15);
 
                 Catbus.flush();
 
+                assert.equal(msgLog.length, 2);
+                assert.equal(msgLog[0].cat, 14);
+                assert.equal(msgLog[0].dog, -15);
+
                 b1.destroy();
                 b2.destroy();
-
-                assert.equal(msgLog.length, 1);
-                assert.equal(msgLog[0].cat, 14);
-                assert.equal(msgLog[0].dog, -1);
 
             });
 

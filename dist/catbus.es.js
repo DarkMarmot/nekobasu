@@ -1422,6 +1422,27 @@ function throwError(msg){
     throw e;
 }
 
+function getDoSkipNamedDupes(names){
+
+    let lastMsg = {};
+    const len = names.length;
+
+    return function doSkipNamedDupes(msg) {
+
+        let diff = false;
+        for(let i = 0; i < len; i++){
+            const name = names[i];
+            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name] || isObject(msg[name]))
+                diff = true;
+            lastMsg[name] = msg[name];
+        }
+
+        return diff;
+
+    };
+}
+
+
 function getDoSpray(scope, phrase){
 
     const wordByAlias = {};
@@ -1660,7 +1681,7 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
 
         if(operation === 'WATCH') {
             addDataSource(bus, scope, word);
-            //skipDupes.push(word.alias)
+            skipDupes.push(word.alias);
         }
         else if(operation === 'WIRE'){
             addDataSource(bus, scope, word);
@@ -1689,9 +1710,9 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
         if(need.length)
             bus.hasKeys(need);
 
-        // if(skipDupes.length){
-        //     bus.filter(getDoSkipNamedDupes(skipDupes));
-        // }
+        if(skipDupes.length){
+            bus.filter(getDoSkipNamedDupes(skipDupes));
+        }
 
     } else {
 
@@ -2565,6 +2586,7 @@ class Scope{
         this._valveMap = new Map();
         this._mirrorMap = new Map();
         this._dead = false;
+        this._shared = false; // shared scopes can access private actions and states in their parent
 
     };
 
@@ -2795,6 +2817,12 @@ class Scope{
 
         if(localData)
             return localData;
+
+        // if(this.shared){
+        //     const sharedData = this._parent.grab(name);
+        //     if(sharedData)
+        //         return sharedData;
+        // }
 
         let scope = this;
 

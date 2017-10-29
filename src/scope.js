@@ -31,6 +31,7 @@ class Scope{
         this._valveMap = new Map();
         this._mirrorMap = new Map();
         this._dead = false;
+        this._shared = false; // shared scopes can access private actions and states in their parent
 
     };
 
@@ -261,6 +262,12 @@ class Scope{
 
         if(localData)
             return localData;
+
+        // if(this.shared){
+        //     const sharedData = this._parent.grab(name);
+        //     if(sharedData)
+        //         return sharedData;
+        // }
 
         let scope = this;
 
