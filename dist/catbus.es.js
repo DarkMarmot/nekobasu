@@ -1210,7 +1210,7 @@ function filterEmptyStrings(arr){
 
 function splitPhraseDelimiters(text){
 
-    let chunks = text.split(/([&>|@~*%#])/);
+    let chunks = text.split(/([&>|@~*%#{])/);
     return filterEmptyStrings(chunks);
 
 }
@@ -1242,7 +1242,7 @@ MeowParser.parse = parse;
 
 function runMeow(bus, meow){
 
-    const phrases = MeowParser.parse(meow);
+    const phrases = Array.isArray(meow) ? meow : MeowParser.parse(meow);
     for(let i = 0; i < phrases.length; i++){
         const phrase = phrases[i];
         runPhrase(bus, phrase);
@@ -1255,10 +1255,12 @@ function runPhrase(bus, phrase){
     const name = phrase.cmd.name;
     const scope = bus.scope;
     const words = phrase.words;
-    const context = bus.context;
+    const context = bus.context();
+    const target = bus.target();
+    const multiple = words.length > 1;
 
     if(name === 'THEN_READ'){
-        if(phrase.words.length > 1){
+        if(multiple){
             bus.msg(getThenReadMultiple(scope, words));
         } else {
             const word = words[0];
@@ -1279,17 +1281,25 @@ function runPhrase(bus, phrase){
             const method = context[word.name];
             bus.filter(method, context);
         }
+    } else if(name === 'EVENT'){
+        watchEvents(bus, words);
     } else if(name === 'WATCH_EACH'){
         watchWords(bus, words);
     } else if(name === 'WATCH_TOGETHER'){
         watchWords(bus, words);
-        bus.merge().group().batch();
-        bus.hasKeys(toAliasList(words));
+        if(multiple)
+            bus.merge().group();
+        bus.batch();
+        if(multiple)
+            bus.hasKeys(toAliasList(words));
     } else if(name === 'WRITE'){
-        // todo transaction
-        const word = words[0];
-        const data = scope.find(word.name);
-        bus.write(data);
+        if(multiple) {
+            // todo transaction, no actions
+        } else {
+            const word = words[0];
+            const data = scope.find(word.name);
+            bus.write(data);
+        }
     }
 
 }
@@ -1300,8 +1310,8 @@ function extractProperties(word, value){
     let maybe = word.maybe;
     let args = word.args;
 
-    while (args.length) {
-        const arg = args.shift();
+    for(let i = 0; i < args.length; i++){
+        const arg = args[i];
         if(!value && maybe)
             return value;
         value = value[arg.name];
@@ -1330,22 +1340,92 @@ function watchWords(bus, words){
     for(let i = 0; i < words.length; i++) {
 
         const word = words[i];
-        const watcher = new Bus(scope);
-        const data = scope.find(word.name);
-
-        watcher.addSubscribe(word.alias, data);
-        watcher.msg(function(msg){
-            return extractProperties(word, msg);
-        });
-        if(!isAction(word.name)){
-            watcher.skipDupes();
-        }
-
+        const watcher = createWatcher(scope, word);
         bus.add(watcher);
 
     }
 
 }
+
+function createWatcher(scope, word){
+
+    const watcher = scope.bus();
+    const data = scope.find(word.name);
+
+    watcher.addSubscribe(word.alias, data);
+
+    if(word.args.length) {
+        watcher.msg(function (msg) {
+            return extractProperties(word, msg);
+        });
+    }
+
+    if(!isAction(word.name)){
+        watcher.skipDupes();
+    }
+
+    return watcher;
+
+}
+
+function watchEvents(bus, words){
+
+    const scope = bus.scope;
+    const target = bus.target();
+
+    for(let i = 0; i < words.length; i++) { // todo add capture to words
+
+        const word = words[i];
+        const eventBus = createEventBus(scope, target, word);
+        bus.add(eventBus);
+
+    }
+
+}
+
+
+function createEventBus(scope, target, word){
+
+    const eventBus = scope.bus();
+
+    eventBus.addEvent(word.alias, target, word.name);
+
+    if(word.args.length) {
+        eventBus.msg(function (msg) {
+            return extractProperties(word, msg);
+        });
+    }
+
+    return eventBus;
+
+}
+
+// function getWriteTransaction(scope, words){
+//
+//     const writeSourceNames = [];
+//     const writeTargetNames = [];
+//     const targetsByName = {};
+//
+//     for(let i = 0; i < words.length; i++){
+//         const word = words[i];
+//         const sourceName = word.name;
+//         const targetName = word.alias;
+//         const target = scope.find()
+//     }
+//
+//     return function writeTransaction(msg, source){
+//
+//         for(let i = 0; i < words.length; i++){
+//
+//         }
+//
+//     };
+//
+//
+//
+//     return reader;
+//
+// }
 
 
 function getThenReadOne(scope, word){
@@ -1359,7 +1439,7 @@ function getThenReadOne(scope, word){
     };
 
     reader.present = function present(){
-        return state.present();
+        return state.present;
     };
 
     return reader;
@@ -1403,26 +1483,8 @@ function getThenReadMultiple(scope, words, usingAnd){
 
 
 
-function createBus(meow, scope, context, target){
-
-    let bus = new Bus(scope);
-    return applyMeow(meow, bus, context, target);
-
-}
-
-function applyMeow(meow, bus, context, target){
-
-    bus.context = context;
-    bus.target = target;
-    runMeow(bus, meow);
-
-    return bus;
-
-}
-
 const MeowRunner = {
-    applyMeow: applyMeow,
-    createBus: createBus
+    runMeow: runMeow,
 };
 
 const FUNCTOR = function(d) {
@@ -1560,6 +1622,9 @@ function getHasKeys(keys){
 
 class Bus {
 
+    // todo buses can't be added to each other cyclically
+    // each bus gets one source, then children pull
+
     constructor(scope) {
 
         this._frames = [];
@@ -1587,21 +1652,7 @@ class Bus {
 
     };
 
-    get context(){
-        return this._context;
-    }
 
-    set context(obj){
-        this._context = obj;
-    }
-
-    get target(){
-        return this._target;
-    }
-
-    set target(obj){
-        this._target = obj;
-    }
 
     get children(){
 
@@ -1756,14 +1807,16 @@ class Bus {
 
     }
 
-    process(meow, context, target){
+    meow(str){ // meow string -- or accept meow array if parsed earlier
 
-        if(typeof meow === 'string')
-            meow = MeowParser.parse(meow, true);
-
-        MeowRunner.applyMeow(meow, this, context, target);
+        MeowRunner.runMeow(this, str);
         return this;
 
+    }
+
+    process(meow){
+
+        return this.meow(meow);
     }
 
 
@@ -1805,6 +1858,7 @@ class Bus {
 
     add(bus) {
 
+        this._children.push(bus);
         const nf = this._createNormalFrame(); // extend this bus
         bus._createForkingFrame(nf); // outside bus then forks into this bus
         return this;
@@ -1861,6 +1915,21 @@ class Bus {
     // };
 
 
+    context(obj){
+        if(arguments.length){
+            this._context = obj;
+            return this;
+        }
+        return this._context;
+    }
+
+    target(obj){
+        if(arguments.length){
+            this._target = obj;
+            return this;
+        }
+        return this._target;
+    }
 
     batch() {
         this._createNormalFrame(batchStreamBuilder());
@@ -1897,6 +1966,11 @@ class Bus {
         for(let i = 0; i < len; i++) {
             const s = this._sources[i];
             s.pull();
+        }
+
+        for(let i = 0; i < this._children.length; i++) {
+            const c = this._children[i];
+            c.pull();
         }
 
         return this;
@@ -2126,13 +2200,9 @@ class Scope{
 
     };
 
-    bus(strOrMeow, context, node, lookup){
+    bus(){
 
-        if(!strOrMeow)
-            return new Bus(this);
-
-        const meow = (typeof strOrMeow === 'string') ? MeowParser.parse(strOrMeow) : strOrMeow;
-        return MeowRunner.createBus(meow, this, context, node, lookup);
+        return new Bus(this);
 
     };
 
@@ -2246,7 +2316,7 @@ class Scope{
         const action = this.demand(actionName);
 
         if(!this._wires[stateName]) {
-            this._wires[stateName] = this.bus(actionName + '|=' + stateName);
+            this._wires[stateName] = this.bus().meow(actionName + ' > ' + stateName);
         }
 
         return state;
@@ -2274,7 +2344,7 @@ class Scope{
         for(const d of dataSet) {
             if (d) {
 
-                if (d.present())
+                if (d.present)
                     result[d.name] = d.read();
             }
         }
@@ -2454,7 +2524,7 @@ class Scope{
 
         for(const k in writeHash){
             const v = writeHash[k];
-            const d = this.grab(k);
+            const d = this.find(k);
             // todo ASSERT_DATA_FOUND
             d.silentWrite(v);
             list.push(d);

@@ -19,9 +19,11 @@ function runPhrase(bus, phrase){
     const scope = bus.scope;
     const words = phrase.words;
     const context = bus.context();
+    const target = bus.target();
+    const multiple = words.length > 1;
 
     if(name === 'THEN_READ'){
-        if(phrase.words.length > 1){
+        if(multiple){
             bus.msg(getThenReadMultiple(scope, words));
         } else {
             const word = words[0];
@@ -42,17 +44,25 @@ function runPhrase(bus, phrase){
             const method = context[word.name];
             bus.filter(method, context);
         }
+    } else if(name === 'EVENT'){
+        watchEvents(bus, words);
     } else if(name === 'WATCH_EACH'){
         watchWords(bus, words);
     } else if(name === 'WATCH_TOGETHER'){
         watchWords(bus, words);
-        bus.merge().group().batch();
-        bus.hasKeys(toAliasList(words));
+        if(multiple)
+            bus.merge().group();
+        bus.batch();
+        if(multiple)
+            bus.hasKeys(toAliasList(words));
     } else if(name === 'WRITE'){
-        // todo transaction
-        const word = words[0];
-        const data = scope.find(word.name);
-        bus.write(data);
+        if(multiple) {
+            // todo transaction, no actions
+        } else {
+            const word = words[0];
+            const data = scope.find(word.name);
+            bus.write(data);
+        }
     }
 
 }
@@ -63,8 +73,8 @@ function extractProperties(word, value){
     let maybe = word.maybe;
     let args = word.args;
 
-    while (args.length) {
-        const arg = args.shift();
+    for(let i = 0; i < args.length; i++){
+        const arg = args[i];
         if(!value && maybe)
             return value;
         value = value[arg.name];
@@ -93,22 +103,92 @@ function watchWords(bus, words){
     for(let i = 0; i < words.length; i++) {
 
         const word = words[i];
-        const watcher = new Bus(scope);
-        const data = scope.find(word.name);
-
-        watcher.addSubscribe(word.alias, data);
-        watcher.msg(function(msg){
-            return extractProperties(word, msg);
-        });
-        if(!isAction(word.name)){
-            watcher.skipDupes();
-        }
-
+        const watcher = createWatcher(scope, word);
         bus.add(watcher);
 
     }
 
 }
+
+function createWatcher(scope, word){
+
+    const watcher = scope.bus();
+    const data = scope.find(word.name);
+
+    watcher.addSubscribe(word.alias, data);
+
+    if(word.args.length) {
+        watcher.msg(function (msg) {
+            return extractProperties(word, msg);
+        });
+    }
+
+    if(!isAction(word.name)){
+        watcher.skipDupes();
+    }
+
+    return watcher;
+
+}
+
+function watchEvents(bus, words){
+
+    const scope = bus.scope;
+    const target = bus.target();
+
+    for(let i = 0; i < words.length; i++) { // todo add capture to words
+
+        const word = words[i];
+        const eventBus = createEventBus(scope, target, word);
+        bus.add(eventBus);
+
+    }
+
+}
+
+
+function createEventBus(scope, target, word){
+
+    const eventBus = scope.bus();
+
+    eventBus.addEvent(word.alias, target, word.name);
+
+    if(word.args.length) {
+        eventBus.msg(function (msg) {
+            return extractProperties(word, msg);
+        });
+    }
+
+    return eventBus;
+
+}
+
+// function getWriteTransaction(scope, words){
+//
+//     const writeSourceNames = [];
+//     const writeTargetNames = [];
+//     const targetsByName = {};
+//
+//     for(let i = 0; i < words.length; i++){
+//         const word = words[i];
+//         const sourceName = word.name;
+//         const targetName = word.alias;
+//         const target = scope.find()
+//     }
+//
+//     return function writeTransaction(msg, source){
+//
+//         for(let i = 0; i < words.length; i++){
+//
+//         }
+//
+//     };
+//
+//
+//
+//     return reader;
+//
+// }
 
 
 function getThenReadOne(scope, word){
@@ -122,7 +202,7 @@ function getThenReadOne(scope, word){
     };
 
     reader.present = function present(){
-        return state.present();
+        return state.present;
     };
 
     return reader;

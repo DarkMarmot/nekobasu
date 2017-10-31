@@ -164,6 +164,9 @@ function getHasKeys(keys){
 
 class Bus {
 
+    // todo buses can't be added to each other cyclically
+    // each bus gets one source, then children pull
+
     constructor(scope) {
 
         this._frames = [];
@@ -346,19 +349,16 @@ class Bus {
 
     }
 
-    meow(str){ // or accept meow array is parsed earlier
+    meow(str){ // meow string -- or accept meow array if parsed earlier
 
-        return MeowRunner.runMeow(this, str);
-
-    }
-    process(meow){
-
-        if(typeof meow === 'string')
-            meow = MeowParser.parse(meow);
-
-        MeowRunner.applyMeow(meow, this);
+        MeowRunner.runMeow(this, str);
         return this;
 
+    }
+
+    process(meow){
+
+        return this.meow(meow);
     }
 
 
@@ -400,6 +400,7 @@ class Bus {
 
     add(bus) {
 
+        this._children.push(bus);
         const nf = this._createNormalFrame(); // extend this bus
         bus._createForkingFrame(nf); // outside bus then forks into this bus
         return this;
@@ -507,6 +508,11 @@ class Bus {
         for(let i = 0; i < len; i++) {
             const s = this._sources[i];
             s.pull();
+        }
+
+        for(let i = 0; i < this._children.length; i++) {
+            const c = this._children[i];
+            c.pull();
         }
 
         return this;

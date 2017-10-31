@@ -158,7 +158,7 @@ class Scope{
         const action = this.demand(actionName);
 
         if(!this._wires[stateName]) {
-            this._wires[stateName] = this.bus(actionName + '|=' + stateName);
+            this._wires[stateName] = this.bus().meow(actionName + ' > ' + stateName);
         }
 
         return state;
@@ -186,7 +186,7 @@ class Scope{
         for(const d of dataSet) {
             if (d) {
 
-                if (d.present())
+                if (d.present)
                     result[d.name] = d.read();
             }
         }
@@ -366,7 +366,7 @@ class Scope{
 
         for(const k in writeHash){
             const v = writeHash[k];
-            const d = this.grab(k);
+            const d = this.find(k);
             // todo ASSERT_DATA_FOUND
             d.silentWrite(v);
             list.push(d);
