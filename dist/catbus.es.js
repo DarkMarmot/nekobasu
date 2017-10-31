@@ -1033,886 +1033,395 @@ class Frame {
 
 }
 
-const Nyan = {};
+const MeowParser = {};
 
-// then = applies to all words in a phrase
-// watch: ^ = action, need, event, watch | read, must
-// then:  run, read, attr, and, style, write, blast, filter
+const phraseCmds = {
 
-const operationDefs = [
+    '&': {name: 'AND_READ', react: false, process: true, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '>': {name: 'WRITE', react: false, process: true, output: true, can_maybe: true, can_alias: true, can_prop: true},
+    '|': {name: 'THEN_READ', react: false, process: true, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '@': {name: 'EVENT', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '~': {name: 'WATCH_TOGETHER', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '#': {name: 'HOOK', react: false, process: true, output: true, can_maybe: false, can_alias: false, can_prop: false},
+    '*': {name: 'METHOD', react: false, process: true, output: true, can_maybe: false, can_alias: false, can_prop: false},
+    '%': {name: 'FILTER', react: false, process: true, output: false, can_maybe: false, can_alias: false, can_prop: false},
+    '{': {name: 'WATCH_EACH', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
 
-    // rm: =, ^
-    // change: : = alias, # = hash, () = args for cmd, & = cmd
-    // = = transaction,
+};
 
-    // &filter(true) &throttle(200)
+const wordModifiers = {
 
+    ':': 'ALIAS',
+    '?': 'MAYBE',
+    '.': 'PROP'
 
-    // config is a dash
-    // . is a prop
-    {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
-    {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
-    {name: 'WATCH',  sym: null, react: true, follow: true},
-    {name: 'EVENT',  sym: '@',  react: true, event: true},
-    {name: 'ALIAS',  sym: '(',  then: true, solo: true},
-    {name: 'METHOD', sym: '`',  then: true, solo: true},
-    {name: 'READ',   sym: null, then: true, read: true},
-    {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
-    {name: 'AND',    sym: '&',  then: true },
-    {name: 'WRITE',  sym: '=',  then: true,  solo: true },
-    {name: 'SPRAY',  sym: '<',  then: true },
-    {name: 'RUN',    sym: '*',  then: true, output: true },
-    {name: 'FILTER', sym: '>',  then: true }
+};
 
-];
+function Phrase(cmd, content){
 
+    this.content = content;
+    this.cmd = cmd;
+    this.words = [];
 
+    if(cmd.name === 'HOOK')
+        parseHook(this);
+    else
+        parseWords(this);
 
-// cat, dog | & meow, kitten {*log} | =puppy
+}
 
+function Word(content){
 
-// todo make ! a trailing thingie, must goes away
-// trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
-// {name: 'BEGIN',  sym: '{'}, -- fork
-// {name: 'END',    sym: '}'}, -- back
-// {name: 'PIPE',   sym: '|'}, -- phrase delimiter
-// read = SPACE
-// - is data maybe (data point might not be present)
-// ? is object maybe (object might not be there)
-// () is rename
+    this.content = content;
+    this.name = '';
+    this.alias = '';
+    this.maybe = false;
+    this.args = [];
 
-const operationsBySymbol = {};
-const operationsByName = {};
-const symbolsByName = {};
-const namesBySymbol = {};
-const reactionsByName = {};
-const withReactionsByName = {};
-const thenByName = {};
+    parseSyllables(this);
 
-for(let i = 0; i < operationDefs.length; i++){
+}
 
-    const op = operationDefs[i];
-    const name = op.name;
-    const sym = op.sym;
+function parseHook(phrase){
 
-    if(sym) {
-        operationsBySymbol[sym] = op;
-        namesBySymbol[sym] = name;
-    }
+    const chunks = splitHookDelimiters(phrase.content);
+    while(chunks.length) {
 
-    operationsByName[name] = op;
-    symbolsByName[name] = sym;
+        const content = chunks.shift();
+        const word = new Word(content);
+        phrase.words.push(word);
 
-    if(op.then){
-        thenByName[name] = true;
-    }
-
-    if(op.react) {
-        reactionsByName[name] = true;
-        withReactionsByName[name] = true;
     }
 
 }
 
 
+function parseWords(phrase){
 
-class NyanWord {
+    const chunks = splitWordDelimiters(phrase.content);
+    while(chunks.length) {
 
-    constructor(name, operation, maybe, need, alias, monitor, extracts){
-
-        this.name = name;
-        this.operation = operation;
-        this.maybe = maybe || false;
-        this.need = need || false;
-        this.alias = alias || null;
-        this.monitor = monitor || false;
-        this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
-        // this.useCapture =
+        const content = chunks.shift();
+        const word = new Word(content);
+        phrase.words.push(word);
 
     }
 
 }
 
-let tickStack = [];
+function parseSyllables(word){
 
-function toTickStackString(str){
+    const chunks = splitSyllableDelimiters(word.content);
+
+    let arg = null;
+
+    while(chunks.length) {
+
+        const syllable = chunks.shift();
+        const modifier = wordModifiers[syllable];
+
+        if(!modifier && !arg){
+            arg = {name: syllable, maybe: false};
+        } else if(modifier === 'ALIAS' && chunks.length) {
+            word.alias = chunks.shift();
+            break;
+        } else if(modifier === 'PROP' && chunks.length){
+            if(arg)
+                word.args.push(arg);
+            arg = null;
+        } else if(modifier === 'MAYBE' && arg){
+            arg.maybe = true;
+            word.args.push(arg);
+            arg = null;
+        }
+
+    }
+
+    if(arg)
+        word.args.push(arg);
+
+    // word name is first arg collected
+    if(word.args.length){
+        const firstArg = word.args.shift();
+        word.name = firstArg.name;
+        word.maybe = firstArg.maybe;
+    }
+
+    // default to last extracted property as alias if not specified
+    if(word.args.length && !word.alias){
+        const lastArg = word.args[word.args.length - 1];
+        word.alias = lastArg.name;
+    }
+
+    word.alias = word.alias || word.name;
 
 
-    tickStack = [];
-    const chunks = str.split(/([`])/);
-    const strStack = [];
+}
 
-    let ticking = false;
+function parse(text){
+
+
+    const phrases = [];
+    const chunks = splitPhraseDelimiters(text);
+
     while(chunks.length){
-        const c = chunks.shift();
-        if(c === '`'){
-            ticking = !ticking;
-            strStack.push(c);
+
+        let chunk = chunks.shift();
+        let cmd = phraseCmds[chunk];
+        let content;
+
+        if(!cmd && !phrases.length) { // default first cmd is WATCH_TOGETHER
+            cmd = phraseCmds['~'];
+            content = !phraseCmds[chunk] && chunk;
+        } else if(cmd && chunks.length) {
+            content = chunks.shift();
+            content = !phraseCmds[content] && content;
         } else {
-            if(ticking) {
-                tickStack.push(c);
-            } else {
-                strStack.push(c);
-            }
-        }
-    }
-
-    const result = strStack.join('');
-    //console.log('stack res', result, tickStack);
-    return result;
-}
-
-function parse(str, isProcess) {
-
-
-    str = toTickStackString(str);
-
-    const sentences = [];
-
-    // split on curlies and remove empty chunks (todo optimize for parsing speed, batch loop operations?)
-    let chunks = str.split(/([{}]|-})/).map(d => d.trim()).filter(d => d);
-
-    for(let i = 0; i < chunks.length; i++){
-
-        const chunk = chunks[i];
-        const sentence = (chunk === '}' || chunk === '{' || chunk === '-}') ? chunk : parseSentence(chunk);
-
-        if(typeof sentence === 'string' || sentence.length > 0)
-            sentences.push(sentence);
-
-    }
-
-    return validate(sentences, isProcess);
-
-
-}
-
-function validate(sentences, isProcess){
-
-    const cmdList = [];
-    let firstPhrase = true;
-    
-    for(let i = 0; i < sentences.length; i++){
-        const s = sentences[i];
-        if(typeof s !== 'string') {
-
-            for (let j = 0; j < s.length; j++) {
-                const phrase = s[j];
-                if(firstPhrase && !isProcess) {
-                    validateReactPhrase(phrase);
-                    firstPhrase = false;
-                    cmdList.push({name: 'REACT', phrase: phrase});
-                }
-                else {
-                    validateProcessPhrase(phrase);
-                    cmdList.push({name: 'PROCESS', phrase: phrase});
-                }
-            }
-
-        } else if (s === '{') {
-            cmdList.push({name: 'FORK'});
-        } else if (s === '}') {
-            cmdList.push({name: 'BACK'});
-        } else if (s === '-}') {
-            cmdList.push({name: 'JOIN'});
-        }
-    }
-
-    return cmdList;
-}
-
-
-function validateReactPhrase(phrase){
-
-    let hasReaction = false;
-    for(let i = 0; i < phrase.length; i++){
-
-        const nw = phrase[i];
-        const operation = nw.operation = nw.operation || 'WATCH';
-        hasReaction = hasReaction || reactionsByName[operation];
-        if(!withReactionsByName[operation])
-            throw new Error('This Nyan command cannot be in a reaction!');
-
-    }
-
-    if(!hasReaction)
-        throw new Error('Nyan commands must begin with an observation!');
-
-}
-
-
-
-function validateProcessPhrase(phrase){
-
-    const firstPhrase = phrase[0];
-    const firstOperation = firstPhrase.operation || 'READ';
-
-    if(!thenByName[firstOperation])
-        throw new Error('Illegal operation in phrase!'); // unknown or reactive
-
-    for(let i = 0; i < phrase.length; i++){
-
-        const nw = phrase[i];
-        nw.operation = nw.operation || firstOperation;
-        if(nw.operation !== firstOperation){
-
-           // console.log('mult', nw.operation, firstOperation);
-            throw new Error('Multiple operation types in phrase (only one allowed)!');
-
+            // error, null content
         }
 
+        const phrase = new Phrase(cmd, content);
+        phrases.push(phrase);
+
+
     }
+
+    return phrases;
 
 }
 
 
 
-function parseSentence(str) {
 
-    const result = [];
-    const chunks = str.split('|').map(d => d.trim()).filter(d => d);
+function filterEmptyStrings(arr){
 
-    for(let i = 0; i < chunks.length; i++){
+    let result = [];
 
-        const chunk = chunks[i];
-        const phrase = parsePhrase(chunk);
-        result.push(phrase);
-
+    for(let i = 0; i < arr.length; i++){
+        const c = arr[i].trim();
+        if(c)
+            result.push(c);
     }
 
     return result;
 
 }
 
-function parsePhrase(str) {
 
-    const words = [];
-    const rawWords = str.split(',').map(d => d.trim()).filter(d => d);
+function splitPhraseDelimiters(text){
 
-    const len = rawWords.length;
-
-    for (let i = 0; i < len; i++) {
-
-        const rawWord = rawWords[i];
-        //console.log('word=', rawWord);
-        const rawChunks = rawWord.split(/([(?!:.`)])/);
-        const chunks = [];
-        let inMethod = false;
-
-        // white space is only allowed between e.g. `throttle 200`, `string meow in the hat`
-
-        while(rawChunks.length){
-            const next = rawChunks.shift();
-            if(next === '`'){
-                inMethod = !inMethod;
-                chunks.push(next);
-            } else {
-                if(!inMethod){
-                    const trimmed = next.trim();
-                    if(trimmed)
-                        chunks.push(trimmed);
-                } else {
-                    chunks.push(next);
-                }
-            }
-        }
-
-        //console.log('to:', chunks);
-        const nameAndOperation = chunks.shift();
-        const firstChar = rawWord[0];
-        const operation = namesBySymbol[firstChar];
-        const start = operation ? 1 : 0;
-        const name = nameAndOperation.slice(start).trim();
-        const extracts = [];
-
-        // todo hack (rename)
-
-        let maybe = false;
-        let monitor = false;
-        let alias = null;
-        let need = false;
-
-        if(operation === 'ALIAS'){
-            alias = chunks.shift();
-            chunks.shift(); // todo verify ')'
-        } else if (operation === 'METHOD'){
-                chunks.shift();
-                // const next = chunks.shift();
-                const next = tickStack.shift();
-                const i = next.indexOf(' ');
-                if(i === -1) {
-                    extracts.push(next);
-                } else {
-                    extracts.push(next.slice(0, i));
-                    if(next.length > i){
-                        extracts.push(next.slice(i + 1));
-                    }
-                }
-
-            while(chunks.length){ chunks.shift(); }
-        }
-
-        while(chunks.length){
-
-            const c = chunks.shift();
-
-            switch(c){
-
-                case '.':
-
-                    const prop = chunks.length && chunks[0]; // todo assert not operation
-                    const silentFail = chunks.length > 1 && (chunks[1] === '?');
-
-                    if(prop) {
-                        extracts.push({name: prop, silentFail: silentFail});
-                        chunks.shift(); // remove word from queue
-                        if(silentFail)
-                            chunks.shift(); // remove ? from queue
-                    }
-
-                    break;
-
-                case '?':
-
-                    maybe = true;
-                    break;
-
-                case '!':
-
-                    need = true;
-                    break;
-
-                case '(':
-
-                    if(chunks.length){
-                        alias = chunks.shift(); // todo assert not operation
-                    }
-
-                    break;
-
-
-
-            }
-
-        }
-
-        alias = alias || name;
-        const nw = new NyanWord(name, operation, maybe, need, alias, monitor, extracts);
-        words.push(nw);
-
-    }
-
-    return words;
+    let chunks = text.split(/([&>|@~*%#])/);
+    return filterEmptyStrings(chunks);
 
 }
 
-Nyan.parse = parse;
+function splitWordDelimiters(text){
 
-function getSurveyFromDataWord(scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-    return data && data.survey();
+    let chunks = text.split(',');
+    return filterEmptyStrings(chunks);
 
 }
 
-function throwError(msg){
-    console.log('throwing ', msg);
-    const e = new Error(msg);
-    console.log(this, e);
-    throw e;
+function splitHookDelimiters(text){
+
+    let chunks = text.split(' ');
+    return filterEmptyStrings(chunks);
+
 }
 
-function getDoSkipNamedDupes(names){
+function splitSyllableDelimiters(text){
 
-    let lastMsg = {};
-    const len = names.length;
-
-    return function doSkipNamedDupes(msg) {
-
-        let diff = false;
-        for(let i = 0; i < len; i++){
-            const name = names[i];
-            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name] || isObject(msg[name]))
-                diff = true;
-            lastMsg[name] = msg[name];
-        }
-
-        return diff;
-
-    };
-}
-
-
-function getDoSpray(scope, phrase){
-
-    const wordByAlias = {};
-    const dataByAlias = {};
-
-    const len = phrase.length;
-
-    for(let i = 0; i < len; i++){ // todo, validate no dupe alias in word validator for spray
-
-        const word = phrase[i];
-        const data = scope.find(word.name, !word.maybe);
-        if(data) { // might not exist if optional
-            wordByAlias[word.alias] = word;
-            dataByAlias[word.alias] = data;
-        }
-
-    }
-
-    return function doWrite(msg) {
-
-        for(const alias in msg){
-
-            const data = dataByAlias[alias];
-            if(data) {
-                const msgPart = msg[alias];
-                data.silentWrite(msgPart);
-            }
-
-        }
-
-        for(const alias in msg){
-
-            const data = dataByAlias[alias];
-            if(data) {
-                data.refresh();
-            }
-
-        }
-
-
-    };
-
+    let chunks = text.split(/([:?.])/);
+    return filterEmptyStrings(chunks);
 
 }
 
 
-function getDoRead(scope, phrase){
 
-    const len = phrase.length;
-    const firstWord = phrase[0];
+MeowParser.parse = parse;
 
-    if(len > 1 || firstWord.monitor) { // if only reading word is a wildcard subscription then hash as well
-        return getDoReadMultiple(scope, phrase);
-    } else {
-        return getDoReadSingle(scope, firstWord);
+function runMeow(bus, meow){
+
+    const phrases = MeowParser.parse(meow);
+    for(let i = 0; i < phrases.length; i++){
+        const phrase = phrases[i];
+        runPhrase(bus, phrase);
     }
 
 }
 
+function runPhrase(bus, phrase){
 
-function getDoAnd(scope, phrase) {
+    const name = phrase.cmd.name;
+    const scope = bus.scope;
+    const words = phrase.words;
+    const context = bus.context;
 
-    return getDoReadMultiple(scope, phrase, true);
-
-}
-
-
-function getDoReadSingle(scope, word) {
-
-    const data = scope.find(word.name, !word.maybe);
-
-    return function doReadSingle() {
-
-        return data.read();
-
-    };
-
-}
-
-
-function getDoReadMultiple(scope, phrase, isAndOperation){
-
-
-        const len = phrase.length;
-
-
-        return function doReadMultiple(msg, source) {
-
-            const result = {};
-
-            if(isAndOperation){
-
-                if(source){
-                    result[source] = msg;
-                } else {
-                    for (const p in msg) {
-                        result[p] = msg[p];
-                    }
-                }
-            }
-
-            for (let i = 0; i < len; i++) {
-                const word = phrase[i];
-
-                if(word.monitor){
-
-                    const survey = getSurveyFromDataWord(scope, word);
-                    for(const [key, value] of survey){
-                        result[key] = value;
-                    }
-
-                } else {
-
-                    const data = scope.find(word.name, !word.maybe);
-                    const prop = word.alias || word.name;
-                    if (data.present)
-                        result[prop] = data.read();
-
-                }
-
-            }
-
-            return result;
-
-        };
-
-}
-
-
-// get data stream -- store data in bus, emit into stream on pull()
-
-
-function addDataSource(bus, scope, word) {
-
-    const data = scope.find(word.name, !word.maybe);
-    bus.addSubscribe(word.alias, data);
-
-}
-
-function addEventSource(bus, word, target) {
-
-    bus.addEvent(word.alias, target, word.useCapture);
-
-}
-
-
-function isObject(v) {
-    if (v === null)
-        return false;
-    return (typeof v === 'function') || (typeof v === 'object');
-}
-
-
-
-function doExtracts(value, extracts) {
-
-    let result = value;
-    const len = extracts.length;
-
-    for (let i = 0; i < len; i++) {
-        const extract = extracts[i];
-        if(!isObject(result)) {
-            if(extract.silentFail)
-                return undefined;
-
-            throwError('Cannot access property \'' + extract.name + '\' of ' + result);
-
+    if(name === 'THEN_READ'){
+        if(phrase.words.length > 1){
+            bus.msg(getThenReadMultiple(scope, words));
+        } else {
+            const word = words[0];
+            bus.msg(getThenReadOne(scope, word).read);
+            bus.source(word.alias);
         }
-        result = result[extract.name];
+    } else if(name === 'AND_READ'){
+        bus.msg(getThenReadMultiple(scope, words, true));
+    } else if(name === 'METHOD'){
+        for(let i = 0; i < words.length; i++) {
+            const word = words[i];
+            const method = context[word.name];
+            bus.msg(method, context);
+        }
+    } else if(name === 'FILTER'){
+        for(let i = 0; i < words.length; i++) {
+            const word = words[i];
+            const method = context[word.name];
+            bus.filter(method, context);
+        }
+    } else if(name === 'WATCH_EACH'){
+        watchWords(bus, words);
+    } else if(name === 'WATCH_TOGETHER'){
+        watchWords(bus, words);
+        bus.merge().group().batch();
+        bus.hasKeys(toAliasList(words));
+    } else if(name === 'WRITE'){
+        // todo transaction
+        const word = words[0];
+        const data = scope.find(word.name);
+        bus.write(data);
     }
 
+}
 
-    return result;
+// todo throw errors
+function extractProperties(word, value){
+
+    let maybe = word.maybe;
+    let args = word.args;
+
+    while (args.length) {
+        const arg = args.shift();
+        if(!value && maybe)
+            return value;
+        value = value[arg.name];
+        maybe = arg.maybe;
+    }
+
+    return value;
 
 }
 
-function getNeedsArray(phrase){
-    return phrase.filter(word => word.operation.need).map(word => word.alias);
+function toAliasList(words){
+
+    const list = [];
+    for(let i = 0; i < words.length; i++) {
+        const word = words[i];
+        list.push(word.alias);
+    }
+    return list;
+
 }
 
-function getDoMsgHashExtract(words) {
+function watchWords(bus, words){
 
-    const len = words.length;
-    const extractsByAlias = {};
+    const scope = bus.scope;
 
-    for (let i = 0; i < len; i++) {
+    for(let i = 0; i < words.length; i++) {
 
         const word = words[i];
-        extractsByAlias[word.alias] = word.extracts;
+        const watcher = new Bus(scope);
+        const data = scope.find(word.name);
+
+        watcher.addSubscribe(word.alias, data);
+        watcher.msg(function(msg){
+            return extractProperties(word, msg);
+        });
+        if(!isAction(word.name)){
+            watcher.skipDupes();
+        }
+
+        bus.add(watcher);
 
     }
 
-    return function(msg) {
+}
+
+
+function getThenReadOne(scope, word){
+
+    const state = scope.find(word.name);
+    const reader = {};
+
+    reader.read = function read(){
+        const value = state.read();
+        return extractProperties(word, value);
+    };
+
+    reader.present = function present(){
+        return state.present();
+    };
+
+    return reader;
+
+}
+
+function getThenReadMultiple(scope, words, usingAnd){
+
+    const readers = [];
+    for(let i = 0; i < words.length; i++){
+        const word = words[i];
+        readers.push(getThenReadOne(scope, word));
+    }
+
+    return function thenReadMultiple(msg, source){
 
         const result = {};
-        for(const alias in extractsByAlias){
-            const hasProp = msg.hasOwnProperty(alias);
-            if(hasProp){
-                result[alias] = doExtracts(msg[alias], extractsByAlias[alias]);
+
+        if(usingAnd) {
+            if (source) {
+                result[source] = msg;
+            } else {
+                for (const p in msg) {
+                    result[p] = msg[p];
+                }
             }
+        }
+
+        for(let i = 0; i < words.length; i++){
+            const word = words[i];
+            const prop = word.alias;
+            const reader = readers[i];
+            if(reader.present())
+                result[prop] = reader.read();
         }
 
         return result;
-
-    };
-
-}
-
-function getDoMsgExtract(word) {
-
-    const extracts = word.extracts;
-
-    return function(msg){
-        return doExtracts(msg, extracts);
-    }
-
-}
-
-
-function applyReaction(scope, bus, phrase, target, lookup) { // target is some event emitter
-
-    const need = [];
-    const skipDupes = [];
-    const extracts = [];
-
-    if(phrase.length === 1 && phrase[0].operation === 'ACTION'){
-        const word = phrase[0];
-        addDataSource(bus, scope, word);
-        return;
-    }
-
-    for(let i = 0; i < phrase.length; i++){
-
-        const word = phrase[i];
-        const operation = word.operation;
-
-        if(operation === 'WATCH') {
-            addDataSource(bus, scope, word);
-            skipDupes.push(word.alias);
-        }
-        else if(operation === 'WIRE'){
-            addDataSource(bus, scope, word);
-        }
-        else if(operation === 'EVENT') {
-            addEventSource(bus, word, target);
-        }
-
-        if(word.extracts)
-            extracts.push(word);
-
-        if(word.need)
-            need.push(word.alias);
-
-    }
-
-    // transformations are applied via named hashes for performance
-
-    if(bus._sources.length > 1) {
-
-        bus.merge().group().batch();
-
-        if(extracts.length)
-            bus.msg(getDoMsgHashExtract(extracts));
-
-        if(need.length)
-            bus.hasKeys(need);
-
-        if(skipDupes.length){
-            bus.filter(getDoSkipNamedDupes(skipDupes));
-        }
-
-    } else {
-
-        if(extracts.length)
-            bus.msg(getDoMsgExtract(extracts[0]));
-
-        if(skipDupes.length)
-            bus.skipDupes();
-
-    }
-
-}
-
-function isTruthy(msg){
-    return !!msg;
-}
-
-function isFalsey(msg){
-    return !msg;
-}
-
-
-function applyMethod(bus, word) {
-
-    const method = word.extracts[0];
-
-    switch(method){
-
-        case 'true':
-            bus.msg(true);
-            break;
-
-        case 'false':
-            bus.msg(false);
-            break;
-
-        case 'null':
-            bus.msg(null);
-            break;
-
-        case 'undefined':
-            bus.msg(undefined);
-            break;
-
-        case 'array':
-            bus.msg([]);
-            break;
-
-        case 'object':
-            bus.msg({});
-            break;
-
-        case 'truthy':
-            bus.filter(isTruthy);
-            break;
-
-        case 'falsey':
-            bus.filter(isFalsey);
-            break;
-
-        case 'string':
-            bus.msg(function(){ return word.extracts[1];});
-            break;
-
-            // throttle x, debounce x, delay x, last x, first x, all
-
-    }
-
-}
-
-function applyProcess(scope, bus, phrase, context, node, lookup) {
-
-    const operation = phrase[0].operation; // same for all words in a process phrase
-
-    if(operation === 'READ') {
-        bus.msg(getDoRead(scope, phrase));
-        const needs = getNeedsArray(phrase);
-        if(needs.length)
-            bus.hasKeys(needs);
-    } else if (operation === 'AND') {
-        bus.msg(getDoAnd(scope, phrase));
-        const needs = getNeedsArray(phrase);
-        if (needs.length)
-            bus.hasKeys(needs);
-    } else if (operation === 'METHOD') {
-        applyMethod(bus, phrase[0]);
-    } else if (operation === 'FILTER') {
-        applyFilterProcess(bus, phrase, context, lookup);
-    } else if (operation === 'RUN') {
-        applyMsgProcess(bus, phrase, context, lookup);
-    } else if (operation === 'ALIAS') {
-        applySourceProcess(bus, phrase[0]);
-    } else if (operation === 'WRITE') {
-        applyWriteProcess(bus, scope, phrase[0]);
-    } else if (operation === 'SPRAY') {
-
-        bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
-
-    } else if (operation === 'ATTR') {
-        // #attr:thing, #style:moo, #prop:innerText, #class
-    }
-
-}
-
-
-function applyWriteProcess(bus, scope, word){
-
-    const data = scope.find(word.name, !word.maybe);
-    bus.write(data);
-
-}
-
-function applyMsgProcess(bus, phrase, context, lookup){
-
-    const len = phrase.length;
-    lookup = lookup || context;
-
-    for(let i = 0; i < len; i++) {
-
-        const word = phrase[i];
-        const name = word.name;
-        const method = lookup[name];
-
-        bus.msg(method, context);
-
     }
 
 }
 
 
 
-
-
-function applySourceProcess(bus, word){
-
-    bus.source(word.alias);
-
-}
-
-
-function applyFilterProcess(bus, phrase, context, lookup){
-
-    const len = phrase.length;
-    lookup = lookup || context;
-
-    for(let i = 0; i < len; i++) {
-
-        const word = phrase[i];
-        const name = word.name;
-        const method = lookup[name];
-
-        bus.filter(method, context);
-
-    }
-
-}
-
-function createBus(nyan, scope, context, target, lookup){
+function createBus(meow, scope, context, target){
 
     let bus = new Bus(scope);
-    return applyNyan(nyan, bus, context, target, lookup);
+    return applyMeow(meow, bus, context, target);
 
 }
 
-function applyNyan(nyan, bus, context, target, lookup){
+function applyMeow(meow, bus, context, target){
 
-    const len = nyan.length;
-    const scope = bus.scope;
-    for(let i = 0; i < len; i++){
-
-        const cmd = nyan[i];
-        const name = cmd.name;
-        const phrase = cmd.phrase;
-
-        if(name === 'JOIN') {
-
-            bus = bus.join();
-            bus.merge();
-            bus.group();
-
-        } else if(name === 'FORK'){
-            bus = bus.fork();
-        } else if (name === 'BACK'){
-            bus = bus.back();
-        } else {
-
-            if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, target, lookup);
-            else // name === 'REACT'
-                applyReaction(scope, bus, phrase, target, lookup);
-
-        }
-    }
+    bus.context = context;
+    bus.target = target;
+    runMeow(bus, meow);
 
     return bus;
 
 }
 
-const NyanRunner = {
-    applyNyan: applyNyan,
+const MeowRunner = {
+    applyMeow: applyMeow,
     createBus: createBus
 };
 
@@ -2059,6 +1568,8 @@ class Bus {
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
+        this._context = null; // for methods
+        this._target = null; // e.g. dom node for events, styles, etc.
 
         // temporary api states (used for interactively building the bus)
 
@@ -2075,6 +1586,22 @@ class Bus {
         this._currentFrame = f;
 
     };
+
+    get context(){
+        return this._context;
+    }
+
+    set context(obj){
+        this._context = obj;
+    }
+
+    get target(){
+        return this._target;
+    }
+
+    set target(obj){
+        this._target = obj;
+    }
 
     get children(){
 
@@ -2229,12 +1756,12 @@ class Bus {
 
     }
 
-    process(nyan, context, target){
+    process(meow, context, target){
 
-        if(typeof nyan === 'string')
-            nyan = Nyan.parse(nyan, true);
+        if(typeof meow === 'string')
+            meow = MeowParser.parse(meow, true);
 
-        NyanRunner.applyNyan(nyan, this, context, target);
+        MeowRunner.applyMeow(meow, this, context, target);
         return this;
 
     }
@@ -2599,13 +2126,13 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node, lookup){
+    bus(strOrMeow, context, node, lookup){
 
-        if(!strOrNyan)
+        if(!strOrMeow)
             return new Bus(this);
 
-        const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        return NyanRunner.createBus(nyan, this, context, node, lookup);
+        const meow = (typeof strOrMeow === 'string') ? MeowParser.parse(strOrMeow) : strOrMeow;
+        return MeowRunner.createBus(meow, this, context, node, lookup);
 
     };
 
@@ -3045,6 +2572,7 @@ Catbus.bus = function(){
     return new Bus();
 };
 
+Catbus.meow = MeowParser.parse;
 
 Catbus.fromInterval = function(name, delay, msg){
 

@@ -26,8 +26,8 @@ import PriorStream from './streams/priorStream.js';
 import Spork from './spork.js';
 import Frame from './frame.js';
 
-import Nyan from './nyan.js';
-import NyanRunner from './nyanRunner.js';
+import MeowParser from './meowParser.js';
+import MeowRunner from './meowRunner.js';
 
 const FUNCTOR = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
@@ -191,21 +191,7 @@ class Bus {
 
     };
 
-    get context(){
-        return this._context;
-    }
 
-    set context(obj){
-        this._context = obj;
-    }
-
-    get target(){
-        return this._target;
-    }
-
-    set target(obj){
-        this._target = obj;
-    }
 
     get children(){
 
@@ -360,12 +346,17 @@ class Bus {
 
     }
 
-    process(nyan, context, target){
+    meow(str){ // or accept meow array is parsed earlier
 
-        if(typeof nyan === 'string')
-            nyan = Nyan.parse(nyan, true);
+        return MeowRunner.runMeow(this, str);
 
-        NyanRunner.applyNyan(nyan, this, context, target);
+    }
+    process(meow){
+
+        if(typeof meow === 'string')
+            meow = MeowParser.parse(meow);
+
+        MeowRunner.applyMeow(meow, this);
         return this;
 
     }
@@ -465,6 +456,21 @@ class Bus {
     // };
 
 
+    context(obj){
+        if(arguments.length){
+            this._context = obj;
+            return this;
+        }
+        return this._context;
+    }
+
+    target(obj){
+        if(arguments.length){
+            this._target = obj;
+            return this;
+        }
+        return this._target;
+    }
 
     batch() {
         this._createNormalFrame(batchStreamBuilder());

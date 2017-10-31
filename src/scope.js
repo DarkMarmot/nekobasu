@@ -3,8 +3,6 @@
 import Data from './data.js';
 import { isPrivate, isAction } from './dataTypes.js';
 import Bus from './bus.js';
-import NyanRunner from './nyanRunner.js';
-import Nyan from './nyan.js';
 
 let idCounter = 0;
 
@@ -44,13 +42,9 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node, lookup){
+    bus(){
 
-        if(!strOrNyan)
-            return new Bus(this);
-
-        const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        return NyanRunner.createBus(nyan, this, context, node, lookup);
+        return new Bus(this);
 
     };
 

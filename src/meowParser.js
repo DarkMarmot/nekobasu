@@ -177,7 +177,7 @@ function filterEmptyStrings(arr){
 
 function splitPhraseDelimiters(text){
 
-    let chunks = text.split(/([&>|@~*%#])/);
+    let chunks = text.split(/([&>|@~*%#{])/);
     return filterEmptyStrings(chunks);
 
 }
