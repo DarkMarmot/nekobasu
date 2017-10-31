@@ -172,6 +172,8 @@ class Bus {
         this._scope = scope;
         this._children = []; // from forks
         this._parent = null;
+        this._context = null; // for methods
+        this._target = null; // e.g. dom node for events, styles, etc.
 
         // temporary api states (used for interactively building the bus)
 
@@ -188,6 +190,22 @@ class Bus {
         this._currentFrame = f;
 
     };
+
+    get context(){
+        return this._context;
+    }
+
+    set context(obj){
+        this._context = obj;
+    }
+
+    get target(){
+        return this._target;
+    }
+
+    set target(obj){
+        this._target = obj;
+    }
 
     get children(){
 

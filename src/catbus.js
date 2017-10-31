@@ -5,6 +5,7 @@ import IntervalSource from './sources/intervalSource.js';
 import SubscribeSource from './sources/subscribeSource.js';
 import ValueSource from './sources/valueSource.js';
 import ArraySource from './sources/arraySource.js';
+import Meow from './meowParser.js';
 
 import Bus from './bus.js';
 
@@ -18,6 +19,7 @@ Catbus.bus = function(){
     return new Bus();
 };
 
+Catbus.meow = Meow.parse;
 
 Catbus.fromInterval = function(name, delay, msg){
 

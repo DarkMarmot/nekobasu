@@ -7,5 +7,5 @@ function isAction(name){
     return name[0] === '$';
 }
 
-export { isAction, isPrivate};
+export { isAction, isPrivate };
 
