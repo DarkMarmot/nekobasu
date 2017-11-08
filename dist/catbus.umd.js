@@ -1303,7 +1303,7 @@ function runPhrase(bus, phrase){
             // todo transaction, no actions
         } else {
             const word = words[0];
-            const data = scope.find(word.name);
+            const data = scope.find(word.name, true);
             bus.write(data);
         }
     }
@@ -1356,7 +1356,7 @@ function watchWords(bus, words){
 function createWatcher(scope, word){
 
     const watcher = scope.bus();
-    const data = scope.find(word.name);
+    const data = scope.find(word.name, true);
 
     watcher.addSubscribe(word.alias, data);
 
@@ -1436,7 +1436,7 @@ function createEventBus(scope, target, word){
 
 function getThenReadOne(scope, word){
 
-    const state = scope.find(word.name);
+    const state = scope.find(word.name, true);
     const reader = {};
 
     reader.read = function read(){
