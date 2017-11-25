@@ -598,7 +598,7 @@ class Bus {
 
         const f = FUNCTOR(fAny);
 
-        this._createNormalFrame(msgStreamBuilder(f, context));
+        this._createNormalFrame(msgStreamBuilder(f, context || this._context));
         return this;
 
 

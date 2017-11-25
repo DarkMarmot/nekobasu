@@ -8,11 +8,12 @@ const phraseCmds = {
     '>': {name: 'WRITE', react: false, process: true, output: true, can_maybe: true, can_alias: true, can_prop: true},
     '|': {name: 'THEN_READ', react: false, process: true, output: false, can_maybe: true, can_alias: true, can_prop: true},
     '@': {name: 'EVENT', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
-    '~': {name: 'WATCH_TOGETHER', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '}': {name: 'WATCH_TOGETHER', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
     '#': {name: 'HOOK', react: false, process: true, output: true, can_maybe: false, can_alias: false, can_prop: false},
     '*': {name: 'METHOD', react: false, process: true, output: true, can_maybe: false, can_alias: false, can_prop: false},
     '%': {name: 'FILTER', react: false, process: true, output: false, can_maybe: false, can_alias: false, can_prop: false},
     '{': {name: 'WATCH_EACH', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
+    '~': {name: 'WATCH_SOME', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true}
 
 };
 
@@ -82,6 +83,10 @@ function parseSyllables(word){
 
     let arg = null;
 
+    if(chunks[0] === '.'){ // default as props, todo clean this while parse thing up :)
+        arg = {name: 'props', maybe: false};
+    }
+
     while(chunks.length) {
 
         const syllable = chunks.shift();
@@ -138,7 +143,7 @@ function parse(text){
         let content;
 
         if(!cmd && !phrases.length) { // default first cmd is WATCH_TOGETHER
-            cmd = phraseCmds['~'];
+            cmd = phraseCmds['}'];
             content = !phraseCmds[chunk] && chunk;
         } else if(cmd && chunks.length) {
             content = chunks.shift();
@@ -177,7 +182,7 @@ function filterEmptyStrings(arr){
 
 function splitPhraseDelimiters(text){
 
-    let chunks = text.split(/([&>|@~*%#{])/);
+    let chunks = text.split(/([&>|@~*%#{}])/);
     return filterEmptyStrings(chunks);
 
 }

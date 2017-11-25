@@ -48,6 +48,11 @@ function runPhrase(bus, phrase){
         watchEvents(bus, words);
     } else if(name === 'WATCH_EACH'){
         watchWords(bus, words);
+    } else if(name === 'WATCH_SOME'){
+        watchWords(bus, words);
+        if(multiple)
+            bus.merge().group();
+        bus.batch();
     } else if(name === 'WATCH_TOGETHER'){
         watchWords(bus, words);
         if(multiple)
