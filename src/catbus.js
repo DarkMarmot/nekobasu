@@ -6,14 +6,18 @@ import SubscribeSource from './sources/subscribeSource.js';
 import ValueSource from './sources/valueSource.js';
 import ArraySource from './sources/arraySource.js';
 import Meow from './meowParser.js';
-
 import Bus from './bus.js';
+
+import filterHooks from './hooks/filterHooks.js';
+import domHooks from './hooks/domHooks.js';
+import logHooks from './hooks/logHooks.js';
 
 
 const Catbus = {};
 
 let _batchQueue = [];
 let _primed = false;
+const _hooksByName = {};
 
 Catbus.bus = function(){
     return new Bus();
@@ -29,6 +33,16 @@ Catbus.fromInterval = function(name, delay, msg){
 
     return bus;
 
+};
+
+Catbus.hook = function(name, func){ // func(argArray) with this as bus
+    _hooksByName[name] = func;
+};
+
+Catbus.runHook = function(bus, name, words){
+    console.log('bus', bus, name, words);
+    const func = _hooksByName[name]; // todo func not found
+    func.call(bus, bus, words);
 };
 
 Catbus.fromEvent = function(target, eventName, useCapture){
@@ -129,6 +143,8 @@ Catbus.flush = function(){
 
 };
 
-
+filterHooks(Catbus);
+domHooks(Catbus);
+logHooks(Catbus);
 
 export default Catbus;

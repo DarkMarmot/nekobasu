@@ -153,7 +153,7 @@ class Scope{
 
     wire(stateName){
 
-        const actionName = '$' + stateName;
+        const actionName = stateName + '$';
         const state = this.demand(stateName);
         const action = this.demand(actionName);
 

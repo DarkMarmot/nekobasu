@@ -1,4 +1,5 @@
 
+import Catbus from './catbus.js';
 import Bus from './bus.js';
 import MeowParser from './meowParser.js';
 import {isPrivate, isAction} from './dataTypes.js';
@@ -22,7 +23,11 @@ function runPhrase(bus, phrase){
     const target = bus.target();
     const multiple = words.length > 1;
 
-    if(name === 'THEN_READ'){
+    if(name === 'HOOK'){
+        const hook = words.shift();
+        Catbus.runHook(bus, hook, words);
+    }
+    else if(name === 'THEN_READ'){
         if(multiple){
             bus.msg(getThenReadMultiple(scope, words));
         } else {
@@ -314,9 +319,6 @@ function isObject(v) {
         return false;
     return (typeof v === 'function') || (typeof v === 'object');
 }
-
-
-
 
 
 

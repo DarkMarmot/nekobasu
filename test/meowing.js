@@ -267,6 +267,21 @@ describe('RootScope', function(){
 
     });
 
+    it('can use filter hooks', function(){
+
+        const d = world.demand('castle');
+        const bus = world.bus().context(watcher).meow('{ castle # IF_TRUTHY * addShield * handle');
+
+        d.write('knight');
+        d.write(''); // skipped
+        d.write('moo');
+
+        Catbus.flush();
+
+        assert.equal(msgLog[0], 'knight shield');
+        assert.equal(msgLog.length, 2);
+
+    });
 
 
 

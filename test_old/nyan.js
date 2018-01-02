@@ -1,776 +1,380 @@
-//run mocha from project root
-
-const assert = require('assert');
-const Catbus = require('../dist/catbus.umd.js');
-
-const root = Catbus.createChild();
-
-let sourceLog;
-let msgLog;
 
 
-function callback(msg, source){
+const Nyan = {};
 
-    console.log('msg is: ', msg, ' -- ', source);
-    msgLog.push(msg);
-    sourceLog.push(source);
+// then = applies to all words in a phrase
+// watch: ^ = action, need, event, watch | read, must
+// then:  run, read, attr, and, style, write, blast, filter
+
+const operationDefs = [
+
+    // rm: =, ^
+    // change: : = alias, # = hash, () = args for cmd, & = cmd
+    // = = transaction,
+
+    // &filter(true) &throttle(200)
+
+
+    // config is a dash
+    // . is a prop
+    {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
+    {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
+    {name: 'WATCH',  sym: null, react: true, follow: true},
+    {name: 'EVENT',  sym: '@',  react: true, event: true},
+    {name: 'ALIAS',  sym: '(',  then: true, solo: true},
+    {name: 'METHOD', sym: '`',  then: true, solo: true},
+    {name: 'READ',   sym: null, then: true, read: true},
+    {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
+    {name: 'AND',    sym: '&',  then: true },
+    {name: 'WRITE',  sym: '=',  then: true,  solo: true },
+    {name: 'SPRAY',  sym: '<',  then: true },
+    {name: 'RUN',    sym: '*',  then: true, output: true },
+    {name: 'FILTER', sym: '>',  then: true }
+
+];
+
+
+
+// cat, dog | & meow, kitten {*log} | =puppy
+
+
+// todo make ! a trailing thingie, must goes away
+// trailing defs -- ! = needs message in data to continue, ? = data must exist or throw error
+// {name: 'BEGIN',  sym: '{'}, -- fork
+// {name: 'END',    sym: '}'}, -- back
+// {name: 'PIPE',   sym: '|'}, -- phrase delimiter
+// read = SPACE
+// - is data maybe (data point might not be present)
+// ? is object maybe (object might not be there)
+// () is rename
+
+const operationsBySymbol = {};
+const operationsByName = {};
+const symbolsByName = {};
+const namesBySymbol = {};
+const reactionsByName = {};
+const withReactionsByName = {};
+const thenByName = {};
+
+for(let i = 0; i < operationDefs.length; i++){
+
+    const op = operationDefs[i];
+    const name = op.name;
+    const sym = op.sym;
+
+    if(sym) {
+        operationsBySymbol[sym] = op;
+        namesBySymbol[sym] = name;
+    }
+
+    operationsByName[name] = op;
+    symbolsByName[name] = sym;
+
+    if(op.then){
+        thenByName[name] = true;
+    }
+
+    if(op.react) {
+        reactionsByName[name] = true;
+        withReactionsByName[name] = true;
+    }
 
 }
 
-let watcher = {};
-watcher.tap = callback;
-watcher.handle = callback;
 
-function resetLog(){
 
-    sourceLog = [];
-    msgLog = [];
+class NyanWord {
+
+    constructor(name, operation, maybe, need, alias, monitor, extracts){
+
+        this.name = name;
+        this.operation = operation;
+        this.maybe = maybe || false;
+        this.need = need || false;
+        this.alias = alias || null;
+        this.monitor = monitor || false;
+        this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
+        // this.useCapture =
+
+    }
+
+}
+
+let tickStack = [];
+
+function toTickStackString(str){
+
+
+    tickStack = [];
+    const chunks = str.split(/([`])/);
+    const strStack = [];
+
+    let ticking = false;
+    while(chunks.length){
+        const c = chunks.shift();
+        if(c === '`'){
+            ticking = !ticking;
+            strStack.push(c);
+        } else {
+            if(ticking) {
+                tickStack.push(c);
+            } else {
+                strStack.push(c);
+            }
+        }
+    }
+
+    const result = strStack.join('');
+    //console.log('stack res', result, tickStack);
+    return result;
+}
+
+function parse(str, isProcess) {
+
+
+    str = toTickStackString(str);
+
+    const sentences = [];
+
+    // split on curlies and remove empty chunks (todo optimize for parsing speed, batch loop operations?)
+    let chunks = str.split(/([{}]|-})/).map(d => d.trim()).filter(d => d);
+
+    for(let i = 0; i < chunks.length; i++){
+
+        const chunk = chunks[i];
+        const sentence = (chunk === '}' || chunk === '{' || chunk === '-}') ? chunk : parseSentence(chunk);
+
+        if(typeof sentence === 'string' || sentence.length > 0)
+            sentences.push(sentence);
+
+    }
+
+    return validate(sentences, isProcess);
+
+
+}
+
+function validate(sentences, isProcess){
+
+    const cmdList = [];
+    let firstPhrase = true;
+    
+    for(let i = 0; i < sentences.length; i++){
+        const s = sentences[i];
+        if(typeof s !== 'string') {
+
+            for (let j = 0; j < s.length; j++) {
+                const phrase = s[j];
+                if(firstPhrase && !isProcess) {
+                    validateReactPhrase(phrase);
+                    firstPhrase = false;
+                    cmdList.push({name: 'REACT', phrase: phrase});
+                }
+                else {
+                    validateProcessPhrase(phrase);
+                    cmdList.push({name: 'PROCESS', phrase: phrase});
+                }
+            }
+
+        } else if (s === '{') {
+            cmdList.push({name: 'FORK'});
+        } else if (s === '}') {
+            cmdList.push({name: 'BACK'});
+        } else if (s === '-}') {
+            cmdList.push({name: 'JOIN'});
+        }
+    }
+
+    return cmdList;
+}
+
+
+function validateReactPhrase(phrase){
+
+    let hasReaction = false;
+    for(let i = 0; i < phrase.length; i++){
+
+        const nw = phrase[i];
+        const operation = nw.operation = nw.operation || 'WATCH';
+        hasReaction = hasReaction || reactionsByName[operation];
+        if(!withReactionsByName[operation])
+            throw new Error('This Nyan command cannot be in a reaction!');
+
+    }
+
+    if(!hasReaction)
+        throw new Error('Nyan commands must begin with an observation!');
 
 }
 
 
-describe('RootScope', function(){
 
-        var world;
+function validateProcessPhrase(phrase){
 
-        beforeEach(function(){
+    const firstPhrase = phrase[0];
+    const firstOperation = firstPhrase.operation || 'READ';
 
-            resetLog();
-            root.clear();
-            world = root.createChild('world');
+    if(!thenByName[firstOperation])
+        throw new Error('Illegal operation in phrase!'); // unknown or reactive
 
-        });
+    for(let i = 0; i < phrase.length; i++){
 
-        afterEach(function(){
+        const nw = phrase[i];
+        nw.operation = nw.operation || firstOperation;
+        if(nw.operation !== firstOperation){
 
+           // console.log('mult', nw.operation, firstOperation);
+            throw new Error('Multiple operation types in phrase (only one allowed)!');
 
+        }
 
-        });
+    }
 
-    it('can react to data', function(){
+}
 
-        const d = world.demand('castle');
-        const bus = world.bus('castle | *handle', watcher);
-        d.write('knight');
 
-        assert.equal(msgLog[0], 'knight');
 
-    });
+function parseSentence(str) {
 
-    it('can react to data and rename it', function(){
+    const result = [];
+    const chunks = str.split('|').map(d => d.trim()).filter(d => d);
 
-        const d = world.demand('castle');
-        const bus = world.bus('castle (tower) | *handle', watcher);
-        d.write('knight');
+    for(let i = 0; i < chunks.length; i++){
 
-        assert.equal(msgLog[0], 'knight');
-        assert.equal(sourceLog[0], 'tower');
-    });
+        const chunk = chunks[i];
+        const phrase = parsePhrase(chunk);
+        result.push(phrase);
 
+    }
 
+    return result;
 
-    it('can react to multi batched data', function(){
+}
 
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
+function parsePhrase(str) {
 
-        const bus = world.bus('castle, palace | *handle', watcher);
-        d1.write('knight');
-        d2.write('squire');
+    const words = [];
+    const rawWords = str.split(',').map(d => d.trim()).filter(d => d);
 
-        Catbus.flush();
+    const len = rawWords.length;
 
-        assert.equal(msgLog[0].castle, 'knight');
-        assert.equal(msgLog[0].palace, 'squire');
+    for (let i = 0; i < len; i++) {
 
-    });
+        const rawWord = rawWords[i];
+        //console.log('word=', rawWord);
+        const rawChunks = rawWord.split(/([(?!:.`)])/);
+        const chunks = [];
+        let inMethod = false;
 
-    it('can react to multi batched data and rename it', function(){
+        // white space is only allowed between e.g. `throttle 200`, `string meow in the hat`
 
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
+        while(rawChunks.length){
+            const next = rawChunks.shift();
+            if(next === '`'){
+                inMethod = !inMethod;
+                chunks.push(next);
+            } else {
+                if(!inMethod){
+                    const trimmed = next.trim();
+                    if(trimmed)
+                        chunks.push(trimmed);
+                } else {
+                    chunks.push(next);
+                }
+            }
+        }
 
-        const bus = world.bus('castle (cat), palace (dog) | *handle', watcher);
-        d1.write('knight');
-        d2.write('squire');
+        //console.log('to:', chunks);
+        const nameAndOperation = chunks.shift();
+        const firstChar = rawWord[0];
+        const operation = namesBySymbol[firstChar];
+        const start = operation ? 1 : 0;
+        const name = nameAndOperation.slice(start).trim();
+        const extracts = [];
 
-        Catbus.flush();
+        // todo hack (rename)
 
-        assert.equal(msgLog[0].cat, 'knight');
-        assert.equal(msgLog[0].dog, 'squire');
+        let maybe = false;
+        let monitor = false;
+        let alias = null;
+        let need = false;
 
+        if(operation === 'ALIAS'){
+            alias = chunks.shift();
+            chunks.shift(); // todo verify ')'
+        } else if (operation === 'METHOD'){
+                chunks.shift();
+                // const next = chunks.shift();
+                const next = tickStack.shift();
+                const i = next.indexOf(' ');
+                if(i === -1) {
+                    extracts.push(next);
+                } else {
+                    extracts.push(next.slice(0, i));
+                    if(next.length > i){
+                        extracts.push(next.slice(i + 1));
+                    }
+                }
 
-    });
+            while(chunks.length){ chunks.shift(); }
+        }
 
-    it('can react to multi batched data and rename the stream', function(){
+        while(chunks.length){
 
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
+            const c = chunks.shift();
 
-        const bus = world.bus('castle (cat), palace (dog) | (together) | *handle', watcher);
-        d1.write('knight');
-        d2.write('squire');
+            switch(c){
 
-        Catbus.flush();
+                case '.':
 
-        assert.equal(msgLog[0].cat, 'knight');
-        assert.equal(msgLog[0].dog, 'squire');
-        assert.equal(sourceLog[0], 'together');
+                    const prop = chunks.length && chunks[0]; // todo assert not operation
+                    const silentFail = chunks.length > 1 && (chunks[1] === '?');
 
-    });
+                    if(prop) {
+                        extracts.push({name: prop, silentFail: silentFail});
+                        chunks.shift(); // remove word from queue
+                        if(silentFail)
+                            chunks.shift(); // remove ? from queue
+                    }
 
+                    break;
 
-    it('can pull prior multi batched data', function(){
+                case '?':
 
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
+                    maybe = true;
+                    break;
 
-        d1.write('wizard');
-        d2.write('mage');
+                case '!':
 
-        const bus = world.bus('castle, palace | *handle', watcher);
-        bus.pull();
+                    need = true;
+                    break;
 
-        Catbus.flush();
+                case '(':
 
+                    if(chunks.length){
+                        alias = chunks.shift(); // todo assert not operation
+                    }
 
-        assert.equal(msgLog[0].castle, 'wizard');
-        assert.equal(msgLog[0].palace, 'mage');
+                    break;
 
-    });
 
-    it('can pull prior multi batched data', function(){
 
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
+            }
 
-        d1.write('wizard');
-        d2.write('mage');
+        }
 
-        const bus = world.bus('castle, palace | *handle', watcher);
-        bus.pull();
+        alias = alias || name;
+        const nw = new NyanWord(name, operation, maybe, need, alias, monitor, extracts);
+        words.push(nw);
 
-        Catbus.flush();
+    }
 
-        console.log('COW1', msgLog);
+    return words;
 
-        d1.write('cow');
-        d2.write('bunny');
+}
 
+Nyan.parse = parse;
 
-        Catbus.flush();
 
-        console.log('COW2', msgLog);
+export default Nyan;
 
-        assert.equal(msgLog[1].castle, 'cow');
-        assert.equal(msgLog[1].palace, 'bunny');
-
-
-
-    });
-
-
-    it('can process additional nyan', function(){
-
-        const d1 = world.demand('castle');
-        const d2 = world.demand('palace');
-
-        d1.write('wizard');
-        d2.write('mage');
-
-        const bus = world.bus('castle, palace');
-        bus.process('*handle', watcher).pull();
-
-        Catbus.flush();
-
-        assert.equal(msgLog[0].castle, 'wizard');
-        assert.equal(msgLog[0].palace, 'mage');
-
-    });
-
-
-
-    // it('can subscribe to dynamic topics', function(){
-    //
-    //     const d1 = world.demand('books');
-    //     const d2 = world.demand('category');
-    //
-    //     d1.write(7, 'castles');
-    //     d1.write(9, 'knights');
-    //     d1.write(4, 'bunnies');
-    //
-    //     Stream s = Stream.
-    //
-    //     const bus = world.bus('castle, palace | *handle', watcher).pull();
-    //
-    //     Catbus.flush();
-    //
-    //     assert.equal(msgLog[0].castle, 'wizard');
-    //     assert.equal(msgLog[0].palace, 'mage');
-    //
-    // });
-
-    it('can react', function(){
-
-            var d = world.demand('ergo');
-
-            d.write('meow');
-            const bus = world.bus('ergo | *handle', watcher).pull();
-
-            var name = d.name;
-            assert.equal(name, 'ergo');
-
-        });
-
-
-    it('can react2', function(){
-
-
-        var d = world.demand('ergo');
-
-        d.write('fish');
-        d.write('cow');
-        const bus = world.bus('ergo | *handle', watcher).pull();
-        d.write('bunny');
-
-        //bus.run(watcher.handle);
-
-
-
-
-
-        var name = d.name;
-        assert.equal(name, 'ergo');
-
-    });
-
-
-    it('can react2', function(){
-
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-
-        d1.write('fish');
-        d2.write('cow');
-        const bus = world.bus('village(grey), forest(green) | *handle', watcher).pull();
-        d2.write('bunny');
-
-        //bus.run(watcher.handle);
-
-
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-    });
-
-    it('can react3', function(){
-
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-        var d3 = world.demand('sea');
-        var d4 = world.demand('grove');
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        d3.write('dog');
-        d4.write('mushroom');
-
-        console.log('poo coming:');
-        const bus = world.bus('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | *handle', watcher).pull();
-        d2.write({moo: {spot: 5}});
-        // d2.write('sunset');
-        //bus.run(watcher.handle);
-
-
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-    });
-
-    it('can write to data', function(){
-
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-        var d3 = world.demand('sea');
-        var d4 = world.demand('grove');
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        d3.write('dog');
-        d4.write('mushroom');
-
-        const bus = world.bus('forest.moo.spot?(green) | &sea, grove(cave) | (poo) | =village', watcher).pull();
-        d2.write({moo: {spot: 5}});
-        // d2.write('sunset');
-        //bus.run(watcher.handle);
-
-        console.log('is', d1.read());
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-    });
-
-    it('can write to data', function(){
-
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-        var d3 = world.demand('sea');
-        var d4 = world.demand('grove');
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        d3.write('dog');
-        d4.write('mushroom');
-
-        const bus = world.bus('forest.moo.spot?(green) | & sea, grove(cave) | (poo) | < village(green),grove:bunny(cave) ', watcher).pull();
-        d2.write({moo: {spot: 5}});
-        // d2.write('sunset');
-        //bus.run(watcher.handle);
-        console.log('vis', d1.read());
-        console.log('is', d4.read('bunny'));
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-    });
-
-
-    it('can write to datab', function(){
-
-
-
-        console.log('DB');
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-        var d3 = world.demand('sea');
-        var d4 = world.demand('grove');
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-         // d3.write('dog');
-        d4.write('mushroom');
-
-        const bus = world.bus('forest (green), sea!  { (tooth) | *handle | sea }  &sea, grove(cave) | (poo) | =village', watcher); //pull
-        // const bus = world.bus('forest!, sea | *handle', watcher).pull();
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        // d3.write('dog');
-        d4.write('mushroom');
-        d3.write('dog');
-        Catbus.flush();
-        // Catbus.flush();
-
-        console.log('DBE- is', d1.read(), msgLog);
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-    });
-
-
-    it('can write to datac', function(){
-
-
-        var d1 = world.demand('village');
-        var d2 = world.demand('forest');
-        var d3 = world.demand('sea');
-        var d4 = world.demand('grove');
-
-        console.log('DC');
-
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        // d3.write('dog');
-        d4.write('mushroom');
-
-        const bus = world.bus('forest (green), sea!  { (tooth) | `string { does ! rock } bunny be happy`  | *tap -}  *meow | *handle | &sea, grove(cave) | (poo) | =village:grr', watcher);
-        // const bus = world.bus('forest!, sea | *handle', watcher).pull();
-
-        d3.write('dog');
-        d1.write('fish');
-        d2.write({moo: {spot: 5}});
-        // d3.write('dog');
-        d4.write('mushroom');
-        Catbus.flush();
-        // Catbus.flush();
-
-        console.log('is', d1.read(), msgLog);
-
-        console.log('DCE -gr', d1.read('grr'), msgLog);
-
-        var name = d1.name;
-        assert.equal(name, 'village');
-
-
-    });
-
-    //     it('can write data', function(){
-    //
-    //         var d = world.demand('ergo');
-    //         d.write('proxy');
-    //         var value = d.read();
-    //
-    //         assert.equal(value, 'proxy');
-    //
-    //     });
-    //
-    //     it('can modify data', function(){
-    //
-    //         var d = world.demand('ergo');
-    //         d.write('autoreiv');
-    //         var value = d.read();
-    //
-    //         assert.equal(value, 'autoreiv');
-    //
-    //     });
-    //
-    //
-    //
-    //     it('can toggle data', function(){
-    //
-    //         var d = world.demand('ergo');
-    //         d.write('wasteland');
-    //         d.toggle();
-    //         assert.equal(d.read(), false);
-    //         d.toggle();
-    //         assert.equal(d.read(), true);
-    //         d.toggle();
-    //         assert.equal(d.read(), false);
-    //
-    //     });
-    //
-    //
-    //     it('can subscribe to data via callbacks', function(){
-    //
-    //         var d = world.demand('ergo');
-    //         d.subscribe(callback);
-    //         d.write('Re-L');
-    //         var value = msgLog[0];
-    //         assert.equal(value, 'Re-L');
-    //
-    //     });
-    //
-    // it('can subscribe to data via watchers', function(){
-    //
-    //     const d = world.demand('pond');
-    //     d.subscribe(new Watcher('cow'));
-    //     d.write('turtle');
-    //
-    //     assert.equal(msgLog[0], 'turtle');
-    //     assert.equal(contextLog[0].name, 'cow');
-    //
-    //
-    // });
-    //
-    // it('can follow existing data via watchers', function(){
-    //
-    //     const d = world.demand('pond');
-    //     d.write('kitten');
-    //     d.write('bunny');
-    //     d.follow(new Watcher('cow'));
-    //     d.write('turtle');
-    //
-    //     assert.equal(msgLog[1], 'turtle');
-    //     assert.equal(contextLog[0].name, 'cow');
-    //
-    //
-    // });
-    //
-    // it('can unsubscribe to data', function(){
-    //
-    //     console.log('dropped', msgLog);
-    //
-    //     console.log('world', world._dataList.size);
-    //
-    //     var d = world.demand('ergo');
-    //
-    //     console.log('is', d.read());
-    //
-    //     d.subscribe(callback);
-    //     d.write('Re-L');
-    //     d.unsubscribe(callback);
-    //     d.write('Vincent');
-    //     d.subscribe(callback);
-    //     d.write('Proxy');
-    //     console.log('dropped', msgLog);
-    //     var value = msgLog[0];
-    //     assert.equal(value, 'Re-L');
-    //     value = msgLog[1];
-    //     assert.equal(value, 'Proxy');
-    //
-    // });
-    //
-    //
-    // it('can refresh existing data', function(){
-    //
-    //     world.clear();
-    //     var d = world.demand('ergo');
-    //     d.subscribe(callback);
-    //     d.write('Vincent');
-    //     d.write('Re-L');
-    //     d.refresh();
-    //
-    //     var lastValue = msgLog[2];
-    //     assert.equal(lastValue, 'Re-L');
-    //     assert.equal(msgLog.length, 3);
-    //
-    // });
-    //
-    //     it('can subscribe to topics', function(){
-    //
-    //         world.clear();
-    //         var d = world.demand('ergo');
-    //         d.subscribe(callback, 'arcology');
-    //         d.write('Vincent', 'character');
-    //         d.write('Re-L', 'character');
-    //         d.write('Romdeau', 'arcology');
-    //         d.write('wasteland');
-    //
-    //         var value = msgLog[0];
-    //         assert.equal(value, 'Romdeau');
-    //         assert.equal(msgLog.length, 1);
-    //
-    //     });
-    //
-    // it('can drop subscriptions to topics', function(){
-    //
-    //     world.clear();
-    //     var d = world.demand('ergo');
-    //     d.subscribe(callback, 'arcology');
-    //     d.write('Vincent', 'character');
-    //     d.write('Re-L', 'character');
-    //     d.write('Romdeau', 'arcology');
-    //     d.write('wasteland');
-    //     d.unsubscribe(callback, 'arcology');
-    //     d.write('Vincent', 'arcology');
-    //
-    //     var value = msgLog[0];
-    //     assert.equal(value, 'Romdeau');
-    //     assert.equal(msgLog.length, 1);
-    //
-    // });
-    //
-    // it('can read data by topic', function(){
-    //
-    //     world.clear();
-    //     var d = world.demand('ergo');
-    //
-    //     d.write('Vincent', 'character');
-    //     d.write('Re-L', 'character');
-    //     d.write('Romdeau', 'arcology');
-    //     d.write('wasteland');
-    //
-    //     assert.equal(d.read('arcology'), 'Romdeau');
-    //     assert.equal(d.read('character'), 'Re-L');
-    //     assert.equal(d.read(), 'wasteland');
-    //
-    //
-    // });
-    //
-    // it('can peek at packets by topic', function(){
-    //
-    //     world.clear();
-    //     var d = world.demand('ergo');
-    //
-    //     d.write('Vincent', 'character');
-    //     d.write('Re-L', 'character');
-    //     d.write('Romdeau', 'arcology');
-    //     d.write('wasteland');
-    //
-    //     assert.equal(d.peek('arcology').msg, 'Romdeau');
-    //     assert.equal(d.peek('arcology').source, 'ergo');
-    //     assert.equal(d.peek('character').topic, 'character');
-    //     assert.equal(d.peek().topic, null);
-    //
-    //
-    // });
-    //
-    //     it('can monitor all topics', function(){
-    //
-    //         world.clear();
-    //         var d = world.demand('ergo');
-    //         d.monitor(callback);
-    //         d.write('Vincent', 'character');
-    //         d.write('Re-L', 'character');
-    //         d.write('Romdeau', 'arcology');
-    //         d.write('wasteland');
-    //
-    //         var value = msgLog[2];
-    //         var topic = packetLog[1].topic;
-    //         assert.equal(value, 'Romdeau');
-    //         assert.equal(topic, 'character');
-    //         assert.equal(msgLog.length, 4);
-    //
-    //     });
-    //
-    // it('creates child scopes', function(){
-    //
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //     var city2 = world.createChild();
-    //
-    //     var d0 = world.demand('ergo');
-    //     var d1 = city1.demand('ergo');
-    //     var d2 = city2.demand('proxy');
-    //
-    //     d0.write('0');
-    //     d1.write('1');
-    //     d2.write('2');
-    //
-    //     assert.equal(d0.read(), '0');
-    //     assert.equal(d1.read(), '1');
-    //     assert.equal(d2.read(), '2');
-    //
-    // });
-    //
-    // it('finds data in higher scopes', function(){
-    //
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //     var city2 = world.createChild();
-    //
-    //     var d0 = world.demand('ergo');
-    //     var d1 = city1.demand('ergo');
-    //     var d2 = city2.demand('proxy');
-    //
-    //     d0.write('0');
-    //     d1.write('1');
-    //     d2.write('2');
-    //
-    //     var f1 = city1.find('ergo');
-    //     var f2 = city2.find('ergo');
-    //
-    //     assert.equal(f1.read(), '1');
-    //     assert.equal(f2.read(), '0');
-    //
-    // });
-    //
-    // it('can write transactions', function(){
-    //
-    //     resetLog();
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //
-    //     var d0 = world.demand('proxy');
-    //     var d1 = city1.demand('ergo');
-    //     var d2 = city1.demand('autoreiv');
-    //
-    //     var result;
-    //
-    //     d0.subscribe(function(msg){
-    //         result = msg;
-    //         assert(d0.read(), 'grey');
-    //         assert(d1.read(), 'black');
-    //         assert(d2.read(), 'chrome');
-    //     });
-    //
-    //     city1.transaction([
-    //         {name: 'proxy', value: 'grey'},
-    //         {name: 'ergo', value: 'black'},
-    //         {name: 'autoreiv', value: 'chrome'}
-    //     ]);
-    //
-    //     assert(result, 'grey');
-    //
-    //
-    // });
-    //
-    //
-    // it('can create actions as ephemeral data', function(){
-    //
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //
-    //     var d0 = world.action('ergo');
-    //     var d1 = city1.demand('ergo');
-    //
-    //     d0.subscribe(callback);
-    //
-    //     d0.write('0');
-    //     d1.write('1');
-    //
-    //     assert.equal(d0.read(), undefined);
-    //     assert.equal(d0.peek(), null);
-    //     assert.equal(d1.peek().msg, '1');
-    //     assert.equal(msgLog[0], '0');
-    //     assert.equal(d1.read(), '1');
-    //
-    // });
-    //
-    // it('valves can restrict data in higher scopes', function(){
-    //
-    //
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //     var city2 = world.createChild();
-    //
-    //     var d0 = world.demand('ergo');
-    //     var d1 = city1.demand('ergo');
-    //     var d2 = city2.demand('proxy');
-    //
-    //     var d3 = world.demand('Re-L');
-    //     world.valves = ['Re-L'];
-    //
-    //     d0.write('0');
-    //     d1.write('1');
-    //     d2.write('2');
-    //     d3.write('3');
-    //
-    //     var f1 = city1.find('ergo');
-    //     var f2 = city2.find('ergo');
-    //     var f3 = city1.find('Re-L');
-    //     var f4 = world.find('Re-L');
-    //     var f5 = world.find('ergo');
-    //
-    //     console.log('flat',Array.from(city2.flatten().keys()));
-    //     assert.equal(f1.read(), '1'); // access never encounters valve above
-    //     assert.equal(f2, null); // access blocked by valve
-    //     assert.equal(f3.read(), '3'); // remote access through valve
-    //     assert.equal(f4.read(), '3'); // local access through valve
-    //     assert.equal(f5.read(), '0'); // local access despite valve (valves only block from below)
-    //
-    // });
-    //
-    //
-    // it('can create states for data that is read-only from below', function(){
-    //
-    //     world.clear();
-    //
-    //     var city1 = world.createChild();
-    //
-    //     var d0 = world.state('ergo'); // creates a mirror under the hood
-    //     var d1 = city1.demand('proxy');
-    //
-    //     d0.write('0');
-    //     d1.write('1');
-    //
-    //     var f1 = city1.find('ergo'); // from below, finds mirror as read-only
-    //     var f2 = world.find('ergo'); // locally, finds data with write access
-    //
-    //     f2.write('3'); // can write to state, affects both data and mirror
-    //
-    //     assert.equal(f1.read(), '3');
-    //     assert.equal(f2.read(), '3');
-    //     assert.equal(f1.type, 'mirror');
-    //
-    //     var writeToMirror = function(){ f1.write('4');};
-    //     assert.throws(writeToMirror, Error);
-    //
-    // });
-
-
-});
-
-
-// todo add survey() test
-// todo add silent transaction assertion
-// todo add

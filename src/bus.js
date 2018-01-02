@@ -381,6 +381,10 @@ class Bus {
 
     };
 
+    hook(name, words, scope, context, target){
+
+    };
+
     fuse(bus) {
 
         this.add(bus);

@@ -208,7 +208,7 @@ describe('Data and Scopes', function(){
 
     it('can create actions that do not store data', function(){
 
-        let d = world.demand('$ergo');
+        let d = world.demand('ergo$');
         d.subscribe(callback);
 
         d.write('0');

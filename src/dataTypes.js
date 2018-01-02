@@ -1,10 +1,10 @@
 
 function isPrivate(name){
-    return name[0] === '_'  || (isAction(name) && name[1] === '_');
+    return name.slice(0,1) === '_';
 }
 
 function isAction(name){
-    return name[0] === '$';
+    return name.slice(-1) === '$';
 }
 
 export { isAction, isPrivate };

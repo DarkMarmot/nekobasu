@@ -53,11 +53,11 @@ function Word(content){
 function parseHook(phrase){
 
     const chunks = splitHookDelimiters(phrase.content);
+
     while(chunks.length) {
 
         const content = chunks.shift();
-        const word = new Word(content);
-        phrase.words.push(word);
+        phrase.words.push(content);
 
     }
 

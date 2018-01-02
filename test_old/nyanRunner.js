@@ -1,5 +1,5 @@
 
-import Bus from './bus.js';
+import Bus from '../src/bus.js';
 
 
 function getSurveyFromDataWord(scope, word){
