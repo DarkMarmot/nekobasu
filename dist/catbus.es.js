@@ -2896,7 +2896,6 @@ Catbus.hook = function(name, func){ // func(argArray) with this as bus
 };
 
 Catbus.runHook = function(bus, name, words){
-    console.log('bus', bus, name, words);
     const func = _hooksByName[name]; // todo func not found
     func.call(bus, bus, words);
 };
