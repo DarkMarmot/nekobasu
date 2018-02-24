@@ -40,6 +40,16 @@ describe('Meow Parse', function(){
 
     });
 
+    it('can parse this too', function(){
+
+        const m = Catbus.meow('commentResponse?.data.comments? * toPos > commentListPos');
+
+        console.log(m);
+        assert.equal(m.length, 3);
+        //assert.equal(m[0].words.length, 1);
+        //assert.equal(m[0].words[0].name, 'cat');
+
+    });
 
 
 });

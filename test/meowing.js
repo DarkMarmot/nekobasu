@@ -127,6 +127,50 @@ describe('RootScope', function(){
 
     });
 
+    it('can react to batched multiple data with needs and options untouched', function(){
+
+        const d1 = world.demand('castle');
+        const d2 = world.demand('tower');
+        const d3 = world.demand('bridge'); // unused intentionally
+
+        const bus = world.bus().context(watcher).meow('castle?, bridge?, tower * handle');
+
+        d1.write('knight');
+        d1.write('paladin');
+        d3.write('barbarian');
+        d2.write('fighter');
+        d3.write('assassin');
+        d1.write('crusader');
+
+        Catbus.flush();
+
+        assert.equal(msgLog.length, 1);
+        assert.equal(sourceLog.length, 1);
+        assert.equal(msgLog[0].castle, 'crusader');
+        assert.equal(msgLog[0].bridge, 'assassin');
+
+    });
+
+    it('can react to batched multiple data with needs and options used', function(){
+
+        const d1 = world.demand('castle');
+        const d2 = world.demand('tower');
+        const d3 = world.demand('bridge'); // unused intentionally
+
+        const bus = world.bus().context(watcher).meow('castle, bridge?, tower * handle');
+
+        d1.write('knight');
+        d1.write('paladin');
+        d2.write('fighter');
+        d1.write('crusader');
+
+        Catbus.flush();
+
+        assert.equal(msgLog.length, 1);
+        assert.equal(sourceLog.length, 1);
+        assert.equal(msgLog[0].castle, 'crusader');
+
+    });
 
     it('can react to data and rename it', function(){
 

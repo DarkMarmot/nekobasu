@@ -15,6 +15,7 @@ const phraseCmds = {
     '{': {name: 'WATCH_EACH', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
     '~': {name: 'WATCH_SOME', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true}
 
+    // ~ is now just data wire indicator --  not meow, use ? after last word for optional watch
 };
 
 const wordModifiers = {

@@ -1048,6 +1048,7 @@ const phraseCmds = {
     '{': {name: 'WATCH_EACH', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true},
     '~': {name: 'WATCH_SOME', react: true, process: false, output: false, can_maybe: true, can_alias: true, can_prop: true}
 
+    // ~ is now just data wire indicator --  not meow, use ? after last word for optional watch
 };
 
 const wordModifiers = {
@@ -1318,7 +1319,8 @@ function runPhrase(bus, phrase){
 
 }
 
-// todo throw errors
+// todo throw errors, could make hash by word string of parse functions for performance
+
 function extractProperties(word, value){
 
     let maybe = word.maybe;
@@ -1327,7 +1329,7 @@ function extractProperties(word, value){
     for(let i = 0; i < args.length; i++){
         const arg = args[i];
         if(!value && maybe)
-            return value;
+            return value; // todo filter somewhere else, todo throw err on !maybe
         value = value[arg.name];
         maybe = arg.maybe;
     }
@@ -1336,12 +1338,26 @@ function extractProperties(word, value){
 
 }
 
+function isWordNeeded(word){
+
+    const {maybe, args} = word;
+
+    if(args.length === 0)
+        return !maybe; // one word only -- thus needed if not maybe
+
+    const lastArg = args[args.length - 1];
+    return !lastArg.maybe;
+
+
+}
+
 function toAliasList(words){
 
     const list = [];
     for(let i = 0; i < words.length; i++) {
         const word = words[i];
-        list.push(word.alias);
+        if(isWordNeeded(word))
+            list.push(word.alias);
     }
     return list;
 
