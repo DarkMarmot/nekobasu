@@ -90,6 +90,33 @@ function getMsgSideEffect(sideEffectFunc){
 }
 
 
+function toChangeHash(msg){
+
+    const hash = {};
+    if(msg.length === 2){
+        hash[msg[0]] = false;
+        hash[msg[1]] = true;
+    } else {
+        hash[msg[0]] = true;
+    }
+    return hash;
+
+}
+
+function toClass(bus){
+
+
+    bus
+        .last(2)
+        .msg(toChangeHash)
+    ;
+
+    getMsgSideEffect(classes)(bus);
+
+
+}
+
+
 function domHooks(target){ // target is Catbus
 
     target.hook('TEXT', getMsgSideEffect(text));
@@ -100,6 +127,8 @@ function domHooks(target){ // target is Catbus
     target.hook('ATTRS', getMsgSideEffect(attrs));
     target.hook('PROPS', getMsgSideEffect(props));
     target.hook('STYLES', getMsgSideEffect(styles));
+    target.hook('TO_CLASS', toClass);
+
 
 }
 

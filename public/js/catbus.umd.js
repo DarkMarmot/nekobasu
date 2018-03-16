@@ -2858,6 +2858,33 @@ function getMsgSideEffect(sideEffectFunc){
 }
 
 
+function toChangeHash(msg){
+
+    const hash = {};
+    if(msg.length === 2){
+        hash[msg[0]] = false;
+        hash[msg[1]] = true;
+    } else {
+        hash[msg[0]] = true;
+    }
+    return hash;
+
+}
+
+function toClass(bus){
+
+
+    bus
+        .last(2)
+        .msg(toChangeHash)
+    ;
+
+    getMsgSideEffect(classes)(bus);
+
+
+}
+
+
 function domHooks(target){ // target is Catbus
 
     target.hook('TEXT', getMsgSideEffect(text));
@@ -2868,6 +2895,7 @@ function domHooks(target){ // target is Catbus
     target.hook('ATTRS', getMsgSideEffect(attrs));
     target.hook('PROPS', getMsgSideEffect(props));
     target.hook('STYLES', getMsgSideEffect(styles));
+    target.hook('TO_CLASS', toClass);
 
 }
 
@@ -2888,6 +2916,29 @@ function log(bus, args){
 function logHooks(target){ // target is Catbus
 
     target.hook('LOG', log);
+
+}
+
+function priorValue(bus){
+
+    function greaterThanOne(msg){
+        return msg.length > 1;
+    }
+
+    function getFirst(msg){
+        return msg[0];
+    }
+
+    bus
+        .last(2)
+        .filter(greaterThanOne).msg(getFirst);
+
+}
+
+
+function historyHooks(target){ // target is Catbus
+
+    target.hook('PRIOR', priorValue);
 
 }
 
@@ -3023,6 +3074,7 @@ Catbus.flush = function(){
 filterHooks(Catbus);
 domHooks(Catbus);
 logHooks(Catbus);
+historyHooks(Catbus);
 
 return Catbus;
 

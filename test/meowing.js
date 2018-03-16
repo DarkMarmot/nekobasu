@@ -327,6 +327,23 @@ describe('RootScope', function(){
 
     });
 
+    it('can use prior hooks', function(){
+
+        const d = world.demand('castle');
+        const bus = world.bus().context(watcher).meow('{ castle # PRIOR * addShield * handle');
+
+        d.write('knight');
+        d.write('yum'); // skipped
+        d.write('moo');
+
+        Catbus.flush();
+
+        assert.equal(msgLog[0], 'knight shield');
+        assert.equal(msgLog[1], 'yum shield');
+        assert.equal(msgLog.length, 2);
+
+    });
+
 
 
 });

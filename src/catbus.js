@@ -11,6 +11,7 @@ import Bus from './bus.js';
 import filterHooks from './hooks/filterHooks.js';
 import domHooks from './hooks/domHooks.js';
 import logHooks from './hooks/logHooks.js';
+import historyHooks from './hooks/historyHooks.js';
 
 
 const Catbus = {};
@@ -145,5 +146,6 @@ Catbus.flush = function(){
 filterHooks(Catbus);
 domHooks(Catbus);
 logHooks(Catbus);
+historyHooks(Catbus);
 
 export default Catbus;
