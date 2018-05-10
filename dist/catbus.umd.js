@@ -3064,8 +3064,8 @@ Catbus.flush = function(){
         _batchQueue = [];
 
         cycles++;
-        if(cycles > 10)
-            throw new Error('Flush batch cycling loop > 10.', q);
+        if(cycles > 100)
+            throw new Error('Flush batch cycling loop > 100.', q);
 
     }
 
